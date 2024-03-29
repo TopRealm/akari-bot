@@ -4,7 +4,6 @@ from typing import Union
 
 import filetype
 
-from config import CFG
 from core.builtins import Bot, Plain, Image, Voice, Url, confirm_command
 from core.types import MessageSession
 from core.utils.image_table import image_table_render, ImageTable
@@ -13,11 +12,11 @@ from core.exceptions import AbuseWarning
 from core.logger import Logger
 from core.utils.http import download_to_cache
 from core.utils.image import svg_render
+from core.utils.web_render import WebRender
 from modules.wiki.utils.dbutils import WikiTargetInfo
 from modules.wiki.utils.screenshot_image import generate_screenshot_v1, generate_screenshot_v2
 from modules.wiki.utils.wikilib import WikiLib, WhatAreUDoingError, PageInfo, InvalidWikiError, QueryInfo
 
-web_render = CFG.get_url('web_render')
 generate_screenshot_v2_blocklist = ['https://mzh.moegirl.org.cn', 'https://zh.moegirl.org.cn']
 special_namespace = ['special', '特殊']
 random_title = ['random', '随机页面', '隨機頁面']
@@ -40,7 +39,8 @@ async def _(msg: Bot.MessageSession, pagename: str):
     await query_pages(msg, pagename, lang=lang)
 
 
-@wiki.command('id <pageid> [-l <lang>] {{wiki.help.id}}')
+@wiki.command('id <pageid> [-l <lang>] {{wiki.help.id}}',
+              options_desc={'-l': '{wiki.help.option.l}'})
 async def _(msg: Bot.MessageSession, pageid: str):
     iw = None
     if match_iw := re.match(r'(.*?):(.*)', pageid):
@@ -86,7 +86,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
         if isinstance(title, str):
             title = [title]
         if len(title) > 15:
-            raise AbuseWarning(session.locale.t('tos.reason.wiki_abuse'))
+            raise AbuseWarning(session.locale.t('tos.message.reason.wiki_abuse'))
         query_task = {start_wiki: {'query': [], 'iw_prefix': ''}}
         for t in title:
             if prefix and use_prefix:
@@ -208,7 +208,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                             plain_slice.append(session.locale.t('wiki.message.redirect', title=display_before_title,
                                                                 redirected_title=display_title))
                     if (r.link and r.selected_section and r.info.in_allowlist and
-                            not r.invalid_section and web_render):
+                            not r.invalid_section and WebRender.status):
                         render_section_list.append(
                             {r.link: {'url': r.info.realurl, 'section': r.selected_section,
                                       'in_allowlist': r.info.in_allowlist}})
@@ -234,17 +234,20 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                                             'Template:Version disambiguation' in r.templates))}})
                     if plain_slice:
                         msg_list.append(Plain('\n'.join(plain_slice)))
-                    if web_render:
+                    if WebRender.status:
                         if r.invalid_section and r.info.in_allowlist:
                             if isinstance(session, Bot.MessageSession) and session.Feature.image and r.sections:
                                 i_msg_lst = []
                                 session_data = [[str(i + 1), r.sections[i]] for i in range(len(r.sections))]
-                                i_msg_lst.append(Plain(session.locale.t('wiki.message.invalid_section')))
+                                i_msg_lst.append(Plain(session.locale.t('wiki.message.invalid_section.prompt')))
                                 i_msg_lst.append(Image(await
                                                        image_table_render(
                                                            ImageTable(session_data,
                                                                       ['ID',
-                                                                       session.locale.t('wiki.message.section')]))))
+                                                                       session.locale.t('wiki.message.table.section')]))))
+                                i_msg_lst.append(Plain(session.locale.t('wiki.message.invalid_section.select')))
+                                i_msg_lst.append(Plain(session.locale.t('message.reply.prompt')))
+
 
                                 async def _callback(msg: Bot.MessageSession):
                                     display = msg.as_display(text_only=True)
@@ -256,7 +259,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
 
                                 await session.send_message(i_msg_lst, callback=_callback)
                             else:
-                                msg_list.append(Plain(session.locale.t('wiki.message.invalid_section.prompt')))
+                                msg_list.append(Plain(session.locale.t('wiki.message.invalid_section')))
                 else:
                     plain_slice = []
                     wait_plain_slice = []
@@ -276,12 +279,12 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                                             r.possible_research_title.index(display_title) + 1)))
                                     wait_possible_list.append({display_before_title: {display_title:
                                                                                       r.possible_research_title}})
-                                    wait_plain_slice.append(session.locale.t("message.wait.confirm.prompt.type2"))
+                                    wait_plain_slice.append(session.locale.t("message.wait.prompt.next_message"))
                                 else:
                                     wait_plain_slice.append(session.locale.t('wiki.message.not_found.autofix.confirm',
                                                                              title=display_before_title,
                                                                              redirected_title=display_title))
-                                    wait_plain_slice.append(session.locale.t("message.wait.confirm.prompt.type1"))
+                                    wait_plain_slice.append(session.locale.t("message.wait.prompt.confirm"))
                             else:
                                 if r.edit_link:
                                     plain_slice.append(r.edit_link + session.locale.t('wiki.message.redlink.not_found'))
@@ -312,7 +315,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                         wait_msg_list.append(
                             Plain('\n'.join(wait_plain_slice)))
         except WhatAreUDoingError:
-            raise AbuseWarning(session.locale.t('tos.reason.too_many_redirects'))
+            raise AbuseWarning(session.locale.t('tos.message.reason.too_many_redirects'))
         except InvalidWikiError as e:
             if isinstance(session, Bot.MessageSession):
                 await session.send_message(session.locale.t('error') + str(e))
@@ -390,7 +393,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                         elif guess_type.extension in ["oga", "ogg", "flac", "mp3", "wav"]:
                             if session.Feature.voice:
                                 await session.send_message(Voice(dl), quote=False)
-                    elif check_svg:
+                    elif check_svg(dl):
                         rd = await svg_render(dl)
                         if session.Feature.image and rd:
                             await session.send_message(Image(rd), quote=False)

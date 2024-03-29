@@ -29,11 +29,13 @@ m = module('module',
             'reload <module> ...',
             'load <module> ...',
             'unload <module> ...',
-            'list [legacy] {{core.help.module.list}}'], exclude_from=['QQ|Guild'])
+            'list [-l] {{core.help.module.list}}'],
+            options_desc={'-l': '{help.option.l}'},
+            exclude_from=['QQ|Guild'])
 async def _(msg: Bot.MessageSession):
     if msg.parsed_msg.get('list', False):
         legacy = False
-        if msg.parsed_msg.get('legacy', False):
+        if msg.parsed_msg.get('-l', False):
             legacy = True
         await modules_help(msg, legacy)
     await config_modules(msg)
@@ -46,13 +48,14 @@ async def _(msg: Bot.MessageSession):
             'reload <module> ...',
             'load <module> ...',
             'unload <module> ...',
-            'list [legacy] {{core.help.module.list}}'],
-           options_desc={'-g': '{core.help.option.module.g}'},
+            'list [-l] {{core.help.module.list}}'],
+           options_desc={'-g': '{core.help.option.module.g}',
+                         '-l': '{help.option.l}'},
            available_for=['QQ|Guild'])
 async def _(msg: Bot.MessageSession):
     if msg.parsed_msg.get('list', False):
         legacy = False
-        if msg.parsed_msg.get('legacy', False):
+        if msg.parsed_msg.get('-l', False):
             legacy = True
         await modules_help(msg, legacy)
     await config_modules(msg)
@@ -178,7 +181,7 @@ async def config_modules(msg: Bot.MessageSession):
                     return msg.locale.t('core.message.module.reload.success', module=module) + \
                         ('\n' if len(extra_modules) != 0 else '') + \
                         '\n'.join(extra_modules) + \
-                        '\n' + msg.locale.t('core.message.module.reload.with', reloadCnt=reload_count - 1)
+                        '\n' + msg.locale.t('core.message.module.reload.with', reload_count=reload_count - 1)
                 elif reload_count == 1:
                     return msg.locale.t('core.message.module.reload.success', module=module) + \
                         ('\n' if len(extra_modules) != 0 else '') + \
@@ -313,7 +316,11 @@ async def bot_help(msg: Bot.MessageSession):
         help_name = msg.parsed_msg['<module>']
         if help_name in alias:
             help_name = alias[help_name]
-        if help_name in module_list:
+        if help_name in current_unloaded_modules:
+            await msg.finish(msg.locale.t("parser.module.unloaded", module=help_name))
+        elif help_name in err_modules:
+            await msg.finish(msg.locale.t("error.module.unloaded", module=help_name))
+        elif help_name in module_list:
             module_ = module_list[help_name]
             if module_.desc:
                 desc = module_.desc
@@ -381,7 +388,8 @@ async def bot_help(msg: Bot.MessageSession):
 
 
 @hlp.command()
-@hlp.command('[legacy] {{core.help.help}}')
+@hlp.command('[-l] {{core.help.help}}',
+             options_desc={'-l': '{help.option.l}'})
 async def _(msg: Bot.MessageSession):
     module_list = ModulesManager.return_modules_list(
         target_from=msg.target.target_from)

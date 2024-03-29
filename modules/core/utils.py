@@ -1,16 +1,16 @@
 import platform
-import time
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta
 
 import jwt
 import psutil
 from cpuinfo import get_cpu_info
 
 from config import Config
-from core.builtins import Bot, Embed, EmbedField, command_prefix
+from core.builtins import Bot
 from core.component import module
 from core.utils.i18n import get_available_locales, Locale, load_locale_file
 from core.utils.info import Info
+from core.utils.web_render import WebRender
 from database import BotDBUtil
 
 jwt_secret = Config('jwt_secret')
@@ -44,6 +44,7 @@ async def _(msg: Bot.MessageSession):
         swap_percent = psutil.swap_memory().percent
         disk = int(psutil.disk_usage('/').used / (1024 * 1024 * 1024))
         disk_total = int(psutil.disk_usage('/').total / (1024 * 1024 * 1024))
+        web_render_status = str(WebRender.status)
         result += '\n' + msg.locale.t("core.message.ping.detail",
                                       system_boot_time=boot_start,
                                       bot_running_time=timediff,
@@ -55,12 +56,18 @@ async def _(msg: Bot.MessageSession):
                                       swap=swap,
                                       swap_percent=swap_percent,
                                       disk_space=disk,
-                                      disk_space_total=disk_total)
+                                      disk_space_total=disk_total,
+                                      web_render_status=web_render_status)
     await msg.finish(result)
 
 
-admin = module('admin', base=True, required_admin=True, desc='{core.help.admin.desc}')
-
+admin = module('admin',
+               base=True,
+               required_admin=True,
+               alias={'ban': 'admin ban',
+                      'unban': 'admin unban',
+                      'ban list': 'admin ban list'},
+               desc='{core.help.admin.desc}')
 
 @admin.command([
     'add <user> {{core.help.admin.add}}',
@@ -74,7 +81,7 @@ async def config_gu(msg: Bot.MessageSession):
             await msg.finish(msg.locale.t("core.message.admin.list.none"))
     user = msg.parsed_msg['<user>']
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t('core.message.admin.invalid', target=msg.target.sender_from, prefix=msg.prefixes[0]))
+        await msg.finish(msg.locale.t('core.message.admin.invalid', sender=msg.target.sender_from, prefix=msg.prefixes[0]))
     if 'add' in msg.parsed_msg:
         if user and user not in msg.custom_admins:
             if msg.data.add_custom_admin(user):
@@ -92,20 +99,28 @@ async def config_gu(msg: Bot.MessageSession):
 
 
 @admin.command('ban <user> {{core.help.admin.ban}}',
-               'unban <user> {{core.help.admin.unban}}')
-async def config_ban(msg: Bot.MessageSession, user: str):
+               'unban <user> {{core.help.admin.unban}}',
+               'ban list {{core.help.admin.ban.list}}')
+async def config_ban(msg: Bot.MessageSession):
+    admin_ban_list = msg.options.get('ban', [])
+    if 'list' in msg.parsed_msg:
+        if admin_ban_list:
+            await msg.finish(msg.locale.t("core.message.admin.ban.list") + '\n'.join(admin_ban_list))
+        else:
+            await msg.finish(msg.locale.t("core.message.admin.ban.list.none"))
+    user = msg.parsed_msg['<user>']
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t('core.message.admin.invalid', prefix=msg.prefixes[0]))
+        await msg.finish(msg.locale.t('core.message.admin.invalid', sender=msg.target.sender_from, prefix=msg.prefixes[0]))
     if user == msg.target.sender_id:
         await msg.finish(msg.locale.t("core.message.admin.ban.self"))
     if 'ban' in msg.parsed_msg:
-        if user not in msg.options.get('ban', []):
-            msg.data.edit_option('ban', msg.options.get('ban', []) + [user])
+        if user not in admin_ban_list:
+            msg.data.edit_option('ban', admin_ban_list + [user])
             await msg.finish(msg.locale.t('success'))
         else:
             await msg.finish(msg.locale.t("core.message.admin.ban.already"))
     if 'unban' in msg.parsed_msg:
-        if user in (banlist := msg.options.get('ban', [])):
+        if user in (banlist := admin_ban_list):
             banlist.remove(user)
             msg.data.edit_option('ban', banlist)
             await msg.finish(msg.locale.t('success'))
@@ -113,7 +128,7 @@ async def config_ban(msg: Bot.MessageSession, user: str):
             await msg.finish(msg.locale.t("core.message.admin.ban.not_yet"))
 
 
-locale = module('locale', base=True, desc='{core.help.locale.desc}')
+locale = module('locale', base=True, desc='{core.help.locale.desc}', alias='lang')
 
 
 @locale.command()
@@ -160,7 +175,7 @@ async def _(msg: Bot.MessageSession):
     if msg.check_super_user():
         perm += '\n' + msg.locale.t("core.message.whoami.superuser")
     await msg.finish(
-        msg.locale.t('core.message.whoami', senderid=msg.target.sender_id, targetid=msg.target.target_id) + perm)
+        msg.locale.t('core.message.whoami', sender=msg.target.sender_id, target=msg.target.target_id) + perm)
 
 
 setup = module('setup', base=True, desc='{core.help.setup.desc}', alias='toggle')

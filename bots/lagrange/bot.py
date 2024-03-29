@@ -13,17 +13,20 @@ from config import Config
 from core.builtins import EnableDirtyWordCheck, PrivateAssets, Url
 from core.logger import Logger
 from core.parser.message import parser
+from core.tos import tos_report
 from core.queue import check_job_queue
 from core.scheduler import Scheduler, IntervalTrigger
 from core.types import MsgInfo, Session
 from core.utils.bot import load_prompt, init_async
 from core.utils.info import Info
+from core.utils.i18n import Locale
 from core.queue import JobQueue
 
 PrivateAssets.set(os.path.abspath(os.path.dirname(__file__) + '/assets'))
 EnableDirtyWordCheck.status = True if Config('enable_dirty_check') else False
 Url.disable_mm = False if Config('enable_urlmanager') else True
 qq_account = str(Config("qq_account"))
+lang = Config('locale')
 
 
 @Scheduler.scheduled_job(IntervalTrigger(seconds=1))
@@ -53,8 +56,7 @@ async def message_handler(event: Event):
     if event.detail_type == 'private':
         if event.sub_type == 'group':
             if Config('qq_disable_temp_session'):
-                return await bot.send(event, '请先添加好友后再进行命令交互。')
-
+                return await bot.send(event, Locale(lang).t('qq.message.disable_temp_session'))
     message = get_plain_msg(event.message)
     """
     filter_msg = re.match(r'.*?\\[CQ:(?:json|xml).*?\\].*?|.*?<\\?xml.*?>.*?', event.message, re.MULTILINE | re.DOTALL)
@@ -117,14 +119,14 @@ class GuildAccountInfo:
 
 @bot.on_message('guild')
 async def _(event):
-    if GuildAccountInfo.tiny_id is None:
+    if not GuildAccountInfo.tiny_id:
         profile = await bot.call_action('get_guild_service_profile')
         GuildAccountInfo.tiny_id = profile['tiny_id']
     tiny_id = event.user_id
     if tiny_id == GuildAccountInfo.tiny_id:
         return
     reply_id = None
-    match_reply = re.match(r'^\\[CQ:reply,id=(.*?)].*', event.message)
+    match_reply = re.match(r'^\[CQ:reply,id=(-?\d+).*\].*', event.message)
     if match_reply:
         reply_id = int(match_reply.group(1))
     target_id = f'QQ|Guild|{str(event.guild_id)}|{str(event.channel_id)}'
@@ -142,19 +144,24 @@ async def _(event):
 
 @bot.on('request.friend')
 async def _(event: Event):
-    if BotDBUtil.SenderInfo('QQ|' + str(event.user_id)).query.isInBlockList:
-        return {'approve': False}
-    return {'approve': True}
+    if BotDBUtil.SenderInfo('QQ|' + str(event.user_id)).query.isSuperUser:
+        return {'approve': True}
+    if not Config('qq_allow_approve_friend'):
+        await bot.send_private_msg(user_id=event.user_id,
+                                   message=Locale(lang).t('qq.message.disable_friend_request'))
+    else:
+        if BotDBUtil.SenderInfo('QQ|' + str(event.user_id)).query.isInBlockList:
+            return {'approve': False}
+        return {'approve': True}
 
 
 @bot.on('request.group.invite')
 async def _(event: Event):
     if BotDBUtil.SenderInfo('QQ|' + str(event.user_id)).query.isSuperUser:
         return {'approve': True}
-    if not Config('allow_bot_auto_approve_group_invite'):
+    if not Config('qq_allow_approve_group_invite'):
         await bot.send_private_msg(user_id=event.user_id,
-                                   message='你好！本机器人暂时不主动同意入群请求。\n'
-                                           f'请至{Config("qq_join_group_application_link")}申请入群。')
+                                   message=Locale(lang).t('qq.message.disable_group_invite'))
     else:
         return {'approve': True}
 
@@ -167,19 +174,36 @@ async def _(event: Event):
         if event.duration >= 259200:
             result = True
         if result:
+            reason = Locale(lang).t('tos.message.reason.mute')
+            await tos_report('QQ|' + str(event.operator_id), 'QQ|Group|' + str(event.group_id), reason, banned=True)
             await bot.call_action('set_group_leave', group_id=event.group_id)
             BotDBUtil.SenderInfo('QQ|' + str(event.operator_id)).edit('isInBlockList', True)
+            BotDBUtil.GroupBlockList.add('QQ|Group|' + str(event.group_id))
+            await bot.call_action('delete_friend', friend_id=event.operator_id)
+
+
+@bot.on_notice('group_decrease')
+async def _(event: Event):
+    if event.sub_type == 'kick_me':
+        result = True
+        if result:
+            reason = Locale(lang).t('tos.message.reason.kick')
+            await tos_report('QQ|' + str(event.operator_id), 'QQ|Group|' + str(event.group_id), reason, banned=True)
+            BotDBUtil.SenderInfo('QQ|' + str(event.operator_id)).edit('isInBlockList', True)
+            BotDBUtil.GroupBlockList.add('QQ|Group|' + str(event.group_id))
             await bot.call_action('delete_friend', friend_id=event.operator_id)
 
 
 
 @bot.on_message('group')
 async def _(event: Event):
-    result = BotDBUtil.isGroupInAllowList(f'QQ|Group|{str(event.group_id)}')
-    if not result:
-        await bot.send(event=event, message='此群不在白名单中，已自动退群。'
-                                            '\n如需申请白名单，请至https://github.com/Teahouse-Studios/bot/issues/new/choose发起issue。')
-        await bot.call_action('set_group_leave', group_id=event.group_id)
+        result = BotDBUtil.GroupBlockList.check(f'QQ|Group|{str(event.group_id)}')
+        if result:
+            res = Locale(lang).t('tos.message.in_group_blocklist')
+            if Config('issue_url'):
+                res += '\n' + Locale(lang).t('tos.message.appeal', issue_url=Config('issue_url'))
+            await bot.send(event=event, message=str(res))
+            await bot.call_action('set_group_leave', group_id=event.group_id)
 """
 
 qq_host = Config("lagrange_host")

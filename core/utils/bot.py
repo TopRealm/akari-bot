@@ -13,6 +13,7 @@ from core.queue import JobQueue
 from core.scheduler import Scheduler
 from core.types import PrivateAssets, Secret
 from core.utils.info import Info
+from core.utils.web_render import check_web_render
 
 
 async def init_async(start_scheduler=True) -> None:
@@ -33,9 +34,10 @@ async def init_async(start_scheduler=True) -> None:
         Scheduler.start()
     logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
     await load_secret()
+    await check_web_render()
     try:
         Info.version = os.popen('git rev-parse HEAD', 'r').read()
-    except Exception as e:
+    except Exception:
         Logger.warn(f'Failed to get Git commit hash, is it a Git repository?')
     Logger.info(f'Hello, {bot_name}!')
 
@@ -58,9 +60,9 @@ async def load_prompt(bot) -> None:
         m = await bot.fetch_target(author)
         if m:
             if (read := open_loader_cache.read()) != '':
-                await m.send_direct_message(m.parent.locale.t('error.loader.load.failed', detail=read))
+                await m.send_direct_message(m.parent.locale.t('loader.load.failed', detail=read))
             else:
-                await m.send_direct_message(m.parent.locale.t('error.loader.load.success'))
+                await m.send_direct_message(m.parent.locale.t('loader.load.success'))
             open_loader_cache.close()
             open_author_cache.close()
             os.remove(author_cache)

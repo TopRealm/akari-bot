@@ -14,13 +14,14 @@ from core.logger import Logger
 from core.parser.command import CommandParser
 from core.tos import warn_target
 from core.types import Module
+from core.utils.i18n import Locale
 from core.utils.message import remove_duplicate_space
 from database import BotDBUtil
 
 enable_tos = Config('enable_tos')
 enable_analytics = Config('enable_analytics')
-bug_report_targets = Config('bug_report_targets')
-
+lang = Config('locale')
+report_targets = Config('report_targets')
 TOS_TEMPBAN_TIME = Config('tos_temp_ban_time', 300)
 
 counter_same = {}  # 命令使用次数计数（重复使用单一命令）
@@ -60,7 +61,7 @@ async def tos_msg_counter(msg: Bot.MessageSession, command: str):
     else:
         same['count'] += 1
         if same['count'] > 5:
-            raise AbuseWarning(msg.locale.t("tos.reason.cooldown"))
+            raise AbuseWarning(msg.locale.t("tos.message.reason.cooldown"))
     all_ = counter_all.get(msg.target.sender_id)
     if not all_ or datetime.now().timestamp() - all_['ts'] > 300:  # 检查是否滥用（5分钟内使用20条命令）
         counter_all[msg.target.sender_id] = {'count': 1,
@@ -68,7 +69,7 @@ async def tos_msg_counter(msg: Bot.MessageSession, command: str):
     else:
         all_['count'] += 1
         if all_['count'] > 10:
-            raise AbuseWarning(msg.locale.t("tos.reason.abuse"))
+            raise AbuseWarning(msg.locale.t("tos.message.reason.abuse"))
 
 
 async def temp_ban_check(msg: Bot.MessageSession):
@@ -81,12 +82,12 @@ async def temp_ban_check(msg: Bot.MessageSession):
         if ban_time < TOS_TEMPBAN_TIME:
             if is_temp_banned['count'] < 2:
                 is_temp_banned['count'] += 1
-                await msg.finish(msg.locale.t("tos.tempbanned", ban_time=int(TOS_TEMPBAN_TIME - ban_time)))
+                await msg.finish(msg.locale.t("tos.message.tempbanned", ban_time=int(TOS_TEMPBAN_TIME - ban_time)))
             elif is_temp_banned['count'] <= 5:
                 is_temp_banned['count'] += 1
-                await msg.finish(msg.locale.t("tos.tempbanned.warning", ban_time=int(TOS_TEMPBAN_TIME - ban_time)))
+                await msg.finish(msg.locale.t("tos.message.tempbanned.warning", ban_time=int(TOS_TEMPBAN_TIME - ban_time)))
             else:
-                raise AbuseWarning(msg.locale.t("tos.reason.ignore"))
+                raise AbuseWarning(msg.locale.t("tos.message.reason.ignore"))
 
 
 async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, prefix: list = None,
@@ -100,6 +101,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
     :return: 无返回
     """
     identify_str = f'[{msg.target.sender_id}{f" ({msg.target.target_id})" if msg.target.target_from != msg.target.sender_from else ""}]'
+    limited_action = 'touch' if Config('use_shamrock') else 'poke'
     # Logger.info(f'{identify_str} -> [Bot]: {display}')
     try:
         asyncio.create_task(MessageTaskManager.check(msg))
@@ -112,12 +114,16 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
         if msg.target.sender_info.query.isInBlockList and not msg.target.sender_info.query.isInAllowList and not msg.target.sender_info.query.isSuperUser \
                 or msg.target.sender_id in msg.options.get('ban', []):
             return
-        msg.prefixes = command_prefix.copy()  # 复制一份作为基础命令前缀
+
         get_custom_alias = msg.options.get('command_alias')
+        command_split: list = msg.trigger_msg.split(' ')  # 切割消息
         if get_custom_alias:
-            get_display_alias = get_custom_alias.get(msg.trigger_msg)
+            get_display_alias = get_custom_alias.get(command_split[0])
             if get_display_alias:
-                msg.trigger_msg = get_display_alias
+                command_split[0] = get_display_alias # 将自定义别名替换为命令
+        msg.trigger_msg = ' '.join(command_split) # 重新连接消息
+
+        msg.prefixes = command_prefix.copy()  # 复制一份作为基础命令前缀
         get_custom_prefix = msg.options.get('command_prefix')  # 获取自定义命令前缀
         if get_custom_prefix:
             msg.prefixes = get_custom_prefix + msg.prefixes  # 混合
@@ -156,19 +162,19 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
             else:
                 return await msg.send_message(msg.locale.t("parser.command.running.prompt"))
 
-            no_alias = False
+            not_alias = False
             for moduleName in modules:
                 if command.startswith(moduleName):  # 判断此命令是否匹配一个实际的模块
-                    no_alias = True
-            if not no_alias:
+                    not_alias = True
+            if not not_alias:
                 for um in current_unloaded_modules:
                     if command.startswith(um):
-                        no_alias = True
-            if not no_alias:
+                        not_alias = True
+            if not not_alias:
                 for em in err_modules:
                     if command.startswith(em):
-                        no_alias = True
-            if not no_alias:  # 如果没有匹配到模块，则判断是否匹配命令别名
+                        not_alias = True
+            if not not_alias:  # 如果没有匹配到模块，则判断是否匹配命令别名
                 alias_list = []
                 for alias in ModulesManager.modules_aliases:
                     if command.startswith(alias) and not command.startswith(ModulesManager.modules_aliases[alias]):
@@ -180,17 +186,9 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
             msg.trigger_msg = command  # 触发该命令的消息，去除消息前缀
             command_first_word = command_split[0].lower()
 
-            sudo = False
             mute = False
             if command_first_word == 'mute':
                 mute = True
-            if command_first_word == 'sudo':
-                if not msg.check_super_user():
-                    return await msg.send_message(msg.locale.t("parser.superuser.permission.denied"))
-                sudo = True
-                del command_split[0]
-                command_first_word = command_split[0].lower()
-                msg.trigger_msg = ' '.join(command_split)
 
             in_mute = msg.muted
             if in_mute and not mute:
@@ -225,7 +223,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                             await msg.send_message(msg.locale.t("parser.superuser.permission.denied"))
                             return
                     elif not module.base:
-                        if command_first_word not in msg.enabled_modules and not sudo and require_enable_modules:  # 若未开启
+                        if command_first_word not in msg.enabled_modules and require_enable_modules:  # 若未开启
                             await msg.send_message(
                                 msg.locale.t("parser.module.disabled.prompt", module=command_first_word,
                                              prefix=msg.prefixes[0]))
@@ -345,7 +343,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                 except SendMessageFailed:
                     if msg.target.target_from == 'QQ|Group':
                         await msg.call_api('send_group_msg', group_id=msg.session.target,
-                                           message=f'[CQ:poke,qq={Config("qq_account")}]')
+                                           message=f'[CQ:{limited_action},qq={Config("qq_account")}]')
                     await msg.send_message(msg.locale.t("error.message.limited"))
 
                 except FinishedException as e:
@@ -378,14 +376,14 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                     if Config('bug_report_url'):
                         errmsg += '\n' + msg.locale.t('error.prompt.address', url=str(Url(Config('bug_report_url'))))
                     await msg.send_message(errmsg)
-                    if bug_report_targets:
-                        for target in bug_report_targets:
+                    if report_targets:
+                        for target in report_targets:
                             if f := await Bot.FetchTarget.fetch_target(target):
                                 await f.send_direct_message(
-                                    msg.locale.t('error.message.report', module=msg.trigger_msg) + tb)
-            if command_first_word in current_unloaded_modules and msg.check_super_user():
+                                    Locale(lang).t('error.message.report', module=msg.trigger_msg) + tb, disable_secret_check=True)
+            if command_first_word in current_unloaded_modules:
                 await msg.send_message(
-                    msg.locale.t('parser.module.unloaded', module=command_first_word, prefix=msg.prefixes[0]))
+                        msg.locale.t('parser.module.unloaded', module=command_first_word))
             elif command_first_word in err_modules:
                 await msg.send_message(msg.locale.t('error.module.unloaded', module=command_first_word))
 
@@ -491,18 +489,18 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                 errmsg += '\n' + msg.locale.t('error.prompt.address',
                                                               url=str(Url(Config('bug_report_url'))))
                             await msg.send_message(errmsg)
-                            if bug_report_targets:
-                                for target in bug_report_targets:
+                            if report_targets:
+                                for target in report_targets:
                                     if f := await Bot.FetchTarget.fetch_target(target):
                                         await f.send_direct_message(
-                                            msg.locale.t('error.message.report', module=msg.trigger_msg) + tb)
+                                            Locale(lang).t('error.message.report', module=msg.trigger_msg) + tb, disable_secret_check=True)
                         finally:
                             ExecutionLockList.remove(msg)
 
             except SendMessageFailed:
                 if msg.target.target_from == 'QQ|Group':
                     await msg.call_api('send_group_msg', group_id=msg.session.target,
-                                       message=f'[CQ:poke,qq={Config("qq_account")}]')
+                                       message=f'[CQ:{limited_action},qq={Config("qq_account")}]')
                 await msg.send_message((msg.locale.t("error.message.limited")))
                 continue
         return msg
