@@ -24,7 +24,8 @@ async def bot_version(msg: Bot.MessageSession):
     if Info.version:
         commit = Info.version[0:6]
         repo_url = subprocess.check_output(['git', 'config', '--get', 'remote.origin.url']).decode().strip()
-        commit_url = f"{repo_url}/commit/{commit}"
+        branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).decode().strip()
+        commit_url = f"{repo_url}/commit/{branch}/{commit}"
         await msg.finish(msg.locale.t('core.message.version', commit=commit, commit_url=commit_url))
     else:
         await msg.finish(msg.locale.t('core.message.version.unknown'))
