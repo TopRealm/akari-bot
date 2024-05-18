@@ -51,11 +51,78 @@ class MessageSession(MessageSessionT):
         self.sent.append(message_chain)
         send: list[nio.RoomSendResponse] = []
         for x in message_chain.as_sendable(self, embed=False):
-            reply_to = None
-            reply_to_user = None
-            if quote and len(send) == 0:
-                reply_to = self.target.message_id
-                reply_to_user = self.session.sender
+
+            async def sendMsg(content):
+                reply_to = None
+                reply_to_user = None
+                if quote and len(sentMessages) == 0:
+                    reply_to = self.target.message_id
+                    reply_to_user = self.session.sender
+
+                if reply_to:
+                    # rich reply
+                    content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+                    # mention target user
+                    content["m.mentions"] = {"user_ids": [reply_to_user]}
+                    if content["msgtype"] == "m.notice" and self.session.message:
+                        # https://spec.matrix.org/v1.9/client-server-api/#fallbacks-for-rich-replies
+                        # todo: standardize fallback for m.image, m.video, m.audio, and m.file
+                        reply_to_type = self.session.message["content"]["msgtype"]
+                        content["body"] = (f">{' *' if reply_to_type == 'm.emote' else ''} <{self.session.sender}> {
+                            self.session.message['content']['body']}\n\n{x.text}")
+                        content["format"] = "org.matrix.custom.html"
+                        html_text = x.text
+                        html_text = html_text.replace("<", "&lt;").replace(">", "&gt;")
+                        html_text = html_text.replace("\n", "<br />")
+                        content["formatted_body"] = (
+                            f"<mx-reply><blockquote><a href=\"https://matrix.to/#/{
+                                self.session.target}/{reply_to}?via={homeserver_host}\">In reply to</a>{
+                                ' *' if reply_to_type == 'm.emote' else ''} <a href=\"https://matrix.to/#/{
+                                self.session.sender}\">{
+                                self.session.sender}</a><br/>{
+                                self.session.message['content']['body']}</blockquote></mx-reply>{html_text}")
+
+                if (
+                    self.session.message
+                    and "m.relates_to" in self.session.message["content"]
+                ):
+                    relates_to = self.session.message["content"]["m.relates_to"]
+                    if (
+                        "rel_type" in relates_to
+                        and relates_to["rel_type"] == "m.thread"
+                    ):
+                        # replying in thread
+                        thread_root = relates_to["event_id"]
+                        if reply_to:
+                            # reply to msg replying in thread
+                            content["m.relates_to"] = {
+                                "rel_type": "m.thread",
+                                "event_id": thread_root,
+                                "is_falling_back": False,
+                                "m.in_reply_to": {"event_id": reply_to},
+                            }
+                            pass
+                        else:
+                            # reply in thread
+                            content["m.relates_to"] = {
+                                "rel_type": "m.thread",
+                                "event_id": thread_root,
+                                "is_falling_back": True,
+                                "m.in_reply_to": {"event_id": self.target.message_id},
+                            }
+
+                resp = await bot.room_send(
+                    self.session.target,
+                    "m.room.message",
+                    content,
+                    ignore_unverified_devices=True,
+                )
+                if "status_code" in resp.__dict__:
+                    Logger.error(f"Error in sending message: {str(resp)}")
+                else:
+                    sentMessages.append(resp)
+                reply_to = None
+                reply_to_user = None
 
             if isinstance(x, Plain):
                 content = {
@@ -96,7 +163,8 @@ class MessageSession(MessageSessionT):
                             encrypt=encrypted,
                             filesize=filesize)
                         Logger.info(
-                            f"Uploaded image {filename} to media repo, uri: {upload.content_uri}, mime: {mimetype}, encrypted: {encrypted}")
+                            f"Uploaded image {filename} to media repo, uri: {
+                                upload.content_uri}, mime: {mimetype}, encrypted: {encrypted}")
                         # todo: provide more image info
                         if not encrypted:
                             content = {
@@ -137,9 +205,10 @@ class MessageSession(MessageSessionT):
                         content_type=mimetype,
                         filename=filename,
                         encrypt=encrypted,
-                        filesize=filesize)
-                Logger.info(
-                    f"Uploaded audio {filename} to media repo, uri: {upload.content_uri}, mime: {mimetype}, encrypted: {encrypted}")
+                        filesize=filesize,
+                    )
+                Logger.info(f"Uploaded audio {filename} to media repo, uri: {
+                    upload.content_uri}, mime: {mimetype}, encrypted: {encrypted}")
                 # todo: provide audio duration info
                 if not encrypted:
                     content = {
@@ -361,6 +430,7 @@ class FetchTarget(FetchedTargetT):
                             msgchain = MessageChain([Plain(x.parent.locale.t(message, **kwargs))])
                         else:
                             msgchain = MessageChain([Plain(message)])
+                    msgchain = MessageChain(msgchain)
                     await x.send_direct_message(msgchain)
                     if enable_analytics:
                         BotDBUtil.Analytics(x).add('', module_name, 'schedule')
@@ -378,6 +448,7 @@ class FetchTarget(FetchedTargetT):
                                 msgchain = MessageChain([Plain(fetch.parent.locale.t(message, **kwargs))])
                             else:
                                 msgchain = MessageChain([Plain(message)])
+                        msgchain = MessageChain(msgchain)
                         await fetch.send_direct_message(msgchain)
                         if enable_analytics:
                             BotDBUtil.Analytics(fetch).add('', module_name, 'schedule')
