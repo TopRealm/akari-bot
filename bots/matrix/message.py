@@ -336,9 +336,11 @@ class MessageSession(MessageSessionT):
 
     async def delete(self):
         try:
-            await bot.room_redact(self.session.target, self.session.message['event_id'])
+            await bot.room_redact(self.session.target, self.session.message["event_id"])
+            return True
         except Exception:
             Logger.error(traceback.format_exc())
+            return False
 
     sendMessage = send_message
     asDisplay = as_display
