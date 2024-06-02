@@ -89,10 +89,20 @@ async def rc_qq(msg: MessageSession, wiki_url):
                     log = f"{user} {x['logtype']} {x['logaction']} {title}"
                 t.append(log)
                 params = x['logparams']
+                if 'suppressredirect' in params:
+                    t.append(msg.locale.t('wiki.message.rc.params.suppress_redirect'))
+                if 'oldgroups' and 'newgroups' in params:
+                    t.append(compare_groups(params['oldgroups'], params['newgroups']))
+                if 'description' in params:
+                    t.append(params['description'])
                 if 'duration' in params:
-                    t.append(msg.locale.t('wiki.message.rc.qq.duration') + params['duration'])
+                    t.append(msg.locale.t('wiki.message.rc.params.duration') + params['duration'])
+                if 'flags' in params:
+                    t.append(', '.join(params['flags']))
+                if 'tag' in params:
+                    t.append(msg.locale.t('wiki.message.rc.params.tag') + params['tag'])
                 if 'target_title' in params:
-                    t.append(msg.locale.t('wiki.message.rc.qq.target_title') + params['target_title'])
+                    t.append(msg.locale.t('wiki.message.rc.params.target_title') + params['target_title'])
                 if x['comment']:
                     comment = x['comment']
                     t.append(comment)
@@ -112,3 +122,10 @@ async def rc_qq(msg: MessageSession, wiki_url):
             })
     Logger.debug(nodelist)
     return nodelist
+
+def compare_groups(old_groups, new_groups):
+    added_groups = [group for group in new_groups if group not in old_groups]
+    removed_groups = [group for group in old_groups if group not in new_groups]
+    added = "+" + ", ".join(map(str, added_groups)) if added_groups else ""
+    removed = "-" + ", ".join(map(str, removed_groups)) if removed_groups else ""
+    return f"{added} {removed}" if added and removed else f"{added}{removed}"
