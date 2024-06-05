@@ -156,6 +156,23 @@ def get_diff(diff):
     return level
 
 
+def calc_dxscore(dxscore, dxscore_max):
+    percentage = (dxscore / dxscore_max) * 100
+    if 0.00 <= percentage < 85.00:
+        stars = ""
+    elif 85.00 <= percentage < 90.00:
+        stars = "✦"
+    elif 90.00 <= percentage < 93.00:
+        stars = "✦✦"
+    elif 93.00 <= percentage < 95.00:
+        stars = "✦✦✦"
+    elif 95.00 <= percentage < 97.00:
+        stars = "✦✦✦✦"
+    elif 97.00 <= percentage <= 100.00:
+        stars = "✦✦✦✦✦"
+    return stars:
+
+
 async def generate_best50_text(msg, payload):
     data = await get_record(msg, payload)
     dx_charts = data["charts"]["dx"]
@@ -182,6 +199,7 @@ async def generate_best50_text(msg, payload):
             sync_conversion.get(chart["fs"], ""),
             chart["ds"],
             chart["ra"],
+            chart
             title
         )
         html += line
