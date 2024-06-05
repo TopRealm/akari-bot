@@ -156,6 +156,34 @@ def get_diff(diff):
     return level
 
 
+async def get_dxscore_list(sid):
+    dxscore_list = []
+    music = (await total_list.get()).by_id(sid)
+    for entry in music:
+        if entry['id'] == sid:
+            for chart in entry['charts']:
+                dxscore = sum(chart['notes']) * 3
+                dxscore_list.append(dxscore)
+            return dxscore_list
+
+
+def calc_dxstar(dxscore, dxscore_max):
+    percentage = (dxscore / dxscore_max) * 100
+    if 0.00 <= percentage < 85.00:
+        stars = ""
+    elif 85.00 <= percentage < 90.00:
+        stars = "✦"
+    elif 90.00 <= percentage < 93.00:
+        stars = "✦✦"
+    elif 93.00 <= percentage < 95.00:
+        stars = "✦✦✦"
+    elif 95.00 <= percentage < 97.00:
+        stars = "✦✦✦✦"
+    elif 97.00 <= percentage <= 100.00:
+        stars = "✦✦✦✦✦"
+    return stars
+
+
 async def generate_best50_text(msg, payload):
     data = await get_record(msg, payload)
     dx_charts = data["charts"]["dx"]
@@ -166,13 +194,15 @@ async def generate_best50_text(msg, payload):
     html += f"Standard ({sum(chart['ra'] for chart in sd_charts)})\n"
     for idx, chart in enumerate(sd_charts, start=1):
         level = ''.join(filter(str.isalpha, chart["level_label"]))[:3].upper()
+        dxscore_max = get_dxscore_list(chart["song_id"])[get_diff(chart["level_label"])]
+        dxstar = calc_dxstar(chart["dxScore"], dxscore_max)
         rank = next(
             # 根据成绩获得等级
             rank for interval, rank in score_to_rank.items() if interval[0] <= chart["achievements"] < interval[1]
         )
         title = chart["title"]
         title = title[:17] + '...' if len(title) > 20 else title
-        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:<20}\n".format(
+        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:>4}/{:<4} {:<5} {:<20}\n".format( 
             idx,
             chart["song_id"],
             level,
@@ -182,19 +212,24 @@ async def generate_best50_text(msg, payload):
             sync_conversion.get(chart["fs"], ""),
             chart["ds"],
             chart["ra"],
+            chart["dxScore"],
+            dxscore_max,
+            dxstar,
             title
         )
         html += line
     html += f"New ({sum(chart['ra'] for chart in dx_charts)})\n"
-    for idx, chart in enumerate(dx_charts, start=1):
+    for idx, chart in enumerate(sd_charts, start=1):
         level = ''.join(filter(str.isalpha, chart["level_label"]))[:3].upper()
+        dxscore_max = get_dxscore_list(chart["song_id"])[get_diff(chart["level_label"])]
+        dxstar = calc_dxstar(chart["dxScore"], dxscore_max)
         rank = next(
             # 根据成绩获得等级
             rank for interval, rank in score_to_rank.items() if interval[0] <= chart["achievements"] < interval[1]
         )
         title = chart["title"]
         title = title[:17] + '...' if len(title) > 20 else title
-        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:<20}\n".format(
+        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:>4}/{:<4} {:<5} {:<20}\n".format( 
             idx,
             chart["song_id"],
             level,
@@ -204,6 +239,9 @@ async def generate_best50_text(msg, payload):
             sync_conversion.get(chart["fs"], ""),
             chart["ds"],
             chart["ra"],
+            chart["dxScore"],
+            dxscore_max,
+            dxstar,
             title
         )
         html += line
@@ -262,6 +300,7 @@ async def get_player_score(msg, payload, input_id):
     verlist = res["verlist"]
 
     music = (await total_list.get()).by_id(input_id)
+    dxscore_list = await get_dxscore_list(input_id)
     level_scores = {level: [] for level in range(len(music['level']))}  # 获取歌曲难度列表
 
     for entry in verlist:
@@ -270,30 +309,36 @@ async def get_player_score(msg, payload, input_id):
         fc = entry["fc"]
         fs = entry["fs"]
         level_index = entry["level_index"]
+        dx_score = entry["dxScore"]
 
         if str(sid) == input_id:
             score_rank = next(
                 # 根据成绩获得等级
                 rank for interval, rank in score_to_rank.items() if interval[0] <= achievements < interval[1]
             )
-
             combo_rank = combo_conversion.get(fc, "")  # Combo字典转换
             sync_rank = sync_conversion.get(fs, "")  # Sync字典转换
 
-            level_scores[level_index].append((diffs[level_index], achievements, score_rank, combo_rank, sync_rank))
+            level_scores[level_index].append(
+            (diffs[level_index], achievements, score_rank, combo_rank, sync_rank, dx_score)
+            )
 
     output_lines = []
     for level, scores in level_scores.items():  # 使用循环输出格式化文本
         if scores:
             output_lines.append(f"{diffs[level]} {music['level'][level]}")  # 难度字典转换
             for score in scores:
-                level, achievements, score_rank, combo_rank, sync_rank = score
+                level, achievements, score_rank, combo_rank, sync_rank, dx_score = score
                 entry_output = f"{achievements:.4f} {score_rank}"
                 if combo_rank and sync_rank:
                     entry_output += f" {combo_rank} {sync_rank}"
                 elif combo_rank or sync_rank:
                     entry_output += f" {combo_rank}{sync_rank}"
                 output_lines.append(entry_output)
+            dx_stars = calc_dxstar(dx_score, dxscore_list[level])
+            entry_dx_output = f"{dx_score}/{dxscore_list[level]}"
+            if dx_stars:
+                entry_dx_output += f" {dx_stars}"
         else:
             output_lines.append(
                 f"{diffs[level]} {music['level'][level]}\n{msg.locale.t('maimai.message.info.no_record')}")
@@ -553,11 +598,15 @@ async def get_plate_process(msg, payload, plate):
         song_remain_expert + song_remain_master + song_remain_remaster
 
     prompt = [msg.locale.t('maimai.message.plate.prompt', plate=plate)]
-    prompt.append(msg.locale.t('maimai.message.plate.basic', song_remain=len(song_remain_basic)))
-    prompt.append(msg.locale.t('maimai.message.plate.advanced', song_remain=len(song_remain_advanced)))
-    prompt.append(msg.locale.t('maimai.message.plate.expert', song_remain=len(song_remain_expert)))
-    prompt.append(msg.locale.t('maimai.message.plate.master', song_remain=len(song_remain_master)))
-    if version in ['舞', '覇']:  # 霸者和舞牌需要Re:MASTER难度
+    if song_remain_basic:
+        prompt.append(msg.locale.t('maimai.message.plate.basic', song_remain=len(song_remain_basic)))
+    if song_remain_advanced:
+        prompt.append(msg.locale.t('maimai.message.plate.advanced', song_remain=len(song_remain_advanced)))
+    if song_remain_expert:
+        prompt.append(msg.locale.t('maimai.message.plate.expert', song_remain=len(song_remain_expert)))
+    if song_remain_master:
+        prompt.append(msg.locale.t('maimai.message.plate.master', song_remain=len(song_remain_master)))
+    if version in ['舞', '覇'] and song_remain_remaster:  # 霸者和舞牌需要Re:MASTER难度
         prompt.append(msg.locale.t('maimai.message.plate.remaster', song_remain=len(song_remain_remaster)))
 
     await msg.send_message('\n'.join(prompt))
@@ -573,7 +622,7 @@ async def get_plate_process(msg, payload, plate):
                 if [int(s[0]), s[-2]] in song_record:  # 显示剩余13+以上歌曲信息
                     record_index = song_record.index([int(s[0]), s[-2]])
                     if goal in ['將', '者']:
-                        self_record = f"{str("{:.4f}".format(verlist[record_index]['achievements']))}%"
+                        self_record = f"{'{:.4f}'.format(verlist[record_index]['achievements'])}%"
                     elif goal in ['極', '神']:
                         if verlist[record_index]['fc']:
                             self_record = comboRank[combo_rank.index(verlist[record_index]['fc'])]
