@@ -61,6 +61,7 @@ class Chart(Dict):
     touch: Optional[int] = None
     brk: Optional[int] = None
     charter: Optional[int] = None
+    dxscore: Optional[int] = None
 
     def __getattribute__(self, item):
         if item == 'tap':
@@ -75,6 +76,8 @@ class Chart(Dict):
             return self['notes'][-1]
         elif item == 'charter':
             return self['charter']
+        elif item == 'dxscore':
+            return sum(self['notes']) * 3
         return super().__getattribute__(item)
 
 
