@@ -26,7 +26,7 @@ m = module('module',
             'enable all {{core.help.module.enable_all}}',
             'disable <module>... {{core.help.module.disable}}',
             'disable all {{core.help.module.disable_all}}',
-            'reload [-f] <module> ...',
+            'reload <module> ...',
             'load <module> ...',
             'unload <module> ...',
             'list [legacy] {{core.help.module.list}}'],
@@ -44,7 +44,7 @@ async def _(msg: Bot.MessageSession):
             'enable all [-g] {{core.help.module.enable_all}}',
             'disable [-g]  <module> ... {{core.help.module.disable}}',
             'disable all [-g] {{core.help.module.disable_all}}',
-            'reload [-f] <module> ...',
+            'reload <module> ...',
             'load <module> ...',
             'unload <module> ...',
             'list [legacy] {{core.help.module.list}}'],
@@ -188,9 +188,7 @@ async def config_modules(msg: Bot.MessageSession):
 
             for module_ in wait_config_list:
                 base_module = False
-                if '-f' in msg.parsed_msg and msg.parsed_msg['-f']:
-                    msglist.append(module_reload(module_, []))
-                elif module_ not in modules_:
+                if module_ not in modules_:
                     msglist.append(msg.locale.t("core.message.module.reload.not_found", module=module_))
                 else:
                     extra_reload_modules = ModulesManager.search_related_module(module_, False)
@@ -471,13 +469,14 @@ async def _(msg: Bot.MessageSession):
                     module_list[x].hide or module_list[x].required_superuser or module_list[x].required_base_superuser):
                 essential.append(module_list[x].bind_prefix)
         help_msg.append(' | '.join(essential))
-        help_msg.append(msg.locale.t("core.message.help.legacy.external"))
         module_ = []
         for x in module_list:
             if x in target_enabled_list and not (
                     module_list[x].hide or module_list[x].required_superuser or module_list[x].required_base_superuser):
                 module_.append(x)
-        help_msg.append(' | '.join(module_))
+        if module_:
+            help_msg.append(msg.locale.t("core.message.help.legacy.external"))
+            help_msg.append(' | '.join(module_))
         help_msg.append(
             msg.locale.t(
                 "core.message.help.legacy.more_information",
@@ -561,7 +560,6 @@ async def modules_help(msg: Bot.MessageSession, legacy):
         except Exception:
             traceback.print_exc()
     if legacy_help:
-        help_msg = [msg.locale.t("core.message.help.legacy.availables")]
         module_ = []
         for x in module_list:
             if x[0] == '_':
@@ -570,7 +568,11 @@ async def modules_help(msg: Bot.MessageSession, legacy):
                     module_list[x].required_superuser or module_list[x].required_base_superuser:
                 continue
             module_.append(module_list[x].bind_prefix)
-        help_msg.append(' | '.join(module_))
+        if module_:
+            help_msg = [msg.locale.t("core.message.help.legacy.availables")]
+            help_msg.append(' | '.join(module_))
+        else:
+            help_msg = [msg.locale.t("core.message.help.legacy.availables.none")]
         help_msg.append(
             msg.locale.t(
                 "core.message.module.list.prompt",

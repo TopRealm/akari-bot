@@ -198,8 +198,10 @@ class MessageSession(MessageSessionT):
                         await bot.call_action('delete_msg', message_id=x['message_id'])
                 else:
                     await bot.call_action('delete_msg', message_id=self.session.message['message_id'])
+                return True
             except Exception:
                 Logger.error(traceback.format_exc())
+                return False
 
     async def get_text_channel_list(self):
         match_guild = re.match(r'(.*)\|(.*)', self.session.target)
@@ -322,11 +324,14 @@ class FetchTarget(FetchTargetT):
                     Temp.data['waiting_for_send_group_message'].append({'fetch': fetch_, 'message': message,
                                                                         'i18n': i18n, 'kwargs': kwargs})
                 else:
-                    if i18n:
-                        await fetch_.send_direct_message(fetch_.parent.locale.t(message, **kwargs))
-
-                    else:
-                        await fetch_.send_direct_message(message)
+                    msgchain = message
+                    if isinstance(message, str):
+                        if i18n:
+                            msgchain = MessageChain([Plain(x.parent.locale.t(message, **kwargs))])
+                        else:
+                            msgchain = MessageChain([Plain(message)])
+                    msgchain = MessageChain(msgchain)
+                    await x.send_direct_message(msgchain)
                     if _tsk:
                         _tsk = []
                 if enable_analytics:

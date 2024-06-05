@@ -18,8 +18,8 @@ bots_required_configs = {
     'aiocqhttp': [
         'qq_host',
         'qq_account'],
-    'discord': ['dc_token'],
-    'aiogram': ['tg_token'],
+    'discord': ['discord_token'],
+    'aiogram': ['telegram_token'],
     'kook': ['kook_token'],
     'matrix': [
         'matrix_homeserver',
@@ -44,7 +44,7 @@ def enqueue_output(out, queue):
 
 
 def init_bot():
-    base_superuser = Config('base_superuser', cfg_type = (str, list))
+    base_superuser = Config('base_superuser', cfg_type=(str, list))
     if base_superuser:
         if isinstance(base_superuser, str):
             base_superuser = [base_superuser]

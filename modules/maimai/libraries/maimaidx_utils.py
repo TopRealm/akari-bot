@@ -10,7 +10,6 @@ from .maimaidx_apidata import get_record, get_plate
 from .maimaidx_music import TotalList
 
 SONGS_PER_PAGE = 20
-JINGLEBELL_SONG_ID = 70
 
 assets_path = os.path.abspath('./assets/maimai')
 total_list = TotalList()
@@ -289,7 +288,7 @@ async def get_player_score(msg, payload, input_id):
             output_lines.append(f"{diffs[level]} {music['level'][level]}")  # 难度字典转换
             for score in scores:
                 level, achievements, score_rank, combo_rank, sync_rank = score
-                entry_output = f"{achievements} {score_rank}"
+                entry_output = f"{achievements:.4f} {score_rank}"
                 if combo_rank and sync_rank:
                     entry_output += f" {combo_rank} {sync_rank}"
                 elif combo_rank or sync_rank:
@@ -357,7 +356,7 @@ async def get_level_process(msg, payload, process, goal):
                 if [int(s[0]), s[-2]] in song_record:
                     record_index = song_record.index([int(s[0]), s[-2]])
                     if goal in scoreRank:
-                        self_record = str(verlist[record_index]['achievements']) + '%'
+                        self_record = str("{:.4f}".format(verlist[record_index]['achievements'])) + '%'
                     elif goal in comboRank:
                         if verlist[record_index]['fc']:
                             self_record = comboRank[combo_rank.index(verlist[record_index]['fc'])]
@@ -393,7 +392,7 @@ async def get_score_list(msg, payload, level, page):
     for i, s in enumerate(sorted(song_list, key=lambda i: i['achievements'], reverse=True)):  # 根据成绩排序
         if (page - 1) * SONGS_PER_PAGE <= i < page * SONGS_PER_PAGE:
             music = (await total_list.get()).by_id(str(s['id']))
-            output = f"{music.id}\u200B. {music.title}{' (DX)' if music.type == 'DX' else ''} {diffs[s['level_index']]} {music.ds[s['level_index']]} {s['achievements']}%"
+            output = f"{music.id}\u200B. {music.title}{' (DX)' if music.type == 'DX' else ''} {diffs[s['level_index']]} {music.ds[s['level_index']]} {s['achievements']:.4f}%"
             if s["fc"] and s["fs"]:
                 output += f" {combo_conversion.get(s['fc'], '')} {sync_conversion.get(s['fs'], '')}"
             elif s["fc"] or s["fs"]:
@@ -527,13 +526,28 @@ async def get_plate_process(msg, payload, plate):
             song_remain_difficult.append([music.id, music.title, diffs[song[1]],
                                           music.ds[song[1]], song[1], music.type])
 
-    if version == '真':  # 真代歌曲不包含“​ジングルベル”
-        song_remain_basic = [music for music in song_remain_basic if music[0] != JINGLEBELL_SONG_ID]
-        song_remain_advanced = [music for music in song_remain_advanced if music[0] != JINGLEBELL_SONG_ID]
-        song_remain_expert = [music for music in song_remain_expert if music[0] != JINGLEBELL_SONG_ID]
-        song_remain_master = [music for music in song_remain_master if music[0] != JINGLEBELL_SONG_ID]
-        song_remain_remaster = [music for music in song_remain_remaster if music[0] != JINGLEBELL_SONG_ID]
-        song_remain_difficult = [music for music in song_remain_difficult if int(music[0]) != JINGLEBELL_SONG_ID]
+    if version == '真':
+        song_expect = [70]
+    elif version == '檄':
+        song_expect = [341]
+    elif version == '桃':
+        song_expect = [451, 455, 460]
+    elif version == '菫':
+        song_expect = [853]
+    elif version == '輝':
+        song_expect = [792]
+    elif version == '舞':
+        song_expect = [341, 451, 455, 460, 792, 853]
+    else:
+        song_expect = []
+
+    song_remain_basic = [music for music in song_remain_basic if music[0] not in song_expect]
+    song_remain_advanced = [music for music in song_remain_advanced if music[0] not in song_expect]
+    song_remain_expert = [music for music in song_remain_expert if music[0] not in song_expect]
+    song_remain_master = [music for music in song_remain_master if music[0] not in song_expect]
+    song_remain_remaster = [music for music in song_remain_remaster if music[0] not in song_expect]
+    song_remain_difficult = [music for music in song_remain_difficult if int(music[0]) not in song_expect]
+
 
     song_remain: list[list] = song_remain_basic + song_remain_advanced + \
         song_remain_expert + song_remain_master + song_remain_remaster
@@ -559,7 +573,7 @@ async def get_plate_process(msg, payload, plate):
                 if [int(s[0]), s[-2]] in song_record:  # 显示剩余13+以上歌曲信息
                     record_index = song_record.index([int(s[0]), s[-2]])
                     if goal in ['將', '者']:
-                        self_record = f"{str(verlist[record_index]['achievements'])}%"
+                        self_record = f"{str("{:.4f}".format(verlist[record_index]['achievements']))}%"
                     elif goal in ['極', '神']:
                         if verlist[record_index]['fc']:
                             self_record = comboRank[combo_rank.index(verlist[record_index]['fc'])]
@@ -584,7 +598,7 @@ async def get_plate_process(msg, payload, plate):
                 if [int(s[0]), s[-2]] in song_record:  # 显示剩余歌曲信息
                     record_index = song_record.index([int(s[0]), s[-2]])
                     if goal in ['將', '者']:
-                        self_record = str(verlist[record_index]['achievements']) + '%'
+                        self_record = str("{:.4f}".format(verlist[record_index]['achievements'])) + '%'
                     elif goal in ['極', '神']:
                         if verlist[record_index]['fc']:
                             self_record = comboRank[combo_rank.index(verlist[record_index]['fc'])]

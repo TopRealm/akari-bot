@@ -7,7 +7,7 @@ import aioconsole
 
 from bot import init_bot
 from config import Config
-from core.builtins import PrivateAssets, EnableDirtyWordCheck
+from core.builtins import PrivateAssets, EnableDirtyWordCheck, Url
 from core.console.message import MessageSession
 from core.extra.scheduler import load_extra_schedulers
 from core.logger import Logger
@@ -17,7 +17,7 @@ from core.utils.bot import init_async
 from database import BotDBUtil, session
 from database.tables import DBVersion
 
-if not Config('db_path', cfg_type = str):
+if not Config('db_path', cfg_type=str):
     raise AttributeError('Wait! You need to fill a valid database address into the config.toml "db_path" field\n'
                          'Example: \ndb_path = \"sqlite:///database/save.db\"\n'
                          '(Also you can fill in the above example directly,'
@@ -38,6 +38,7 @@ if (current_ver := int(query_dbver.value)) < (target_ver := BotDBUtil.database_v
     sys.exit()
 
 EnableDirtyWordCheck.status = True
+Url.disable_mm = True
 PrivateAssets.set(os.path.abspath(os.path.dirname(__file__) + '/assets'))
 
 

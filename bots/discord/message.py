@@ -147,8 +147,10 @@ class MessageSession(MessageSessionT):
     async def delete(self):
         try:
             await self.session.message.delete()
+            return True
         except Exception:
             Logger.error(traceback.format_exc())
+            return False
 
     sendMessage = send_message
     asDisplay = as_display
@@ -221,6 +223,7 @@ class FetchTarget(FetchTargetT):
                             msgchain = MessageChain([Plain(x.parent.locale.t(message, **kwargs))])
                         else:
                             msgchain = MessageChain([Plain(message)])
+                    msgchain = MessageChain(msgchain)
                     await x.send_direct_message(msgchain)
                     if enable_analytics:
                         BotDBUtil.Analytics(x).add('', module_name, 'schedule')
@@ -238,6 +241,7 @@ class FetchTarget(FetchTargetT):
                                 msgchain = MessageChain([Plain(fetch.parent.locale.t(message, **kwargs))])
                             else:
                                 msgchain = MessageChain([Plain(message)])
+                        msgchain = MessageChain(msgchain)
                         await fetch.send_direct_message(msgchain)
                         if enable_analytics:
                             BotDBUtil.Analytics(fetch).add('', module_name, 'schedule')
