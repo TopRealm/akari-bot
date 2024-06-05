@@ -156,7 +156,7 @@ def get_diff(diff):
     return level
 
 
-async def get_dxscore_max(sid):
+async def get_dxscore_list(sid):
     dxscore_list = []
     music = (await total_list.get()).by_id(sid)
     for entry in music:
@@ -167,7 +167,7 @@ async def get_dxscore_max(sid):
             return dxscore_list
 
 
-def calc_dxscore(dxscore, dxscore_max):
+def calc_dxstar(dxscore, dxscore_max):
     percentage = (dxscore / dxscore_max) * 100
     if 0.00 <= percentage < 85.00:
         stars = ""
@@ -194,13 +194,15 @@ async def generate_best50_text(msg, payload):
     html += f"Standard ({sum(chart['ra'] for chart in sd_charts)})\n"
     for idx, chart in enumerate(sd_charts, start=1):
         level = ''.join(filter(str.isalpha, chart["level_label"]))[:3].upper()
+        dxscore_max = get_dxscore_list(chart["song_id"])[get_diff(chart["level_label"])]
+        dxstar = calc_dxstar(chart["dxScore"], dxscore_max)
         rank = next(
             # 根据成绩获得等级
             rank for interval, rank in score_to_rank.items() if interval[0] <= chart["achievements"] < interval[1]
         )
         title = chart["title"]
         title = title[:17] + '...' if len(title) > 20 else title
-        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:<20}\n".format( 
+        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:>4}/{:<4} {:<5} {:<20}\n".format( 
             idx,
             chart["song_id"],
             level,
@@ -210,19 +212,24 @@ async def generate_best50_text(msg, payload):
             sync_conversion.get(chart["fs"], ""),
             chart["ds"],
             chart["ra"],
+            chart["dxScore"],
+            dxscore_max,
+            dxstar,
             title
         )
         html += line
     html += f"New ({sum(chart['ra'] for chart in dx_charts)})\n"
-    for idx, chart in enumerate(dx_charts, start=1):
+    for idx, chart in enumerate(sd_charts, start=1):
         level = ''.join(filter(str.isalpha, chart["level_label"]))[:3].upper()
+        dxscore_max = get_dxscore_list(chart["song_id"])[get_diff(chart["level_label"])]
+        dxstar = calc_dxstar(chart["dxScore"], dxscore_max)
         rank = next(
             # 根据成绩获得等级
             rank for interval, rank in score_to_rank.items() if interval[0] <= chart["achievements"] < interval[1]
         )
         title = chart["title"]
         title = title[:17] + '...' if len(title) > 20 else title
-        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:<20}\n".format(
+        line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:>4}/{:<4} {:<5} {:<20}\n".format( 
             idx,
             chart["song_id"],
             level,
@@ -232,6 +239,9 @@ async def generate_best50_text(msg, payload):
             sync_conversion.get(chart["fs"], ""),
             chart["ds"],
             chart["ra"],
+            chart["dxScore"],
+            dxscore_max,
+            dxstar,
             title
         )
         html += line
@@ -290,7 +300,7 @@ async def get_player_score(msg, payload, input_id):
     verlist = res["verlist"]
 
     music = (await total_list.get()).by_id(input_id)
-    dxscore_list = await get_dxscore_max(input_id)
+    dxscore_list = await get_dxscore_list(input_id)
     level_scores = {level: [] for level in range(len(music['level']))}  # 获取歌曲难度列表
 
     for entry in verlist:
@@ -325,7 +335,7 @@ async def get_player_score(msg, payload, input_id):
                 elif combo_rank or sync_rank:
                     entry_output += f" {combo_rank}{sync_rank}"
                 output_lines.append(entry_output)
-            dx_stars = calc_dxscore(dx_score, dxscore_list[level])
+            dx_stars = calc_dxstar(dx_score, dxscore_list[level])
             entry_dx_output = f"{dx_score}/{dxscore_list[level]}"
             if dx_stars:
                 entry_dx_output += f" {dx_stars}"
