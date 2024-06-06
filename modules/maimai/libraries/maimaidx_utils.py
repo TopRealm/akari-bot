@@ -1,5 +1,7 @@
 import os
+import random
 import ujson as json
+from collections import Counter
 from datetime import datetime
 
 from core.builtins import Plain
@@ -40,7 +42,8 @@ plate_conversion = {
     '宙': 'maimai でらっくす UNiVERSE',
     '星': 'maimai でらっくす UNiVERSE',
     '祭': 'maimai でらっくす FESTiVAL',
-    '祝': 'maimai でらっくす FESTiVAL'
+    '祝': 'maimai でらっくす FESTiVAL',
+    'bud': 'maimai でらっくす BUDDiES'
 }
 
 grade_conversion = {
@@ -77,6 +80,8 @@ grade_conversion = {
     'EXPERT中级': 'expert2',
     'EXPERT上級': 'expert3',
     'EXPERT上级': 'expert3',
+    'EXPERT超上級': 'expert4',
+    'EXPERT超上級': 'expert4',
     'MASTER初級': 'master1',
     'MASTER初级': 'master1',
     'MASTER中級': 'master2',
@@ -112,6 +117,7 @@ combo_conversion = {
 }
 
 sync_conversion = {
+    "sync": "SYNC",
     "fs": "FS",
     "fsp": "FS+",
     "fsd": "FDX",
@@ -547,8 +553,6 @@ async def get_plate_process(msg, payload, plate):
     song_remain_master = [music for music in song_remain_master if music[0] not in song_expect]
     song_remain_remaster = [music for music in song_remain_remaster if music[0] not in song_expect]
     song_remain_difficult = [music for music in song_remain_difficult if int(music[0]) not in song_expect]
-
-
     song_remain: list[list] = song_remain_basic + song_remain_advanced + \
         song_remain_expert + song_remain_master + song_remain_remaster
 
@@ -662,13 +666,28 @@ async def get_grade_info(msg, grade):
 
     else:
         base = grade_data["base"]
-        level = grade_data["level_index"]
-        music_data = (await total_list.get()).filter(ds=(base[0], base[1]), diff=[level])
+        if 'master' in grade_key:
+            music_data_master = (await total_list.get()).filter(ds=(base[0], base[1]), diff=[3])
+            music_data_remaster = (await total_list.get()).filter(ds=(base[0], base[1]), diff=[4])
+            music_data = music_data_master + music_data_remaster
 
-        for i in range(4):
-            music = music_data.random()
-            chart_info.append(
-                f"{music['id']}\u200B. {music['title']}{' (DX)' if music['type'] == 'DX' else ''} {diffs[level]} {music['level'][level]}")
+            for i in range(4):
+                music = random.choice(music_data)
+                if music in music_data_master and music in music_data_remaster:
+                    level = random.choice([3, 4])
+                elif music in music_data_remaster:
+                    level = 4
+                else:
+                    level = 3
+                chart_info.append(
+                    f"{music['id']}\u200B. {music['title']}{' (DX)' if music['type'] == 'DX' else ''} {diffs[level]} {music['level'][level]}")
+        else:
+            level = 2
+            music_data = (await total_list.get()).filter(ds=(base[0], base[1]), diff=[level])
+            for i in range(4):
+                music = music_data.random()
+                chart_info.append(
+                    f"{music['id']}\u200B. {music['title']}{' (DX)' if music['type'] == 'DX' else ''} {diffs[level]} {music['level'][level]}")
 
     content = '\n'.join(chart_info)
     condition_info = f"GREAT{condition[0]}/GOOD{condition[1]}/MISS{condition[2]}/CLEAR{condition[3]}"
