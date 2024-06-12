@@ -57,7 +57,7 @@ async def weekly_rss(fetch: Bot.FetchTarget, ctx: Bot.ModuleHookContext):
 ysarchives_weekly_rss = module('ysarchives_weekly_rss',
 
                              desc='{weekly_rss.help.ysarchives_weekly_rss.desc}',
-                             developers=['OasisAkari'], alias=['ysarchivesrss', 'ysarchivesrss', 'ysyrss'])
+                             developers=['Zorua_Fox'], alias=['ysarchivesrss', 'ysarchivesrss', 'ysyrss'])
 
 
 @ysarchives_weekly_rss.hook()
