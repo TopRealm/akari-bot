@@ -4,6 +4,7 @@ from core.queue import JobQueue
 from core.scheduler import CronTrigger, Scheduler
 from modules.weekly import get_weekly
 from modules.weekly.teahouse import get_rss as get_teahouse_rss
+from modules.weekly.ysarchives import get_rss as get_ysarchives_rss
 
 
 @Scheduler.scheduled_job(CronTrigger.from_crontab('0 9 * * MON'))
@@ -28,5 +29,5 @@ async def weekly_rss():
 async def weekly_rss():
     Logger.info('Checking ysarchives biweekly...')
 
-    weekly = await get_teahouse_rss()
+    weekly = await get_ysarchives_rss()
     await JobQueue.trigger_hook_all('ysarchives_weekly_rss', weekly=weekly)
