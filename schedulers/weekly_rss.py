@@ -25,7 +25,7 @@ async def weekly_rss():
     weekly = await get_teahouse_rss()
     await JobQueue.trigger_hook_all('teahouse_weekly_rss', weekly=weekly)
 
-@Scheduler.scheduled_job(trigger=CronTrigger.from_crontab('0 19 * * SUN'))
+@Scheduler.scheduled_job(trigger=CronTrigger.from_crontab('10 19 * * SUN'))
 async def weekly_rss():
     Logger.info('Checking ysarchives biweekly...')
 
