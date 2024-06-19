@@ -4,7 +4,7 @@ from core.builtins import Bot, Plain, Image as BImage
 from core.component import module
 from core.utils.image import msgchain2image
 from .dbutils import DivingProberBindInfoManager
-from .libraries.maimaidx_apidata import get_alias, get_info, search_by_alias, update_alias
+from .libraries.maimaidx_apidata import get_alias, get_info, search_by_alias, update_alias, update_cover
 from .libraries.maimaidx_best50 import generate
 from .libraries.maimaidx_music import TotalList
 from .libraries.maimaidx_utils import *
@@ -222,10 +222,8 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(msg.locale.t('maimai.message.unbind.success'))
 
 
-@mai.command('b50 [<username>] [-b] {{maimai.help.b50}}',
-             options_desc={'-b': '{maimai.help.option.b}'})
+@mai.command('b50 [<username>] {{maimai.help.b50}}')
 async def _(msg: Bot.MessageSession, username: str = None):
-    beta = True
     if not username:
         if msg.target.sender_from == "QQ":
             payload = {'qq': msg.session.sender, 'b50': True}
@@ -236,19 +234,11 @@ async def _(msg: Bot.MessageSession, username: str = None):
             payload = {'username': username, 'b50': True}
     else:
         payload = {'username': username, 'b50': True}
-
-    if not msg.parsed_msg.get('-b', False):
-        try:
-            img = await generate(msg, payload)
-            beta = False
-        except BaseException:
-            traceback.print_exc()
-        if not beta:
-            await msg.send_message('提示：由于源代码已停止维护，未来或将不再支持以此方式渲染成绩图，请谅解。')
-    if beta:
-        img = await generate_best50_text(msg, payload)
-    await msg.finish([BImage(img)])
-
+    try:
+        img = await generate(msg, payload)
+        await msg.finish([BImage(img)])
+    except BaseException:
+        traceback.print_exc()
 
 @mai.command('id <id> [<diff>] {{maimai.help.id}}')
 @mai.command('song <id_or_alias> [-d <diff>] {{maimai.help.song}}',
@@ -579,7 +569,7 @@ async def _(msg: Bot.MessageSession, base: float, score: float):
 
 @mai.command('update', required_superuser=True)
 async def _(msg: Bot.MessageSession):
-    if await update_alias():
+    if await update_alias() and await update_cover():
         await msg.finish(msg.locale.t("success"))
     else:
         await msg.finish(msg.locale.t("failed"))
