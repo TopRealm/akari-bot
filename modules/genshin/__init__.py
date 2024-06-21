@@ -8,8 +8,10 @@ from config import Config
 
 genshin_module = module('genshin_info', alias='yuanshen', desc='原神角色信息查询。', developers=['ZoruaFox'])
 
+username = Config('hoyolab_username')
+password = Config('hoyolab_password')
 # login with username and password
-cookies = genshin_py.Client.login_with_password(Config('hoyolab_username'), Config('hoyolab_password'))
+cookies = genshin_py.Client.login_with_password('{username}', '{password}')
 client = genshin_py.Client(cookies, lang="zh-cn")
 
 @genshin_module.handle('uid <number> {{genshin.help.uid}}')
