@@ -6,13 +6,13 @@ from core.utils.cooldown import CoolDown
 from config import Config
 
 
-genshin = module(alias='yuanshen', desc='原神角色信息查询。', developers=['ZoruaFox'])
+genshin_module = module('genshin', alias='yuanshen', desc='原神角色信息查询。', developers=['ZoruaFox'])
 
 # login with username and password
 cookies = genshin_py.Client.login_with_password(Config('hoyolab_username'), Config('hoyolab_password'))
 client = genshin_py.Client(cookies, lang="zh-cn")
 
-@genshin.handle('uid <number> {{genshin.help.uid}}')
+@genshin_module.handle('uid <number> {{genshin.help.uid}}')
 async def _(msg: Bot.MessageSession):
     data = await client.get_genshin_user(msg.parsed_msg['<number>'])
     player_level = {data.player.level}
