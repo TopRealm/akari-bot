@@ -1,7 +1,7 @@
 import asyncio
+import genshin as genshin_py
 from core.component import module
 from core.builtins import Bot
-from genshin import genshin_py
 from core.utils.cooldown import CoolDown
 from config import Config
 
@@ -12,7 +12,7 @@ client = genshin.Client
 
 # login with username and password
 cookies = client.login_with_password(Config('hoyolab_username'), Config('hoyolab_password'))
-client = genshin.Client(cookies, lang="zh-cn")
+client = genshin_py.Client(cookies, lang="zh-cn")
 
 @genshin.handle('uid <number> {{genshin.help.uid}}')
 async def _(msg: Bot.MessageSession):
