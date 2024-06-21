@@ -6,7 +6,7 @@ from core.utils.cooldown import CoolDown
 from config import Config
 
 
-genshin_module = module('genshin', alias='yuanshen', desc='原神角色信息查询。', developers=['ZoruaFox'])
+genshin_module = module('genshin_info', alias='yuanshen', desc='原神角色信息查询。', developers=['ZoruaFox'])
 
 # login with username and password
 cookies = genshin_py.Client.login_with_password(Config('hoyolab_username'), Config('hoyolab_password'))
