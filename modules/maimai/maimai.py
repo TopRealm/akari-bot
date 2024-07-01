@@ -3,6 +3,7 @@ import traceback
 from core.builtins import Bot, Plain, Image as BImage
 from core.component import module
 from core.logger import Logger
+from core.utils.text import isint
 from core.utils.image import msgchain2image
 from .dbutils import DivingProberBindInfoManager
 from .libraries.maimaidx_apidata import get_alias, get_info, search_by_alias, update_alias, update_cover
@@ -57,7 +58,7 @@ async def _(msg: Bot.MessageSession, constant: float, constant_max: float = None
 
     total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
     get_page = msg.parsed_msg.get('-p', False)
-    if get_page and get_page['<page>'].isdigit():
+    if get_page and isint(get_page['<page>']):
         page = max(min(int(get_page['<page>']), total_pages), 1)
     else:
         page = 1
@@ -92,10 +93,7 @@ async def _(msg: Bot.MessageSession, level: str, page: str = None):
                                music['level'][i],
                                music['type']))
     total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
-    if page and page.isdigit():
-        page = max(min(int(page), total_pages), 1)
-    else:
-        page = 1
+    page = max(min(int(page), total_pages), 1) if isint(page) else 1
     start_index = (page - 1) * SONGS_PER_PAGE
     end_index = page * SONGS_PER_PAGE
 
@@ -126,10 +124,7 @@ async def _(msg: Bot.MessageSession, page: str = None):
                            music['title'],
                            music['type']))
     total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
-    if page and page.isdigit():
-        page = max(min(int(page), total_pages), 1)
-    else:
-        page = 1
+    page = max(min(int(page), total_pages), 1) if isint(page) else 1
     start_index = (page - 1) * SONGS_PER_PAGE
     end_index = page * SONGS_PER_PAGE
 
@@ -161,10 +156,7 @@ async def _(msg: Bot.MessageSession, keyword: str, page: str = None):
     for music in sorted(data, key=lambda i: int(i['id'])):
         result_set.append((music['id'], music['title'], music['type']))
     total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
-    if page and page.isdigit():
-        page = max(min(int(page), total_pages), 1)
-    else:
-        page = 1
+    page = max(min(int(page), total_pages), 1) if isint(page) else 1
     start_index = (page - 1) * SONGS_PER_PAGE
     end_index = page * SONGS_PER_PAGE
 
@@ -184,7 +176,7 @@ async def _(msg: Bot.MessageSession, keyword: str, page: str = None):
 
 @mai.command('alias <sid> {{maimai.help.alias}}')
 async def _(msg: Bot.MessageSession, sid: str):
-    if not sid.isdigit():
+    if not isint(sid):
         if sid[:2].lower() == "id":
             sid = sid[2:]
         else:
@@ -240,6 +232,7 @@ async def _(msg: Bot.MessageSession, username: str = None):
         await msg.finish([BImage(img)])
     except BaseException:
         Logger.error(traceback.format_exc())
+
 
 @mai.command('id <id> [<diff>] {{maimai.help.id}}')
 @mai.command('song <id_or_alias> [-d <diff>] {{maimai.help.song}}',
@@ -450,7 +443,7 @@ async def _(msg: Bot.MessageSession, level: str):
     get_user = msg.parsed_msg.get('-u', False)
     username = get_user['<username>'] if get_user else None
     get_page = msg.parsed_msg.get('-p', False)
-    page = get_page['<page>'] if get_page else '1'
+    page = get_page['<page>'] if get_page and isint(get_page['<page>']) else 1
     if not username:
         if msg.target.sender_from == "QQ":
             payload = {'qq': msg.session.sender}
@@ -488,7 +481,7 @@ async def _(msg: Bot.MessageSession, dx_type: str = None):
             dx_type = ["SD", "DX"]
 
         for char in condit:
-            if char.isdigit() or char == '+':
+            if isint(char) or char == '+':
                 level += char
             else:
                 diff += char
@@ -522,7 +515,7 @@ async def _(msg: Bot.MessageSession):
 @mai.command('scoreline <sid> <diff> <score> {{maimai.help.scoreline}}')
 async def _(msg: Bot.MessageSession, diff: str, sid: str, score: float):
     try:
-        if not sid.isdigit():
+        if not isint(sid):
             if sid[:2].lower() == "id":
                 sid = sid[2:]
             else:

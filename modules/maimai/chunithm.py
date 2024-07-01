@@ -1,6 +1,7 @@
 from core.builtins import Bot, Plain, Image as BImage
 from core.component import module
 from core.utils.image import msgchain2image
+from core.utils.text import isint
 from .dbutils import DivingProberBindInfoManager
 from .libraries.chunithm_apidata import get_info
 from .libraries.chunithm_music import TotalList
@@ -50,10 +51,7 @@ async def _(msg: Bot.MessageSession, constant: float, constant_max: float = None
 
     total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
     get_page = msg.parsed_msg.get('-p', False)
-    if get_page and get_page['<page>'].isdigit():
-        page = max(min(int(get_page['<page>']), total_pages), 1)
-    else:
-        page = 1
+    page = max(min(int(get_page['<page>']), total_pages), 1) if get_page and isint(get_page['<page>']) else 1
     start_index = (page - 1) * SONGS_PER_PAGE
     end_index = page * SONGS_PER_PAGE
 
@@ -84,10 +82,7 @@ async def _(msg: Bot.MessageSession, level: str, page: str = None):
                                diff_label[i],
                                music['level'][i]))
     total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
-    if page and page.isdigit():
-        page = max(min(int(page), total_pages), 1)
-    else:
-        page = 1
+    page = max(min(int(page), total_pages), 1) if isint(page) else 1
     start_index = (page - 1) * SONGS_PER_PAGE
     end_index = page * SONGS_PER_PAGE
 
@@ -119,10 +114,7 @@ async def _(msg: Bot.MessageSession, keyword: str, page: str = None):
         for music in sorted(data, key=lambda i: int(i['id'])):
             result_set.append((music['id'], music['title']))
         total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
-        if page and page.isdigit():
-            page = max(min(int(page), total_pages), 1)
-        else:
-            page = 1
+        page = max(min(int(page), total_pages), 1) if isint(page) else 1
         start_index = (page - 1) * SONGS_PER_PAGE
         end_index = page * SONGS_PER_PAGE
 
@@ -211,7 +203,7 @@ async def _(msg: Bot.MessageSession):
     diff = ''
     try:
         for char in condit:
-            if char.isdigit() or char == '+':
+            if isint(char) or char == '+':
                 level += char
             else:
                 diff += char
