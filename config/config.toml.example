@@ -21,6 +21,9 @@ openai_api_key =
 osu_api_key =
 wolfram_alpha_appid =
 jwt_secret =
+hoyolab_username =
+hoyolab_password = 
+
 
 [cfg]
 api_port = 5000

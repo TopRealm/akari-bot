@@ -7,6 +7,7 @@ from .utils import get_profile_name
 osu = module('osu', developers=['DoroWolf'], desc='{osu.help.desc}')
 
 
+
 @osu.handle('profile [<username>] [-t <mode>] {{osu.help.profile}}',
             options_desc={'-t': '{osu.help.option.t}'})
 async def _(msg: Bot.MessageSession, username: str = None):
