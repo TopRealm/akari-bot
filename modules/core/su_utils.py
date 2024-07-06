@@ -9,7 +9,7 @@ import ujson as json
 
 
 from config import Config, CFG
-from core.builtins import Bot, PrivateAssets, Plain, ExecutionLockList, Temp, MessageTaskManager
+from core.builtins import Bot, I18NContext, PrivateAssets, Plain, ExecutionLockList, Temp, MessageTaskManager
 from core.component import module
 from core.exceptions import NoReportException, TestException
 from core.loader import ModulesManager
@@ -104,7 +104,7 @@ async def _(msg: Bot.MessageSession, target: str):
     elif 'list' in msg.parsed_msg:
         modules = sorted(target_data.enabled_modules)
         if modules:
-            await msg.finish([Plain(msg.locale.t("core.message.set.module.list")), Plain(" | ".join(modules))])
+            await msg.finish([I18NContext("core.message.set.module.list"), Plain(" | ".join(modules))])
         else:
             await msg.finish(msg.locale.t("core.message.set.module.list.none"))
 
@@ -497,7 +497,7 @@ if Config('enable_petal', False):
 
     @petal.command()
     async def _(msg: Bot.MessageSession):
-        await msg.finish(msg.locale.t('core.message.petal.self', petal=msg.data.petal))
+        await msg.finish(msg.locale.t('core.message.petal.self', petal=msg.petal))
 
     @petal.command('[<target>] {{core.help.petal}}', required_superuser=True)
     async def _(msg: Bot.MessageSession):
@@ -514,9 +514,8 @@ if Config('enable_petal', False):
             await msg.finish(
                 msg.locale.t('core.message.petal.modify', target=group, add_petal=petal, petal=target.petal))
         else:
-            target = msg.data
-            target.modify_petal(int(petal))
-            await msg.finish(msg.locale.t('core.message.petal.modify.self', add_petal=petal, petal=target.petal))
+            msg.data.modify_petal(int(petal))
+            await msg.finish(msg.locale.t('core.message.petal.modify.self', add_petal=petal, petal=msg.petal))
 
     @petal.command('clear [<target>]', required_superuser=True)
     async def _(msg: Bot.MessageSession):
