@@ -1,9 +1,9 @@
 name: Push Emoji Data
 
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -48,4 +48,4 @@ jobs:
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: master

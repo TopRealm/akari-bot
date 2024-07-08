@@ -276,11 +276,13 @@ def update_dependencies():
 
 @upd.command()
 async def update_bot(msg: Bot.MessageSession):
-    pull_repo_result = pull_repo()
-    if pull_repo_result:
-        await msg.send_message(pull_repo_result)
-    else:
-        await msg.send_message(msg.locale.t("core.message.update.failed"))
+    if Info.version:
+        pull_repo_result = pull_repo()
+        if pull_repo_result:
+            await msg.send_message(pull_repo_result)
+        else:
+            Logger.warning(f'Failed to get Git repository result.')
+            await msg.send_message(msg.locale.t("core.message.update.failed"))
     await msg.finish(update_dependencies())
 
 
@@ -337,13 +339,14 @@ if Info.subprocess:
             restart_time.append(datetime.now().timestamp())
             await wait_for_restart(msg)
             write_version_cache(msg)
-            pull_repo_result = pull_repo()
-            if pull_repo_result != '':
-                await msg.send_message(pull_repo_result)
-                await msg.send_message(update_dependencies())
-            else:
-                Logger.warning(f'Failed to get Git repository result.')
-                await msg.send_message(msg.locale.t("core.message.update.failed"))
+            if Info.version:
+                pull_repo_result = pull_repo()
+                if pull_repo_result != '':
+                    await msg.send_message(pull_repo_result)
+                else:
+                    Logger.warning(f'Failed to get Git repository result.')
+                    await msg.send_message(msg.locale.t("core.message.update.failed"))
+            await msg.send_message(update_dependencies())
             restart()
         else:
             await msg.finish()
