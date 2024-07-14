@@ -24,8 +24,8 @@ from database import BotDBUtil
 
 target_list = ["Discord|Channel", "Discord|DM|Channel", "KOOK|Group",
                "Matrix|Room", "QQ|Group", "QQ|Guild", "QQ|Private", "Telegram|Channel",
-               "Telegram|Group", "Telegram|Private", "Telegram|Supergroup",]
-sender_list = ["Discord|Client", "KOOK|User", "Matrix", "QQ", "QQ|Tiny", "Telegram|User",]
+               "Telegram|Group", "Telegram|Private", "Telegram|Supergroup", "TEST|Console",]
+sender_list = ["Discord|Client", "KOOK|User", "Matrix", "QQ", "QQ|Tiny", "Telegram|User", "TEST",]
 
 
 su = module('superuser', alias='su', required_superuser=True, base=True)
@@ -126,8 +126,12 @@ async def _(msg: Bot.MessageSession, target: str):
     elif 'edit' in msg.parsed_msg:
         k = msg.parsed_msg.get('<k>')
         v = msg.parsed_msg.get('<v>')
-        if v.startswith(('[', '{')):
-            v = json.loads(v)
+        if re.match(r'\[.*\]|{.*}', v):
+            try:
+                v = v.replace('\'', '\"')
+                v = json.loads(v)
+            except BaseException:
+                await msg.finish(msg.locale.t("core.message.config.write.failed"))
         elif v.upper() == 'TRUE':
             v = True
         elif v.upper() == 'FALSE':
@@ -236,22 +240,6 @@ if Bot.client_name == 'QQ':
             await msg.finish(msg.locale.t("message.id.invalid.target", target='QQ|Group'))
         if BotDBUtil.GroupBlockList.remove(target):
             await msg.finish(msg.locale.t("core.message.abuse.unblock.success", target=target))
-
-
-res = module('reset', required_superuser=True, base=True)
-
-
-@res.command()
-async def reset(msg: Bot.MessageSession):
-    confirm = await msg.wait_confirm(msg.locale.t("core.message.confirm"), append_instruction=False)
-    if confirm:
-        pull_repo_result = os.popen('git reset --hard origin/master', 'r').read()[:-1]
-        if pull_repo_result != '':
-            await msg.finish(pull_repo_result)
-        else:
-            await msg.finish(msg.locale.t("core.message.update.failed"))
-    else:
-        await msg.finish()
 
 
 upd = module('update', required_superuser=True, base=True)
@@ -477,8 +465,9 @@ async def _(msg: Bot.MessageSession, k: str, v: str):
         v = int(v)
     elif isfloat(v):
         v = float(v)
-    elif re.match(r'^\[.*\]$', v):
+    elif re.match(r'\[.*\]', v):
         try:
+            v = v.replace('\'', '\"')
             v = json.loads(v)
         except BaseException:
             await msg.finish(msg.locale.t("core.message.config.write.failed"))
@@ -530,12 +519,3 @@ if Config('enable_petal', False):
         else:
             msg.data.clear_petal()
             await msg.finish(msg.locale.t('core.message.petal.clear.self'))
-
-lagrange = module('lagrange', required_superuser=True, base=True)
-
-
-@lagrange.command()
-async def _(msg: Bot.MessageSession):
-    await msg.finish(f'Keepalive: {str(Temp.data.get("lagrange_keepalive", "None"))}\n'
-                     f'Status: {str(Temp.data.get("lagrange_status", "None"))}\n'
-                     f'Groups: {str(Temp.data.get("lagrange_available_groups", "None"))}')
