@@ -24,23 +24,18 @@ sd_plate_conversion = {
     '檄': 'maimai GreeN PLUS',
     '橙': 'maimai ORANGE',
     '暁': 'maimai ORANGE PLUS',
-    '晓': 'maimai ORANGE PLUS',
     '桃': 'maimai PiNK',
     '櫻': 'maimai PiNK PLUS',
-    '樱': 'maimai PiNK PLUS',
     '紫': 'maimai MURASAKi',
     '菫': 'maimai MURASAKi PLUS',
-    '堇': 'maimai MURASAKi PLUS',
     '白': 'maimai MiLK',
     '雪': 'MiLK PLUS',
     '輝': 'maimai FiNALE',
-    '辉': 'maimai FiNALE'
 }
 
 dx_plate_conversion = {
     '熊': 'maimai でらっくす',
     '華': 'maimai でらっくす',
-    '华': 'maimai でらっくす',
     '爽': 'maimai でらっくす Splash',
     '煌': 'maimai でらっくす Splash',
     '宙': 'maimai でらっくす UNiVERSE',
@@ -48,7 +43,6 @@ dx_plate_conversion = {
     '祭': 'maimai でらっくす FESTiVAL',
     '祝': 'maimai でらっくす FESTiVAL',
     '双': 'maimai でらっくす BUDDiES',
-    '雙': 'maimai でらっくす BUDDiES',
 }
 
 grade_conversion = {
@@ -624,17 +618,33 @@ async def get_plate_process(msg: Bot.MessageSession, payload: dict, plate: str) 
                                           music.ds[song[1]], song[1], music.type])
 
     if version == '真':
-        song_expect = [70]
+        song_expect = [70, 146]
+    elif version == '超':
+        song_expect = [185, 189, 190]
     elif version == '檄':
         song_expect = [341]
+    elif version == '暁':
+        song_expect = [419]
     elif version == '桃':
         song_expect = [451, 455, 460]
+    elif version == '櫻':
+        song_expect = [524]
     elif version == '菫':
         song_expect = [853]
+    elif version == '白':
+        song_expect = [687, 688, 712]
+    elif version == '雪':
+        song_expect = [731]
     elif version == '輝':
         song_expect = [792]
     elif version == '舞':
-        song_expect = [341, 451, 455, 460, 792, 853]
+        song_expect = [146, 185, 189, 190, 341, 419, 451, 455, 460, 524, 687, 688, 712, 731, 792, 853]
+    elif version in ['熊', '華']:
+        song_expect = [10146]
+    elif version in ['爽', '煌']:
+        song_expect = [11213]
+    elif version in ['宙', '星']:
+        song_expect = [11253, 11267]
     else:
         song_expect = []
 
