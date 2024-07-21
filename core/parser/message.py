@@ -4,10 +4,6 @@ import re
 import traceback
 from datetime import datetime
 
-from aiocqhttp import NetworkError
-from tenacity import RetryError
-
-
 from bots.aiocqhttp.utils import qq_frame_type
 from config import Config
 from core.builtins import command_prefix, ExecutionLockList, ErrorMessage, MessageTaskManager, Url, Bot, \
@@ -167,9 +163,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
     :param running_mention: 消息内若包含机器人名称，则检查是否有命令正在运行
     :return: 无返回
     """
-    identify_str = f'[{msg.target.sender_id}{
-        f" ({msg.target.target_id})" if msg.target.target_from != msg.target.sender_from else ""}]'
-    limited_action = 'touch' if qq_frame_type() == 'shamrock' else 'poke'
+    identify_str = f'[{msg.target.sender_id}{f" ({msg.target.target_id})" if msg.target.target_from != msg.target.sender_from else ""}]'
     # Logger.info(f'{identify_str} -> [Bot]: {display}')
     try:
         asyncio.create_task(MessageTaskManager.check(msg))
@@ -412,13 +406,19 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                     await func.function(msg)
                                 raise FinishedException(msg.sent)  # if not using msg.finish
                 except SendMessageFailed:
-                    if msg.target.target_from == 'QQ|Group':
-                        if not qq_frame_type() == 'ntqq':
-                            await msg.call_api('send_group_msg', group_id=msg.session.target,
-                                               message=f'[CQ:{limited_action},qq={int(Config('qq_account', cfg_type=(int, str)))}]')
-                        else:
+                    if msg.target.target_from == 'QQ|Group':  # wtf onebot 11
+                        if qq_frame_type() == 'ntqq':
                             await msg.call_api('set_msg_emoji_like', message_id=msg.session.message.message_id,
                                                emoji_id=str(Config('qq_limited_emoji', '10060', (str, int))))
+                        elif qq_frame_type() == 'lagrange':
+                            await msg.call_api('group_poke', group_id=msg.session.target,
+                                               user_id=int(Config("qq_account", cfg_type=(int, str))))
+                        elif qq_frame_type() == 'shamrock':
+                            await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                               message=f'[CQ:touch,id={int(Config("qq_account", cfg_type=(int, str)))}]')
+                        elif qq_frame_type() == 'mirai':
+                            await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                               message=f'[CQ:poke,qq={int(Config("qq_account", cfg_type=(int, str)))}]')
                     await msg.send_message(msg.locale.t("error.message.limited"))
 
                 except FinishedException as e:
@@ -444,23 +444,22 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                     err_msg = msg.locale.tl_str(str(e))
                     await msg.send_message(msg.locale.t("error.prompt.noreport", detail=err_msg))
 
-                except (asyncio.exceptions.TimeoutError, RetryError, NetworkError) as e:
-                    Logger.error(traceback.format_exc())
-                    errmsg = msg.locale.t('error.prompt.timeout', detail=str(e))
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    Logger.error(tb)
+                    if "timeout" in str(e).lower().replace(' ',''):
+                        timeout = True
+                        errmsg = msg.locale.t('error.prompt.timeout', detail=str(e))
+                    else:
+                        timeout = False
+                        errmsg = msg.locale.t('error.prompt.report', detail=str(e))
+
                     if Config('bug_report_url', cfg_type=str):
                         errmsg += '\n' + msg.locale.t('error.prompt.address',
                                                       url=str(Url(Config('bug_report_url', cfg_type=str))))
                     await msg.send_message(errmsg)
 
-                except Exception as e:
-                    tb = traceback.format_exc()
-                    Logger.error(tb)
-                    errmsg = msg.locale.t('error.prompt.report', detail=str(e))
-                    if Config('bug_report_url', cfg_type=str):
-                        errmsg += '\n' + msg.locale.t('error.prompt.address',
-                                                      url=str(Url(Config('bug_report_url', cfg_type=str))))
-                    await msg.send_message(errmsg)
-                    if report_targets:
+                    if not timeout and report_targets:
                         for target in report_targets:
                             if f := await Bot.FetchTarget.fetch_target(target):
                                 await f.send_direct_message(
@@ -565,25 +564,24 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                             await msg.send_message(msg.locale.t("error.prompt.noreport", detail=err_msg))
 
                         except AbuseWarning as e:
-                            await tos_abuse_warning(msg, str(e))\
-
-                        except (asyncio.exceptions.TimeoutError, RetryError, NetworkError) as e:
-                            Logger.error(traceback.format_exc())
-                            errmsg = msg.locale.t('error.prompt.timeout', detail=str(e))
-                            if Config('bug_report_url', cfg_type=str):
-                                errmsg += '\n' + msg.locale.t('error.prompt.address',
-                                                              url=str(Url(Config('bug_report_url', cfg_type=str))))
-                            await msg.send_message(errmsg)
+                            await tos_abuse_warning(msg, str(e))
 
                         except Exception as e:
                             tb = traceback.format_exc()
                             Logger.error(tb)
-                            errmsg = msg.locale.t('error.prompt.report', detail=str(e))
+                            if "timeout" in str(e).lower().replace(' ',''):
+                                timeout = True
+                                errmsg = msg.locale.t('error.prompt.timeout', detail=str(e))
+                            else:
+                                timeout = False
+                                errmsg = msg.locale.t('error.prompt.report', detail=str(e))
+
                             if Config('bug_report_url', cfg_type=str):
                                 errmsg += '\n' + msg.locale.t('error.prompt.address',
                                                               url=str(Url(Config('bug_report_url', cfg_type=str))))
                             await msg.send_message(errmsg)
-                            if report_targets:
+                    
+                            if not timeout and report_targets:
                                 for target in report_targets:
                                     if f := await Bot.FetchTarget.fetch_target(target):
                                         await f.send_direct_message(
@@ -592,13 +590,19 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                             ExecutionLockList.remove(msg)
 
             except SendMessageFailed:
-                if msg.target.target_from == 'QQ|Group':
-                    if not qq_frame_type() == 'ntqq':
-                        await msg.call_api('send_group_msg', group_id=msg.session.target,
-                                           message=f'[CQ:{limited_action},qq={int(Config('qq_account', cfg_type=(int, str)))}]')
-                    else:
+                if msg.target.target_from == 'QQ|Group':  # wtf onebot 11
+                    if qq_frame_type() == 'ntqq':
                         await msg.call_api('set_msg_emoji_like', message_id=msg.session.message.message_id,
                                            emoji_id=str(Config('qq_limited_emoji', '10060', (str, int))))
+                    elif qq_frame_type() == 'lagrange':
+                        await msg.call_api('group_poke', group_id=msg.session.target,
+                                           user_id=int(Config("qq_account", cfg_type=(int, str))))
+                    elif qq_frame_type() == 'shamrock':
+                        await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                           message=f'[CQ:touch,id={int(Config("qq_account", cfg_type=(int, str)))}]')
+                    elif qq_frame_type() == 'mirai':
+                        await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                           message=f'[CQ:poke,qq={int(Config("qq_account", cfg_type=(int, str)))}]')
                 await msg.send_message((msg.locale.t("error.message.limited")))
                 continue
         return msg
