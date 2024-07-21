@@ -164,7 +164,6 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
     :return: 无返回
     """
     identify_str = f'[{msg.target.sender_id}{f" ({msg.target.target_id})" if msg.target.target_from != msg.target.sender_from else ""}]'
-    limited_action = 'touch' if qq_frame_type() == 'shamrock' else 'poke'
     # Logger.info(f'{identify_str} -> [Bot]: {display}')
     try:
         asyncio.create_task(MessageTaskManager.check(msg))
@@ -407,13 +406,19 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                     await func.function(msg)
                                 raise FinishedException(msg.sent)  # if not using msg.finish
                 except SendMessageFailed:
-                    if msg.target.target_from == 'QQ|Group':
-                        if not qq_frame_type() == 'ntqq':
-                            await msg.call_api('send_group_msg', group_id=msg.session.target,
-                                               message=f'[CQ:{limited_action},qq={int(Config("qq_account", cfg_type=(int, str)))}]')
-                        else:
+                    if msg.target.target_from == 'QQ|Group':  # wtf onebot 11
+                        if qq_frame_type() == 'ntqq':
                             await msg.call_api('set_msg_emoji_like', message_id=msg.session.message.message_id,
                                                emoji_id=str(Config('qq_limited_emoji', '10060', (str, int))))
+                        elif qq_frame_type() == 'lagrange':
+                            await msg.call_api('group_poke', group_id=msg.session.target,
+                                               user_id=int(Config("qq_account", cfg_type=(int, str))))
+                        elif qq_frame_type() == 'shamrock':
+                            await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                               message=f'[CQ:touch,id={int(Config("qq_account", cfg_type=(int, str)))}]')
+                        elif qq_frame_type() == 'mirai':
+                            await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                               message=f'[CQ:poke,qq={int(Config("qq_account", cfg_type=(int, str)))}]')
                     await msg.send_message(msg.locale.t("error.message.limited"))
 
                 except FinishedException as e:
@@ -585,13 +590,19 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                             ExecutionLockList.remove(msg)
 
             except SendMessageFailed:
-                if msg.target.target_from == 'QQ|Group':
-                    if not qq_frame_type() == 'ntqq':
-                        await msg.call_api('send_group_msg', group_id=msg.session.target,
-                                           message=f'[CQ:{limited_action},qq={int(Config("qq_account", cfg_type=(int, str)))}]')
-                    else:
+                if msg.target.target_from == 'QQ|Group':  # wtf onebot 11
+                    if qq_frame_type() == 'ntqq':
                         await msg.call_api('set_msg_emoji_like', message_id=msg.session.message.message_id,
                                            emoji_id=str(Config('qq_limited_emoji', '10060', (str, int))))
+                    elif qq_frame_type() == 'lagrange':
+                        await msg.call_api('group_poke', group_id=msg.session.target,
+                                           user_id=int(Config("qq_account", cfg_type=(int, str))))
+                    elif qq_frame_type() == 'shamrock':
+                        await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                           message=f'[CQ:touch,id={int(Config("qq_account", cfg_type=(int, str)))}]')
+                    elif qq_frame_type() == 'mirai':
+                        await msg.call_api('send_group_msg', group_id=msg.session.target,
+                                           message=f'[CQ:poke,qq={int(Config("qq_account", cfg_type=(int, str)))}]')
                 await msg.send_message((msg.locale.t("error.message.limited")))
                 continue
         return msg
