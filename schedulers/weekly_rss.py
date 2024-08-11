@@ -8,21 +8,6 @@ from modules.weekly.ysarchives import get_rss as get_ysarchives_rss
 from datetime import datetime
 
 
-# 尝试更新装饰器触发逻辑
-def is_even_week():
-    today = datetime.now()
-    return today.isocalendar()[1] % 2 == 0
-
-
-@Scheduler.scheduled_job(trigger=CronTrigger.from_crontab('10 19 * * SUN'))
-async def weekly_rss():
-    Logger.info('Checking ysarchives biweekly...')
-
-    if is_even_week():
-        weekly = await get_ysarchives_rss()
-        await JobQueue.trigger_hook_all('ysarchives_weekly_rss', weekly=weekly)
-
-
 @Scheduler.scheduled_job(CronTrigger.from_crontab('0 9 * * MON'))
 async def weekly_rss():
     Logger.info('Checking MCWZH weekly...')
@@ -42,9 +27,9 @@ async def weekly_rss():
     await JobQueue.trigger_hook_all('teahouse_weekly_rss', weekly=weekly)
 
 
-# @Scheduler.scheduled_job(trigger=CronTrigger.from_crontab('10 19 * * SUN'))
-# async def weekly_rss():
-#     Logger.info('Checking ysarchives biweekly...')
+@Scheduler.scheduled_job(trigger=CronTrigger.from_crontab('0 9 * * MON'))
+async def weekly_rss():
+    Logger.info('Checking ysarchives biweekly...')
 
-#     weekly = await get_ysarchives_rss()
-#     await JobQueue.trigger_hook_all('ysarchives_weekly_rss', weekly=weekly)
+    weekly = await get_ysarchives_rss()
+    await JobQueue.trigger_hook_all('ysarchives_weekly_rss', weekly=weekly)
