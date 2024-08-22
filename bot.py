@@ -26,7 +26,7 @@ bots_required_configs = {
         'matrix_user',
         'matrix_device_id',
         'matrix_token']
-    }
+}
 
 
 class RestartBot(Exception):
@@ -49,6 +49,7 @@ def init_bot():
         if isinstance(base_superuser, str):
             base_superuser = [base_superuser]
         for bu in base_superuser:
+            BotDBUtil.SenderInfo(bu).init()
             BotDBUtil.SenderInfo(bu).edit('isSuperUser', True)
 
 

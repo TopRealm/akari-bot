@@ -7,8 +7,8 @@ from core.component import module
 from core.dirty_check import check, check_bool, rickroll
 from core.exceptions import ConfigValueError
 from core.logger import Logger
-from core.petal import count_petal
 from core.utils.cooldown import CoolDown
+from modules.ask.petal import count_petal
 
 client = AsyncOpenAI(
     api_key=Config('openai_api_key', cfg_type=str),
@@ -16,7 +16,7 @@ client = AsyncOpenAI(
 
 s = module('summary',
            developers=['Dianliang233', 'OasisAkari'],
-           desc='{summary.help.desc}',
+           desc='{summary.help.desc}', doc=True,
            available_for=['QQ|Private', 'QQ|Group'])
 
 
@@ -77,7 +77,7 @@ async def _(msg: Bot.MessageSession):
 
         petal = await count_petal(msg, tokens)
         if petal != 0:
-            output = f"{output}\n{msg.locale.t('petal.message.cost', count=petal)}"
+            output = f"{output}\n{msg.locale.t('petal.message.cost', amount=petal)}"
         await wait_msg.delete()
 
         if msg.target.target_from != 'TEST|Console' and not is_superuser:

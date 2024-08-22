@@ -1,27 +1,23 @@
-import traceback
-
 from core.builtins import Bot, Plain, Image as BImage
 from core.component import module
-from core.logger import Logger
 from core.utils.text import isint
 from core.utils.image import msgchain2image
 from .dbutils import DivingProberBindInfoManager
-from .libraries.maimaidx_apidata import get_alias, get_info, search_by_alias, update_alias, update_cover
+from .libraries.maimaidx_apidata import get_alias, get_info, get_record, search_by_alias, update_alias, update_cover
 from .libraries.maimaidx_best50 import generate
+from .libraries.maimaidx_mapping import diff_list, level_list, goal_list, genre_i18n_mapping
 from .libraries.maimaidx_music import TotalList
 from .libraries.maimaidx_utils import *
 
 total_list = TotalList()
-
-diff_label = ['Basic', 'Advanced', 'Expert', 'Master', 'Re:MASTER']
-
 
 mai = module('maimai',
              recommend_modules='maimai_regex',
              developers=['mai-bot', 'OasisAkari', 'DoroWolf'],
              alias='mai',
              support_languages=['zh_cn'],
-             desc='{maimai.help.desc}')
+             desc='{maimai.help.desc}',
+             doc=True)
 
 
 @mai.command('base <constant> [<constant_max>] [-p <page>] {{maimai.help.base}}',
@@ -52,7 +48,7 @@ async def _(msg: Bot.MessageSession, constant: float, constant_max: float = None
             result_set.append((music['id'],
                                music['title'],
                                music['ds'][i],
-                               diff_label[i],
+                               diff_list[i],
                                music['level'][i],
                                music['type']))
 
@@ -89,7 +85,7 @@ async def _(msg: Bot.MessageSession, level: str, page: str = None):
             result_set.append((music['id'],
                                music['title'],
                                music['ds'][i],
-                               diff_label[i],
+                               diff_list[i],
                                music['level'][i],
                                music['type']))
     total_pages = (len(result_set) + SONGS_PER_PAGE - 1) // SONGS_PER_PAGE
@@ -203,6 +199,7 @@ async def _(msg: Bot.MessageSession, grade: str):
 
 @mai.handle('bind <username> {{maimai.help.bind}}', exclude_from=['QQ', 'QQ|Group'])
 async def _(msg: Bot.MessageSession, username: str):
+    await get_record(msg, {'username': username}, use_cache=False)
     bind = DivingProberBindInfoManager(msg).set_bind_info(username=username)
     if bind:
         await msg.finish(msg.locale.t('maimai.message.bind.success') + username)
@@ -234,10 +231,118 @@ async def _(msg: Bot.MessageSession, username: str = None):
     await msg.finish([BImage(img)])
 
 
-@mai.command('id <id> [-c] {{maimai.help.id}}')
-@mai.command('song <id_or_alias> [-c] {{maimai.help.song}}',
-             options_desc={'-c': '{maimai.help.option.c}'})
-async def _(msg: Bot.MessageSession, id_or_alias: str, diff: str = None):
+@mai.command('chart <id_or_alias> {{maimai.help.chart}}')
+async def _(msg: Bot.MessageSession, id_or_alias: str):
+    if id_or_alias[:2].lower() == "id":
+        sid = id_or_alias[2:]
+    else:
+        sid_list = await search_by_alias(id_or_alias)
+        if len(sid_list) == 0:
+            await msg.finish(msg.locale.t("maimai.message.music_not_found"))
+        elif len(sid_list) > 1:
+            res = msg.locale.t("maimai.message.disambiguation") + "\n"
+            for sid in sorted(sid_list, key=int):
+                s = (await total_list.get()).by_id(sid)
+                res += f"{s['id']} - {s['title']}{' (DX)' if s['type'] == 'DX' else ''}\n"
+            res += msg.locale.t("maimai.message.chart.prompt", prefix=msg.prefixes[0])
+            await msg.finish(res)
+        else:
+            sid = str(sid_list[0])
+    music = (await total_list.get()).by_id(sid)
+    if not music:
+        await msg.finish(msg.locale.t("maimai.message.music_not_found"))
+
+    res = []
+    if len(music['ds']) == 1:
+        chart = music['charts'][0]
+        ds = music['ds'][0]
+        level = music['level'][0]
+        if len(chart['notes']) == 4:
+            res.append(msg.locale.t(
+                "maimai.message.chart.sd",
+                diff='Utage',
+                level=level,
+                ds=ds,
+                tap=chart['notes'][0],
+                hold=chart['notes'][1],
+                slide=chart['notes'][2],
+                brk=chart['notes'][3],
+                charter=chart['charter']))
+        else:
+            res.append(msg.locale.t(
+                "maimai.message.chart.dx",
+                diff='Utage',
+                level=level,
+                ds=ds,
+                tap=chart['notes'][0],
+                hold=chart['notes'][1],
+                slide=chart['notes'][2],
+                touch=chart['notes'][3],
+                brk=chart['notes'][4],
+                charter=chart['charter']))
+    elif len(music['ds']) == 2:
+        chartL = music['charts'][0]
+        chartR = music['charts'][1]
+        ds = music['ds'][0]
+        level = music['level'][0]
+        if len(chartL['notes']) == 4:
+            res.append(msg.locale.t(
+                "maimai.message.chart.sd",
+                diff='Utage',
+                level=level,
+                ds=ds,
+                tap=f"{chartL['notes'][0]}+{chartR['notes'][0]}",
+                hold=f"{chartL['notes'][1]}+{chartR['notes'][1]}",
+                slide=f"{chartL['notes'][2]}+{chartR['notes'][2]}",
+                brk=f"{chartL['notes'][3]}+{chartR['notes'][3]}",
+                charter=chartL['charter']))
+        else:
+            res.append(msg.locale.t(
+                "maimai.message.chart.dx",
+                diff='Utage',
+                level=level,
+                ds=ds,
+                tap=f"{chartL['notes'][0]}+{chartR['notes'][0]}",
+                hold=f"{chartL['notes'][1]}+{chartR['notes'][1]}",
+                slide=f"{chartL['notes'][2]}+{chartR['notes'][2]}",
+                touch=f"{chartL['notes'][3]}+{chartR['notes'][3]}",
+                brk=f"{chartL['notes'][4]}+{chartR['notes'][4]}",
+                charter=chartL['charter']))
+    else:
+        for diff in range(len(music['ds'])):
+            chart = music['charts'][diff]
+            ds = music['ds'][diff]
+            level = music['level'][diff]
+            if len(chart['notes']) == 4:
+                res.append(msg.locale.t(
+                    "maimai.message.chart.sd",
+                    diff=diff_list[diff],
+                    level=level,
+                    ds=ds,
+                    tap=chart['notes'][0],
+                    hold=chart['notes'][1],
+                    slide=chart['notes'][2],
+                    brk=chart['notes'][3],
+                    charter=chart['charter']))
+            else:
+                res.append(msg.locale.t(
+                    "maimai.message.chart.dx",
+                    diff=diff_list[diff],
+                    level=level,
+                    ds=ds,
+                    tap=chart['notes'][0],
+                    hold=chart['notes'][1],
+                    slide=chart['notes'][2],
+                    touch=chart['notes'][3],
+                    brk=chart['notes'][4],
+                    charter=chart['charter']))
+
+    await msg.finish(await get_info(music, Plain('\n'.join(res))))
+
+
+@mai.command('id <id> {{maimai.help.id}}')
+@mai.command('song <id_or_alias> {{maimai.help.song}}')
+async def _(msg: Bot.MessageSession, id_or_alias: str):
     if '<id>' in msg.parsed_msg:
         sid = msg.parsed_msg['<id>']
     elif id_or_alias[:2].lower() == "id":
@@ -259,102 +364,15 @@ async def _(msg: Bot.MessageSession, id_or_alias: str, diff: str = None):
     if not music:
         await msg.finish(msg.locale.t("maimai.message.music_not_found"))
 
-    if msg.parsed_msg.get('-c', False):
-        res = []
-        if len(music['ds']) == 1:
-            chart = music['charts'][0]
-            ds = music['ds'][0]
-            level = music['level'][0]
-            if len(chart['notes']) == 4:
-                res.append(msg.locale.t(
-                    "maimai.message.song.sd",
-                    diff='Utage',
-                    level=level,
-                    ds=ds,
-                    tap=chart['notes'][0],
-                    hold=chart['notes'][1],
-                    slide=chart['notes'][2],
-                    brk=chart['notes'][3],
-                    charter=chart['charter']))
-            else:
-                res.append(msg.locale.t(
-                    "maimai.message.song.dx",
-                    diff='Utage',
-                    level=level,
-                    ds=ds,
-                    tap=chart['notes'][0],
-                    hold=chart['notes'][1],
-                    slide=chart['notes'][2],
-                    touch=chart['notes'][3],
-                    brk=chart['notes'][4],
-                    charter=chart['charter']))
-        elif len(music['ds']) == 2:
-            chartL = music['charts'][0]
-            chartR = music['charts'][1]
-            ds = music['ds'][0]
-            level = music['level'][0]
-            if len(chartL['notes']) == 4:
-                res.append(msg.locale.t(
-                    "maimai.message.song.sd",
-                    diff='Utage',
-                    level=level,
-                    ds=ds,
-                    tap=f"{chartL['notes'][0]}+{chartR['notes'][0]}",
-                    hold=f"{chartL['notes'][1]}+{chartR['notes'][1]}",
-                    slide=f"{chartL['notes'][2]}+{chartR['notes'][2]}",
-                    brk=f"{chartL['notes'][3]}+{chartR['notes'][3]}",
-                    charter=chartL['charter']))
-            else:
-                res.append(msg.locale.t(
-                    "maimai.message.song.dx",
-                    diff='Utage',
-                    level=level,
-                    ds=ds,
-                    tap=f"{chartL['notes'][0]}+{chartR['notes'][0]}",
-                    hold=f"{chartL['notes'][1]}+{chartR['notes'][1]}",
-                    slide=f"{chartL['notes'][2]}+{chartR['notes'][2]}",
-                    touch=f"{chartL['notes'][3]}+{chartR['notes'][3]}",
-                    brk=f"{chartL['notes'][4]}+{chartR['notes'][4]}",
-                    charter=chartL['charter']))
-        else:
-            for diff in range(len(music['ds'])):
-                chart = music['charts'][diff]
-                ds = music['ds'][diff]
-                level = music['level'][diff]
-                if len(chart['notes']) == 4:
-                    res.append(msg.locale.t(
-                        "maimai.message.song.sd",
-                        diff=diff_label[diff],
-                        level=level,
-                        ds=ds,
-                        tap=chart['notes'][0],
-                        hold=chart['notes'][1],
-                        slide=chart['notes'][2],
-                        brk=chart['notes'][3],
-                        charter=chart['charter']))
-                else:
-                    res.append(msg.locale.t(
-                        "maimai.message.song.dx",
-                        diff=diff_label[diff],
-                        level=level,
-                        ds=ds,
-                        tap=chart['notes'][0],
-                        hold=chart['notes'][1],
-                        slide=chart['notes'][2],
-                        touch=chart['notes'][3],
-                        brk=chart['notes'][4],
-                        charter=chart['charter']))
-                
-        await msg.finish(await get_info(music, Plain('\n'.join(res))))
-    else:
-        res = msg.locale.t(
-            "maimai.message.song",
-            artist=music['basic_info']['artist'],
-            genre=music['basic_info']['genre'],
-            bpm=music['basic_info']['bpm'],
-            version=music['basic_info']['from'],
-            level='/'.join((str(ds) for ds in music['ds'])))
-        await msg.finish(await get_info(music, Plain(res)))
+    genre = genre_i18n_mapping.get(music['basic_info']['genre'], '') if not msg.locale.locale == 'zh_cn' else music['basic_info']['genre']
+    res = msg.locale.t(
+        "maimai.message.song",
+        artist=music['basic_info']['artist'],
+        genre=genre,
+        bpm=music['basic_info']['bpm'],
+        version=music['basic_info']['from'],
+        level='/'.join((str(ds) for ds in music['ds'])))
+    await msg.finish(await get_info(music, Plain(res)))
 
 
 @mai.command('info <id_or_alias> [-u <username>] {{maimai.help.info}}',
@@ -363,7 +381,6 @@ async def _(msg: Bot.MessageSession, id_or_alias: str):
     get_user = msg.parsed_msg.get('-u', False)
     username = get_user['<username>'] if get_user else None
     await query_song_info(msg, id_or_alias, username)
-
 
 async def query_song_info(msg, query, username):
     if query[:2].lower() == "id":
@@ -444,11 +461,6 @@ async def _(msg: Bot.MessageSession, level: str, goal: str, username: str = None
 
 
 async def query_process(msg, level, goal, username):
-    goal_list = ["A", "AA", "AAA", "S", "S+", "SS", "SS+", "SSS", "SSS+",
-                 "FC", "FC+", "AP", "AP+", "FS", "FS+", "FDX", "FDX+"]
-    level_list = ['1', '2', '3', '4', '5', '6', '7', '7+', '8', '8+', '9', '9+',
-                  '10', '10+', '11', '11+', '12', '12+', '13', '13+', '14', '14+', '15']
-
     if not username:
         if msg.target.sender_from == "QQ":
             payload = {'qq': msg.session.sender}
@@ -604,7 +616,7 @@ async def _(msg: Bot.MessageSession, diff: str, sid: str, score: float):
         b2t_2550_great_prop = "{:.4f}".format(break_2550_reduce / total_score * 100)
         b2t_2000_great = "{:.3f}".format(break_2000_reduce / 100)  # 一个 TAP GREAT 减少 100 分
         b2t_2000_great_prop = "{:.4f}".format(break_2000_reduce / total_score * 100)
-        await msg.finish(f'''{music['title']}{' (DX)' if music['type'] == 'DX' else ''} {diff_label[diff_index]}
+        await msg.finish(f'''{music['title']}{' (DX)' if music['type'] == 'DX' else ''} {diff_list[diff_index]}
 {msg.locale.t('maimai.message.scoreline',
               scoreline=score,
               tap_great=tap_great,

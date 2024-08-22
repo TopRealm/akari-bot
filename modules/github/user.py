@@ -1,7 +1,7 @@
 from core.builtins import Url, Bot
 from core.dirty_check import rickroll
 from core.utils.http import get_url
-from modules.github.utils import time_diff, dirty_check, darkCheck
+from modules.github.utils import time_diff, dirty_check, dark_check
 
 
 async def user(msg: Bot.MessageSession, name: str):
@@ -29,14 +29,11 @@ async def user(msg: Bot.MessageSession, name: str):
 
         optional_text = '\n' + ' | '.join(optional)
         message = f'''{result['login']} aka {result['name']} ({result['id']}){bio}
-
-Type · {result['type']} | Follower · {result['followers']} | Following · {result['following']}
-                                                              | Repo · {result['public_repos']} | Gist · {result['public_gists']}{optional_text}
+Type · {result['type']} | Follower · {result['followers']} | Following · {result['following']} | Repo · {result['public_repos']} | Gist · {result['public_gists']}{optional_text}
 Account Created {time_diff(result['created_at'])} ago | Latest activity {time_diff(result['updated_at'])} ago
-
 {str(Url(result['html_url']))}'''
 
-        is_dirty = await dirty_check(message, result['login']) or darkCheck(message)
+        is_dirty = await dirty_check(message, result['login']) or dark_check(message)
         if is_dirty:
             await msg.finish(rickroll(msg))
 

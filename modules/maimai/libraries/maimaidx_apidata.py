@@ -12,6 +12,7 @@ from core.exceptions import ConfigValueError
 from core.logger import Logger
 from core.utils.http import download, get_url, post_url
 from core.utils.text import isint
+from .maimaidx_mapping import versions
 from .maimaidx_music import get_cover_len5_id, Music, TotalList
 
 DEVELOPER_TOKEN = Config('diving_fish_developer_token', cfg_type=str)
@@ -19,27 +20,6 @@ DEVELOPER_TOKEN = Config('diving_fish_developer_token', cfg_type=str)
 cache_dir = os.path.abspath(Config('cache_path', './cache/'))
 assets_dir = os.path.abspath('./assets/maimai/')
 total_list = TotalList()
-
-versions = ['maimai',
-            'maimai PLUS',
-            'maimai GreeN',
-            'maimai GreeN PLUS',
-            'maimai ORANGE',
-            'maimai ORANGE PLUS',
-            'maimai PiNK',
-            'maimai PiNK PLUS',
-            'maimai MURASAKi',
-            'maimai MURASAKi PLUS',
-            'maimai MiLK',
-            'MiLK PLUS',
-            'maimai FiNALE',
-            'maimai でらっくす',
-            'maimai でらっくす Splash',
-            'maimai でらっくす UNiVERSE',
-            'maimai でらっくす FESTiVAL',
-            'maimai でらっくす BUDDiES',
-            ]
-
 
 async def update_cover() -> bool:
     id_list = ['00000', '01000']
@@ -175,7 +155,7 @@ async def get_record(msg: Bot.MessageSession, payload: dict, use_cache: bool = T
             raise e
 
 
-async def get_song_record(msg: Bot.MessageSession, payload: dict, sid: Union[str, list[str]], 
+async def get_song_record(msg: Bot.MessageSession, payload: dict, sid: Union[str, list[str]],
                           use_cache: bool = True) -> Optional[str]:
     if DEVELOPER_TOKEN:
         cache_path = os.path.join(cache_dir, f"{msg.target.sender_id.replace('|', '_')}_maimaidx_song_record.json")
@@ -185,12 +165,12 @@ async def get_song_record(msg: Bot.MessageSession, payload: dict, sid: Union[str
                 await get_record(msg, payload, use_cache=False)
             payload.update({'music_id': sid})
             data = await post_url(url,
-                                 data=json.dumps(payload),
-                                 status_code=200,
-                                 headers={'Content-Type': 'application/json',
-                                          'accept': '*/*',
-                                          'Developer-Token': DEVELOPER_TOKEN},
-                                 fmt='json')
+                                  data=json.dumps(payload),
+                                  status_code=200,
+                                  headers={'Content-Type': 'application/json',
+                                           'accept': '*/*',
+                                           'Developer-Token': DEVELOPER_TOKEN},
+                                  fmt='json')
             if use_cache and data:
                 if os.path.exists(cache_path):
                     with open(cache_path, 'r') as f:
@@ -223,7 +203,7 @@ async def get_song_record(msg: Bot.MessageSession, payload: dict, sid: Union[str
         raise ConfigValueError(msg.locale.t('error.config.secret.not_found'))
 
 
-async def get_total_record(msg: Bot.MessageSession, payload: dict, utage: bool = False, 
+async def get_total_record(msg: Bot.MessageSession, payload: dict, utage: bool = False,
                            use_cache: bool = True) -> Optional[str]:
     cache_path = os.path.join(cache_dir, f"{msg.target.sender_id.replace('|', '_')}_maimaidx_total_record.json")
     url = f"https://www.diving-fish.com/api/maimaidxprober/query/plate"

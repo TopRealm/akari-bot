@@ -3,7 +3,7 @@ import uuid
 from core.builtins import Bot, Image, Plain, Url
 from core.dirty_check import rickroll
 from core.utils.http import download, get_url
-from modules.github.utils import time_diff, dirty_check, darkCheck
+from modules.github.utils import time_diff, dirty_check, dark_check
 
 
 async def repo(msg: Bot.MessageSession, name: str):
@@ -37,12 +37,9 @@ async def repo(msg: Bot.MessageSession, name: str):
             desc = '\n' + result['description']
 
         message = f'''{result['full_name']} ({result['id']}){desc}
-
-Language · {result['language']} | Fork · {result['forks_count']}
-                                             | Star · {result['stargazers_count']} | Watch · {result['watchers_count']}
+Language · {result['language']} | Fork · {result['forks_count']} | Star · {result['stargazers_count']} | Watch · {result['watchers_count']}
 License: {rlicense}
 Created {time_diff(result['created_at'])} ago | Updated {time_diff(result['updated_at'])} ago
-
 {website}{str(Url(result['html_url']))}'''
 
         if mirror:
@@ -51,7 +48,7 @@ Created {time_diff(result['created_at'])} ago | Updated {time_diff(result['updat
         if parent:
             message += '\n' + parent
 
-        is_dirty = await dirty_check(message, result['owner']['login']) or darkCheck(message)
+        is_dirty = await dirty_check(message, result['owner']['login']) or dark_check(message)
         if is_dirty:
             await msg.finish(rickroll(msg))
         else:
@@ -59,9 +56,9 @@ Created {time_diff(result['created_at'])} ago | Updated {time_diff(result['updat
 
         hash = str(uuid.uuid4())
         download_pic = await download(
-            url=f'https://opengraph.githubassets.com/{hash}/{result["full_name"]}', 
+            url=f'https://opengraph.githubassets.com/{hash}/{result["full_name"]}',
             filename=f'{hash}.png'
-            )
+        )
         if download_pic:
             await msg.finish([Image(download_pic)], quote=False)
 

@@ -19,11 +19,11 @@ from modules.wiki.utils.wikilib import WikiLib
 from .wiki import query_pages, generate_screenshot_v2_blocklist
 
 wiki_inline = module('wiki_inline',
-                     desc='{wiki.help.wiki_inline.desc}', recommend_modules=['wiki'],
+                     desc='{wiki.help.wiki_inline.desc}', doc=True, recommend_modules=['wiki'],
                      alias='wiki_regex', developers=['OasisAkari'])
 
 
-@wiki_inline.regex(re.compile(r'\[\[(.*?)]]', flags=re.I), mode='A',
+@wiki_inline.regex(re.compile(r'\[\[(.*?)\]\]', flags=re.I), mode='A',
                    desc="{wiki.help.wiki_inline.page}")
 async def _(msg: Bot.MessageSession):
     query_list = []
@@ -34,7 +34,7 @@ async def _(msg: Bot.MessageSession):
         await query_pages(msg, query_list, inline_mode=True)
 
 
-@wiki_inline.regex(re.compile(r'\{\{(.*?)}}', flags=re.I), mode='A',
+@wiki_inline.regex(re.compile(r'\{\{(.*?)\}\}', flags=re.I), mode='A',
                    desc='{wiki.help.wiki_inline.template}')
 async def _(msg: Bot.MessageSession):
     query_list = []

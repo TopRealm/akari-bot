@@ -23,16 +23,16 @@ async def make_screenshot(page_link, use_local=True):
     Logger.info('[Webrender] Generating element screenshot...')
     try:
         img = await download(webrender('element_screenshot', use_local=use_local),
-                                      status_code=200,
-                                      headers={'Content-Type': 'application/json'},
-                                      method="POST",
-                                      post_data=json.dumps({
-                                          'url': page_link,
-                                          'element': elements_}),
-                                      attempt=1,
-                                      timeout=30,
-                                      request_private_ip=True
-                                      )
+                             status_code=200,
+                             headers={'Content-Type': 'application/json'},
+                             method="POST",
+                             post_data=json.dumps({
+                                 'url': page_link,
+                                 'element': elements_}),
+                             attempt=1,
+                             timeout=30,
+                             request_private_ip=True
+                             )
         if img:
             return img
         else:
@@ -141,6 +141,5 @@ async def bugtracker_get(msg, mojira_id: str):
         if version := data.get("version", False):
             msglist.append(version)
         if (link := data.get("link", False)):
-            msglist.append(str(Url(link)))
             issue_link = link
     return '\n'.join(msglist), issue_link

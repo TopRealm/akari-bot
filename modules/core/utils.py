@@ -10,7 +10,6 @@ from core.builtins import Bot, I18NContext, Url
 from core.component import module
 from core.utils.i18n import get_available_locales, Locale, load_locale_file
 from core.utils.info import Info
-from core.utils.text import isint
 from core.utils.web_render import WebRender
 from database import BotDBUtil
 
@@ -18,7 +17,7 @@ import subprocess
 
 jwt_secret = Config('jwt_secret', cfg_type=str)
 
-ver = module('version', base=True)
+ver = module('version', base=True, doc=True)
 
 
 @ver.command('{{core.help.version}}')
@@ -36,7 +35,7 @@ async def bot_version(msg: Bot.MessageSession):
         await msg.finish(msg.locale.t('core.message.version.unknown'))
 
 
-ping = module('ping', base=True)
+ping = module('ping', base=True, doc=True)
 
 started_time = datetime.now()
 
@@ -81,7 +80,8 @@ admin = module('admin',
                alias={'ban': 'admin ban',
                       'unban': 'admin unban',
                       'ban list': 'admin ban list'},
-               desc='{core.help.admin.desc}')
+               desc='{core.help.admin.desc}',
+               doc=True)
 
 
 @admin.command([
@@ -143,7 +143,7 @@ async def config_ban(msg: Bot.MessageSession):
             await msg.finish(msg.locale.t("core.message.admin.ban.not_yet"))
 
 
-locale = module('locale', base=True, desc='{core.help.locale.desc}', alias='lang')
+locale = module('locale', base=True, desc='{core.help.locale.desc}', alias='lang', doc=True)
 
 
 @locale.command()
@@ -177,7 +177,7 @@ async def reload_locale(msg: Bot.MessageSession):
         await msg.finish(msg.locale.t("core.message.locale.reload.failed", detail='\n'.join(err)))
 
 
-whoami = module('whoami', base=True)
+whoami = module('whoami', base=True, doc=True)
 
 
 @whoami.command('{{core.help.whoami}}')
@@ -193,18 +193,16 @@ async def _(msg: Bot.MessageSession):
         msg.locale.t('core.message.whoami', sender=msg.target.sender_id, target=msg.target.target_id) + perm)
 
 
-setup = module('setup', base=True, desc='{core.help.setup.desc}', alias='toggle')
+setup = module('setup', base=True, desc='{core.help.setup.desc}', doc=True, alias='toggle')
 
 
 @setup.command('typing {{core.help.setup.typing}}')
 async def _(msg: Bot.MessageSession):
-    target = BotDBUtil.SenderInfo(msg.target.sender_id)
-    state = target.query.disable_typing
-    if not state:
-        target.edit('disable_typing', True)
+    if not msg.info.disable_typing:
+        msg.info.edit('disable_typing', True)
         await msg.finish(msg.locale.t('core.message.setup.typing.disable'))
     else:
-        target.edit('disable_typing', False)
+        msg.info.edit('disable_typing', False)
         await msg.finish(msg.locale.t('core.message.setup.typing.enable'))
 
 '''
@@ -241,15 +239,13 @@ async def _(msg: Bot.MessageSession, offset: str):
 
 
 @setup.command('cooldown <second> {{core.help.setup.cooldown}}', required_admin=True)
-async def _(msg: Bot.MessageSession, second: str):
-    if not isint(second):
-        await msg.finish(msg.locale.t('core.message.setup.cooldown.invalid'))
-    else:
-        msg.data.edit_option('cooldown_time', second)
-        await msg.finish(msg.locale.t('core.message.setup.cooldown.success', time=second))
+async def _(msg: Bot.MessageSession, second: int):
+    second = 0 if second < 0 else second
+    msg.data.edit_option('cooldown_time', second)
+    await msg.finish(msg.locale.t('core.message.setup.cooldown.success', time=second))
 
 
-mute = module('mute', base=True, required_admin=True)
+mute = module('mute', base=True, doc=True, required_admin=True)
 
 
 @mute.command('{{core.help.mute}}')
@@ -261,7 +257,7 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(msg.locale.t('core.message.mute.disable'))
 
 
-leave = module('leave', base=True, required_admin=True, available_for=['QQ|Group'], alias='dismiss')
+leave = module('leave', base=True, doc=True, required_admin=True, available_for=['QQ|Group'], alias='dismiss')
 
 
 @leave.command('{{core.help.leave}}')

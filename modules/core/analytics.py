@@ -14,18 +14,18 @@ from core.builtins import Bot, Plain, Image
 from core.component import module
 from core.utils.cache import random_cache_path
 from database import session, BotDBUtil
-from database.tables import AnalyticsData
+from database.tables import AnalyticsData, is_mysql
 
 
 def get_first_record(msg: Bot.MessageSession):
-    if Config('db_path', cfg_type=str).startswith('mysql'):
+    if is_mysql:
         first_record = BotDBUtil.Analytics.get_first().timestamp.timestamp()
     else:
         first_record = BotDBUtil.Analytics.get_first().timestamp.replace(tzinfo=timezone.utc).timestamp()
     return msg.ts2strftime(first_record, iso=True, timezone=False)
 
 
-ana = module('analytics', alias='ana', required_superuser=True, base=True)
+ana = module('analytics', alias='ana', required_superuser=True, base=True, doc=True)
 
 
 @ana.command()
@@ -101,7 +101,8 @@ async def _(msg: Bot.MessageSession):
                 result = msg.locale.t("core.message.analytics.year", module=module_, first_record=first_record)
             data_ = {}
             for m in range(12):
-                new = datetime.now().replace(day=1, hour=0, minute=0, second=0) + relativedelta(months=1) - relativedelta(months=12 - m - 1)
+                new = datetime.now().replace(day=1, hour=0, minute=0, second=0) + \
+                    relativedelta(months=1) - relativedelta(months=12 - m - 1)
                 old = datetime.now().replace(day=1, hour=0, minute=0, second=0) + relativedelta(months=1) - relativedelta(months=12 - m)
                 get_ = BotDBUtil.Analytics.get_count_by_times(new, old, module_)
                 data_[old.month] = get_

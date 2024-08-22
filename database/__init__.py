@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal, ROUND_HALF_UP
 import uuid
 from typing import Union, List
 
@@ -6,6 +7,7 @@ import ujson as json
 from tenacity import retry, stop_after_attempt
 
 from core.types.message import MessageSession, FetchTarget, FetchedSession
+from core.utils.text import isint
 from database.orm import Session
 from database.tables import *
 
@@ -24,7 +26,7 @@ def auto_rollback_error(func):
 
 
 class BotDBUtil:
-    database_version = 3
+    database_version = 4
 
     class TargetInfo:
         def __init__(self, msg: Union[MessageSession, FetchTarget, str]):
@@ -113,15 +115,17 @@ class BotDBUtil:
                 return {}
             return json.loads(self.query.options)
 
-        def get_option(self, k=None):
-            if not self.query and not k:
-                return {}
-            elif not self.query and k:
-                return None
-            if not k:
-                return self.options
+        def get_option(self, k=None, default=None):
+            if not self.query:
+                if not k:
+                    return {}
+                else:
+                    return default
             else:
-                return self.options.get(k)
+                if not k:
+                    return self.options
+                else:
+                    return self.options.get(k, default)
 
         @retry(stop=stop_after_attempt(3))
         @auto_rollback_error
@@ -159,7 +163,7 @@ class BotDBUtil:
         def custom_admins(self):
             if not self.query:
                 return []
-            return json.loads(self.query.custom_admins)
+            return json.loads(self.query.customAdmins)
 
         def check_custom_target_admin(self, sender_id) -> bool:
             return sender_id in self.custom_admins
@@ -172,7 +176,7 @@ class BotDBUtil:
             custom_admins = self.custom_admins.copy()
             if sender_id not in custom_admins:
                 custom_admins.append(sender_id)
-            self.query.custom_admins = json.dumps(custom_admins)
+            self.query.customAdmins = json.dumps(custom_admins)
             session.commit()
             return True
 
@@ -183,7 +187,7 @@ class BotDBUtil:
                 custom_admins = self.custom_admins.copy()
                 if sender_id in custom_admins:
                     custom_admins.remove(sender_id)
-                self.query.custom_admins = json.dumps(custom_admins)
+                self.query.customAdmins = json.dumps(custom_admins)
             return True
 
         @property
@@ -199,10 +203,61 @@ class BotDBUtil:
                 filter_.append(TargetInfo.targetId.like(f'{id_prefix}%'))
             return session.query(TargetInfo).filter(*filter_).all()
 
+    class SenderInfo:
+        def __init__(self, sender_id):
+            self.sender_id = sender_id
+            self.query = self.query_SenderInfo
+
+        @property
+        def query_SenderInfo(self):
+            return session.query(SenderInfo).filter_by(id=self.sender_id).first()
+
+        @retry(stop=stop_after_attempt(3))
+        @auto_rollback_error
+        def init(self):
+            if not self.query:
+                session.add_all([SenderInfo(id=self.sender_id)])
+                session.commit()
+                return self.query_SenderInfo
+            else:
+                return self.query
+
+        @property
+        def is_in_block_list(self):
+            if not self.query:
+                return False
+            return self.query.isInBlockList
+
+        @property
+        def is_in_allow_list(self):
+            if not self.query:
+                return False
+            return self.query.isInAllowList
+
+        @property
+        def is_super_user(self):
+            if not self.query:
+                return False
+            return self.query.isSuperUser
+
+        @property
+        def warns(self):
+            if not self.query:
+                return 0
+            return self.query.warns
+
+        @property
+        def disable_typing(self):
+            if not self.query:
+                return False
+            return self.query.disableTyping
+
         @property
         def petal(self):
             if not self.query:
                 return 0
+            if self.query.petal < 0:
+                self.query.petal = 0
             return self.query.petal
 
         @retry(stop=stop_after_attempt(3))
@@ -211,7 +266,10 @@ class BotDBUtil:
             if not self.query:
                 self.query = self.init()
             petal = self.petal
-            new_petal = petal + amount
+            if not isint(amount):
+                amount = Decimal(amount).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+            new_petal = petal + int(amount)
+            new_petal = 0 if new_petal < 0 else new_petal
             self.query.petal = new_petal
             session.commit()
             return True
@@ -224,23 +282,6 @@ class BotDBUtil:
             self.query.petal = 0
             session.commit()
             return True
-
-    class SenderInfo:
-        @retry(stop=stop_after_attempt(3))
-        @auto_rollback_error
-        def __init__(self, sender_id):
-            self.sender_id = sender_id
-            self.query = self.query_SenderInfo
-            if not self.query:
-                session.add_all([SenderInfo(id=sender_id)])
-                session.commit()
-                self.query = session.query(SenderInfo).filter_by(id=sender_id).first()
-
-        @property
-        @retry(stop=stop_after_attempt(3))
-        @auto_rollback_error
-        def query_SenderInfo(self):
-            return session.query(SenderInfo).filter_by(id=self.sender_id).first()
 
         @retry(stop=stop_after_attempt(3))
         @auto_rollback_error
@@ -377,7 +418,7 @@ class BotDBUtil:
 
         @retry(stop=stop_after_attempt(3))
         @auto_rollback_error
-        def add_and_check(self, action='default', detail='') -> bool:
+        def add(self, action='default', detail=''):
             """
 
             :return: True = yes, False = no
@@ -385,7 +426,6 @@ class BotDBUtil:
             session.add_all([UnfriendlyActionsTable(targetId=self.target_id,
                                                     senderId=self.sender_id, action=action, detail=detail)])
             session.commit()
-            return self.check_mute()
 
     class JobQueue:
 

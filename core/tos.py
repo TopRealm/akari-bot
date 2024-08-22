@@ -9,25 +9,29 @@ WARNING_COUNTS = Config('tos_warning_counts', 5)
 
 async def warn_target(msg: Bot.MessageSession, reason: str):
     if WARNING_COUNTS >= 1 and not msg.check_super_user():
-        current_warns = int(msg.target.sender_info.query.warns) + 1
-        msg.target.sender_info.edit('warns', current_warns)
+        current_warns = int(msg.info.warns) + 1
+        msg.info.edit('warns', current_warns)
         warn_template = [msg.locale.t("tos.message.warning")]
         i18n_reason = msg.locale.tl_str(reason)
         warn_template.append(msg.locale.t("tos.message.reason") + i18n_reason)
-        if current_warns < WARNING_COUNTS:
+        if current_warns < WARNING_COUNTS or msg.info.is_in_allow_list:
             await tos_report(msg.target.sender_id, msg.target.target_id, reason)
             warn_template.append(
                 msg.locale.t(
                     'tos.message.warning.count',
-                    current_warns=current_warns,
-                    warn_counts=WARNING_COUNTS))
+                    current_warns=current_warns))
+            if not msg.info.is_in_allow_list:
+                warn_template.append(
+                    msg.locale.t(
+                        'tos.message.warning.prompt',
+                        warn_counts=WARNING_COUNTS))
             if current_warns <= 2 and Config('issue_url', cfg_type=str):
                 warn_template.append(msg.locale.t('tos.message.appeal', issue_url=Config('issue_url', cfg_type=str)))
         elif current_warns == WARNING_COUNTS:
             await tos_report(msg.target.sender_id, msg.target.target_id, reason)
             warn_template.append(msg.locale.t('tos.message.warning.last'))
         elif current_warns > WARNING_COUNTS:
-            msg.target.sender_info.edit('isInBlockList', True)
+            msg.info.edit('isInBlockList', True)
             await tos_report(msg.target.sender_id, msg.target.target_id, reason, banned=True)
             warn_template.append(msg.locale.t('tos.message.banned'))
             if Config('issue_url', cfg_type=str):
@@ -39,11 +43,12 @@ async def pardon_user(user: str):
     BotDBUtil.SenderInfo(user).edit('warns', 0)
 
 
-async def warn_user(user: str, count=1):
-    current_warns = int(BotDBUtil.SenderInfo(user).query.warns) + count
-    BotDBUtil.SenderInfo(user).edit('warns', current_warns)
-    if current_warns > WARNING_COUNTS and WARNING_COUNTS >= 1:
-        BotDBUtil.SenderInfo(user).edit('isInBlockList', True)
+async def warn_user(user: str, count: int = 1):
+    sender_info = BotDBUtil.SenderInfo(user)
+    current_warns = int(sender_info.query.warns) + count
+    sender_info.edit('warns', current_warns)
+    if current_warns > WARNING_COUNTS and WARNING_COUNTS >= 1 and not sender_info.is_in_allow_list:
+        sender_info.edit('isInBlockList', True)
     return current_warns
 
 

@@ -3,6 +3,7 @@ import re
 from core.builtins import Bot, I18NContext, Plain
 from core.component import module
 from .libraries.maimaidx_apidata import get_alias, get_info, search_by_alias
+from .libraries.maimaidx_mapping import genre_i18n_mapping
 from .libraries.maimaidx_music import TotalList
 from .libraries.maimaidx_utils import get_diff, get_grade_info
 from .maimai import query_plate, query_song_info, query_process
@@ -12,6 +13,7 @@ total_list = TotalList()
 
 mai_regex = module('maimai_regex',
                    desc='{maimai.help.maimai_regex.desc}',
+                   doc=True,
                    recommend_modules=['maimai'],
                    alias='mai_regex',
                    developers=['DoroWolf'],
@@ -32,17 +34,17 @@ async def _(msg: Bot.MessageSession):
             for sid in sorted(sid_list, key=int):
                 s = (await total_list.get()).by_id(sid)
                 res += f"{s['id']} - {s['title']}{' (DX)' if s['type'] == 'DX' else ''}\n"
-            res += msg.locale.t("maimai.message.song.prompt", prefix=msg.prefixes[0])
-            await msg.finish(res)
+            await msg.finish(res.strip())
         else:
             sid = str(sid_list[0])
     music = (await total_list.get()).by_id(sid)
     if not music:
         await msg.finish(msg.locale.t("maimai.message.music_not_found"))
 
+    genre = genre_i18n_mapping.get(music['basic_info']['genre'], '') if not msg.locale.locale == 'zh_cn' else music['basic_info']['genre']
     await msg.finish(await get_info(music, I18NContext("maimai.message.song",
                                                        artist=music['basic_info']['artist'],
-                                                       genre=music['basic_info']['genre'],
+                                                       genre=genre,
                                                        bpm=music['basic_info']['bpm'],
                                                        version=music['basic_info']['from'],
                                                        level='/'.join((str(ds) for ds in music['ds'])))))
