@@ -33,7 +33,8 @@ async def _(msg: Bot.MessageSession):
             res = msg.locale.t("maimai.message.disambiguation") + "\n"
             for sid in sorted(sid_list, key=int):
                 s = (await total_list.get()).by_id(sid)
-                res += f"{s['id']} - {s['title']}{' (DX)' if s['type'] == 'DX' else ''}\n"
+                if s:
+                    res += f"{s['id']} - {s['title']}{' (DX)' if s['type'] == 'DX' else ''}\n"
             await msg.finish(res.strip())
         else:
             sid = str(sid_list[0])
@@ -41,10 +42,9 @@ async def _(msg: Bot.MessageSession):
     if not music:
         await msg.finish(msg.locale.t("maimai.message.music_not_found"))
 
-    genre = genre_i18n_mapping.get(music['basic_info']['genre'], '') if not msg.locale.locale == 'zh_cn' else music['basic_info']['genre']
     await msg.finish(await get_info(music, I18NContext("maimai.message.song",
                                                        artist=music['basic_info']['artist'],
-                                                       genre=genre,
+                                                       genre=genre_i18n_mapping.get(music['basic_info']['genre'], music['basic_info']['genre']),
                                                        bpm=music['basic_info']['bpm'],
                                                        version=music['basic_info']['from'],
                                                        level='/'.join((str(ds) for ds in music['ds'])))))
