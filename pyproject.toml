@@ -12,6 +12,7 @@ authors = [
 license = "AGPL-3.0"
 readme = "README.md"
 
+
 [tool.poetry.dependencies]
 python = "^3.12.0"
 Pillow = "^10.2.0"
@@ -64,11 +65,18 @@ inputimeout = "^1.0.4"
 prompt-toolkit = "^3.0.47"
 emoji = "^2.12.1"
 langconv = {git = "https://github.com/OasisAkari/langconv.py.git"}
-
+genshin = "^1.7.1"
+pydantic = "^2.7.4"
 
 [tool.poetry.group.dev.dependencies]
 autopep8 = "^2.0.2"
 pycodestyle = "2.12.1"
+
+
+[[tool.poetry.source]]
+name = "mirrors"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+priority = "default"
 
 [build-system]
 requires = ["poetry-core"]
