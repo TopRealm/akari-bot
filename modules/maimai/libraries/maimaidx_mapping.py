@@ -1,3 +1,19 @@
+import os
+
+from config import Config
+
+
+DEVELOPER_TOKEN = Config('diving_fish_developer_token', cfg_type=str)
+SONGS_PER_PAGE = 30
+SONGS_NEED_IMG = 10
+
+assets_path = os.path.abspath('./assets/maimai/')
+cover_dir = os.path.join(assets_path, "static", "mai", "cover")
+grade_info_path = os.path.join(assets_path, "mai_grade_info.json")
+song_alias_path = os.path.join(assets_path, "mai_song_alias.json")
+song_info_path = os.path.join(assets_path, "mai_song_info.json")
+utage_info_path = os.path.join(assets_path, "mai_utage_info.json")
+
 achievement_list = [50.0, 60.0, 70.0, 75.0, 80.0, 90.0, 94.0, 97.0, 98.0, 99.0, 99.5, 100.0, 100.5]
 rate_list = ["D", "C", "B", "BB", "BBB", "A", "AA", "AAA", "S", "S+", "SS", "SS+", "SSS", "SSS+"]
 rate_list_raw = ["d", "c", "b", "bb", "bbb", "a", "aa", "aaa", "s", "sp", "ss", "ssp", "sss", "sssp"]
@@ -80,7 +96,7 @@ genre_i18n_mapping = {
     "ゲームバラエティ": "GAME & VARIETY",
     "舞萌": "maimai",
     "音击&中二节奏": "ONGEKI & CHUNITHM",
-    "オンゲキCHUNITHM": "ONGEKI & CHUNITHM",
+    "オンゲキCHUNITHM": "ONGEKI & CHUNITHM"
 }
 
 versions = ["maimai",
@@ -116,7 +132,7 @@ sd_plate_mapping = {
     "菫": "maimai MURASAKi PLUS",
     "白": "maimai MiLK",
     "雪": "MiLK PLUS",
-    "輝": "maimai FiNALE",
+    "輝": "maimai FiNALE"
 }
 
 dx_plate_mapping = {
@@ -129,6 +145,7 @@ dx_plate_mapping = {
     "祭": "maimai でらっくす FESTiVAL",
     "祝": "maimai でらっくす FESTiVAL",
     "双": "maimai でらっくす BUDDiES",
+    "宴": "maimai でらっくす BUDDiES",
 }
 
 plate_mapping = sd_plate_mapping | dx_plate_mapping
