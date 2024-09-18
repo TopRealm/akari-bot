@@ -63,6 +63,7 @@ async def message_handler(event: Event):
             else:
                 return
     else:
+        filter_msg = False
         for item in event.message:
             if re.match(r'.*?<\?xml.*?>.*?', item["data"].get("text"), re.MULTILINE | re.DOTALL):
                 filter_msg = True
