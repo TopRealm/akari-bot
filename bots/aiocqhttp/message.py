@@ -172,8 +172,8 @@ class MessageSession(MessageSessionT):
         if string_post:
             m = html.unescape(self.session.message.message)
                 if text_only:
-                return ''.join(
-                    re.split(r'\[CQ:.*?]', m)).strip()
+                    return ''.join(
+                        re.split(r'\[CQ:.*?]', m)).strip()
             m = re.sub(r'\[CQ:at,qq=(.*?)]', r'QQ|\1', m)
             m = re.sub(r'\[CQ:forward,id=(.*?)]', r'\[Ke:forward,id=\1]', m)
 
