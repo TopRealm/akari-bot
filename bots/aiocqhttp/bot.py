@@ -25,7 +25,7 @@ EnableDirtyWordCheck.status = True if Config('enable_dirty_check', False) else F
 Url.disable_mm = False if Config('enable_urlmanager', False) else True
 qq_account = str(Config("qq_account", cfg_type=(int, str)))
 enable_listening_self_message = Config("qq_enable_listening_self_message", False)
-string_post = Config("qq_enable_listening_self_message", False)
+string_post = Config("qq_string_post", False)
 
 
 @bot.on_startup
