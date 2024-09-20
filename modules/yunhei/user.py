@@ -36,33 +36,25 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
         registration = str(msg.target.sender_id).split('|')[1]
         if registration in admins:
             level_dict = {'轻微': 1, '中等': 2, '中度': 2, '严重': 3}
-            # 若三个数据均填写则继续操作——但其实如果没全部填写会直接触发小可的“语法错误”
-            if qqnum and desc and level:
-                # 获取用户名
-                name_get = await get_url(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={qqnum}")
-                qqname = json.loads(name_get[17:-1])[qqnum][6]
-                # 有使用权限者已被单独保存至“registrators.json”。下为检测是否拥有权限
-                expiration = 31557600 if level == '轻微' else 0
-                r = await post_url(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={
-                    level_dict[level]}&registration={admins[registration]}&expiration={expiration}&desc={desc}")
-                if json.loads(r)['code'] == 1:
-                    measure = '添加至黑名单'
-                    if level == "轻微":
-                        measure += '，时长一年'
-                    if level in ["中等", "中度"]:
-                        measure = '永久' + measure
-                    if level == "严重":
-                        try:
-                            await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2], user_id=int(qqnum), reject_add_request=True)
-                            measure = '踢出群并永久' + measure
-                        except Exception as e:
-                            await msg.finish(f"踢出用户失败：{e}")
-                    get_user = await get_url(f'https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={qqnum}')
-                    await msg.finish(f"已将{qqname}（{qqnum}）{measure}。\n违规原因：{desc}\n严重程度：{level}\n措施：{measure}\n登记人：{admins[registration]}\n上黑时间：{json.loads(get_user)['data']['add_time']}")
-                else:
-                    await msg.finish(f"错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r)['msg']}")
+            expiration = 31557600 if level == '轻微' else 0
+            r = await post_url(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={
+                level_dict.get(level, level)}&registration={admins[registration]}&expiration={expiration}&desc={desc}")
+            if json.loads(r)['code'] == 1:
+                measure = '添加至黑名单'
+                if level in ["轻微", "1"]:
+                    measure += '，时长一年'
+                elif level in ["中等", "中度", "2"]:
+                    measure = '永久' + measure
+                elif level in ["严重", "3"]:
+                    try:
+                        await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2], user_id=int(qqnum), reject_add_request=True)
+                        measure = '踢出群并永久' + measure
+                    except Exception as e:
+                        await msg.finish(f"踢出用户失败：{e}")
+                get_user = await get_url(f'https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={qqnum}')
+                await msg.finish(f"已将{qqnum}{measure}。\n违规原因：{desc}\n严重程度：{level}\n措施：{measure}\n登记人：{admins[registration]}\n上黑时间：{json.loads(get_user)['data']['add_time']}")
             else:
-                await msg.finish('错误：参数不正确，请检查参数是否全部正确填写。\n完整命令格式：~yunhei add QQ号 原因 严重程度\n“严重程度”可填：轻微、中等、严重')
+                await msg.finish(f"错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r)['msg']}")')
         else:
             await msg.finish('错误：您没有使用该命令的权限。')
 
@@ -87,8 +79,6 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 summary = []
                 detectnum = 0
                 for i in group_members:
-                    name_get = await get_url(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={i}")
-                    qqname = json.loads(name_get[17:-1])[i][6]
                     r = await get_url(
                         f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
                     user_info = json.loads(r)['data']
@@ -104,7 +94,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                             except Exception as e:
                                 await msg.finish(f"踢出用户失败：{e}")
                         summary.append(
-                            f"{detectnum}.{qqname}（{i}）\n违规原因：{
+                            f"{detectnum}.{i}\n违规原因：{
                                 user_info['describe']}\n严重程度：{
                                 user_info['level']}\n登记人：{
                                 user_info['registration']}\n上黑时间：{
@@ -126,40 +116,35 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
             await msg.finish('错误：您没有使用该命令的权限。')
 
 
-async def admin_add(msg: Bot.MessageSession, qqnum, name):
+async def admin_add(msg: Bot.MessageSession, qqnum, name=None):
     detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[2]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
+
+    admins = load_admins()
+    if not name:
+        name = msg.target.sender_name
+    if qqnum in admins:
+        await msg.finish('错误：该账号已存在。')
     else:
-        if name == "" or qqnum == "":
-            await msg.finish('错误：参数不正确，添加管理员账号需要同时提供QQ号与名称。')
-        else:
-            admins = load_admins()
-            if qqnum in admins:
-                await msg.finish('错误：该账号已存在。')
-            else:
-                admins[qqnum] = name
-                save_admins(admins)
-                await msg.finish(f'已添加管理员：{name}（{qqnum}）')
+        admins[qqnum] = name
+        save_admins(admins)
+        await msg.finish(f'已添加管理员：{name}（{qqnum}）')
 
 
 async def admin_del(msg: Bot.MessageSession, qqnum):
     detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[2]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
-    else:
-        if qqnum == "":
-            await msg.finish('错误：参数不正确，删除管理员账号仅需要提供QQ号，无需提供名称。')
-        else:
 
-            admins = load_admins()
-            if qqnum not in admins:
-                await msg.finish('错误：该账号不存在。')
-            else:
-                name = admins[qqnum]
-                del admins[qqnum]
-                save_admins(admins)
-                await msg.finish(f'已删除管理员：{name}（{qqnum}）')
+    admins = load_admins()
+    if qqnum not in admins:
+        await msg.finish('错误：该账号不存在。')
+    else:
+        name = admins[qqnum]
+        del admins[qqnum]
+        save_admins(admins)
+        await msg.finish(f'已删除管理员：{name}（{qqnum}）')
 
 
 async def admin_list(msg: Bot.MessageSession):

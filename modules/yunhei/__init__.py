@@ -19,8 +19,8 @@ async def _(msg: Bot.MessageSession, qqnum: str = "all"):
     await user.check(msg, qqnum)
 
 
-@yunhei.command('admin add <qqnum> <name> {{yunhei.help.addadmin}}', required_superuser=True)
-async def _(msg: Bot.MessageSession, qqnum: str, name: str):
+@yunhei.command('admin add <qqnum> [<name>] {{yunhei.help.addadmin}}', required_superuser=True)
+async def _(msg: Bot.MessageSession, qqnum: str, name: str = None):
     await user.admin_add(msg, qqnum, name)
 
 
