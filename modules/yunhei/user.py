@@ -101,7 +101,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                                 user_info['add_time']}\n过期时间：{
                                 user_info['expiration']}\n{kick}")
                 report = "未检查出任何位于黑名单内的成员。" if detectnum == 0 else ('\n').join(summary)
-                await msg.finish(f'检查报告：\n\n{report}\n检查完毕，感谢您的使用。')
+                await msg.finish(f'检查报告：\n{report}\n检查完毕，感谢您的使用。')
             # 单个用户查询
             else:
                 r = await get_url(
@@ -109,7 +109,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 res = json.loads(r)
                 if res['data'] != []:
                     data = res['data']
-                    await msg.finish(f"账号类型：{data['platform']}\n用户名：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data['registration']}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
+                    await msg.finish(f"账号类型：{data['platform']}\nQQ号：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data['registration']}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
                 else:
                     await msg.finish('查询失败，该用户不在黑名单中。')
         else:
