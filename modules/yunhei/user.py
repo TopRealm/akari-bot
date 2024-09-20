@@ -7,13 +7,23 @@ import os
 api_key=Config('yunhei_api_key')
 botnum=Config('qq_account')
 
+def load_admins():
+    if not os.path.exists('modules/yunhei/admins.json'):
+        with open('modules/yunhei/admins.json', 'w', encoding='utf-8') as f:
+            f.write('{}')
+    with open('modules/yunhei/admins.json', 'r', encoding='utf-8') as f:
+        return json.loads(f.read())
+def save_admins(admins):
+    with open('modules/yunhei/admins.json', 'w', encoding='utf-8') as f:
+        f.write(json.dumps(admins))
+
 #添加部分目前已能完全正常运行
 async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
     detect=await msg.call_api("get_group_member_info",group_id=int(str(msg.target.target_id).split('|')[2]),user_id=botnum)
     if detect['role']=='member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
-        admins=json.loads(open('modules/yunhei/admins.json',encoding='utf-8').read())
+        admins=load_admins()
         registration=str(msg.target.sender_id).split('|')[1]
         if registration in admins:
             level_dict={'轻微':1,'中等':2,'中度':2,'严重':3}
@@ -22,7 +32,7 @@ async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
                 #获取用户名
                 name_get=requests.get(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={qqnum}").text
                 if name_get!='_Callback(\n{"error":{\n"type":"",\n"msg":"对不起，你输入的号码错误"\n}}\n);\n':
-                    qqname=json.loads(name_get.lstrip('portraitCallBack(').rstrip(')'))[f'{qqnum}'][6]
+                    qqname=json.loads(name_get.lstrip('portraitCallBack(').rstrip(')'))[{qqnum}][6]
                     #有使用权限者已被单独保存至“registrators.json”。下为检测是否拥有权限
                     expiration=31557600 if level=='轻微' else 0
                     r=requests.post(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={level_dict[level]}&registration={admins[registration]}&expiration={expiration}&desc={desc}")
@@ -30,7 +40,7 @@ async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
                         measure='添加至黑名单'
                         if level=="轻微":
                             measure+='，时长一年'
-                        if level=="中等" or "中度":
+                        if level in ["中等", "中度"]:
                             measure='永久'+measure
                         if level=="严重":
                             await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2],user_id=int(qqnum),reject_add_request=True)
@@ -50,7 +60,7 @@ async def check(msg:Bot.MessageSession,qqnum:str="all"):
     if detect['role']=='member':
        await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
-        admins=json.loads(open('modules/yunhei/admins.json',encoding='utf-8').read())
+        admins=load_admins()
         registration=str(msg.target.sender_id).split('|')[1]
         if registration in admins:
             #执行“群内大清理”的情况
@@ -88,7 +98,7 @@ async def check(msg:Bot.MessageSession,qqnum:str="all"):
                 res=json.loads(r.text)
                 if res['data']!=[]:
                     data=res['data']
-                    await msg.finish(f"账号类型：{data['platform']}\n用户名：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data["registration"]}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
+                    await msg.finish(f"账号类型：{data['platform']}\n用户名：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data['registration']}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
                 else:
                     await msg.finish('查询失败，该用户不在黑名单中。')
         else:
@@ -102,18 +112,12 @@ async def admin_add(msg:Bot.MessageSession,qqnum,name):
         if name=="" or qqnum=="":
             await msg.finish('错误：参数不正确，添加管理员账号需要同时提供QQ号与名称。')
         else:
-            if not os.path.exists('modules/yunhei/admins.json'):
-                f=open('modules/yunhei/admins.json','w',encoding='utf-8')
-                f.write('{}')
-                f.close()
-            list=json.loads(open('modules/yunhei/admins.json',encoding='utf-8').read())
+            list=load_admins()
             if qqnum in list:
                 await msg.finish('错误：该账号已存在。')
             else:
                 list[qqnum]=name
-                f=open('modules/yunhei/admins.json','w',encoding='utf-8')
-                f.write(json.dumps(list))
-                f.close()
+                save_admins(list)
                 await msg.finish(f'已添加管理员：{name}（{qqnum}）')
 
 async def admin_del(msg:Bot.MessageSession,qqnum):
@@ -125,22 +129,20 @@ async def admin_del(msg:Bot.MessageSession,qqnum):
             await msg.finish('错误：参数不正确，删除管理员账号仅需要提供QQ号，无需提供名称。')
         else:
             
-            list=json.loads(open('modules/yunhei/admins.json',encoding='utf-8').read())
+            list=load_admins()
             if qqnum not in list:
                 await msg.finish('错误：该账号不存在。')
             else:
                 name=list[qqnum]
                 del list[qqnum]
-                f=open('modules/yunhei/admins.json','w',encoding='utf-8')
-                f.write(json.dumps(list))
-                f.close()
+                save_admins(list)
                 await msg.finish(f'已删除管理员：{name}（{qqnum}）')
 async def admin_list(msg:Bot.MessageSession):
     detect=await msg.call_api("get_group_member_info",group_id=int(str(msg.target.target_id).split('|')[2]),user_id=botnum)
     if detect['role']=='member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
-        list=json.loads(open('modules/yunhei/admins.json',encoding='utf-8').read())
+        list=load_admins()
         result=["拥有有兽云黑BOT运行权限的管理员列表（按添加顺序排列）："]
         for i in list:
             result.append(f"{list[i]}（{i}）")

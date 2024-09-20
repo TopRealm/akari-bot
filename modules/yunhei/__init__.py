@@ -1,7 +1,6 @@
 from core.component import module
 from core.builtins import Bot
 from modules.yunhei import user
-from core.scheduler import CronTrigger
 
 yunhei = module('yunhei', developers=['NSun200512'], desc='有兽云黑',doc=True)
 
