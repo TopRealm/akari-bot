@@ -43,8 +43,11 @@ async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
                         if level in ["中等", "中度"]:
                             measure='永久'+measure
                         if level=="严重":
-                            await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2],user_id=int(qqnum),reject_add_request=True)
-                            measure='踢出群并永久'+measure
+                            try:
+                                await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2],user_id=int(qqnum),reject_add_request=True)
+                                measure='踢出群并永久'+measure
+                            except Exception as e:
+                                await msg.finish(f"踢出用户失败：{e}")
                         await msg.finish(f"已将{qqname}（{qqnum}）{measure}。\n违规原因：{desc}\n严重程度：{level}\n措施：{measure}\n登记人：{admins[registration]}\n上黑时间：{json.loads(requests.get(f'https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={qqnum}').text)['data']['add_time']}")
                     else:
                         await msg.finish(f'错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r.text)['msg']}')    
@@ -84,8 +87,11 @@ async def check(msg:Bot.MessageSession,qqnum:str="all"):
                         detectnum+=1
                         #严重的特殊反应
                         if user_info['level']=="严重":
-                            await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2],user_id=int(i),reject_add_request=True)
-                            kick='现已踢出并拉黑。\n'
+                            try:
+                                await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2],user_id=int(i),reject_add_request=True)
+                                kick='现已踢出并拉黑。\n'
+                            except Exception as e:
+                                await msg.finish(f"踢出用户失败：{e}")
                         summary.append(f"{detectnum}.{qqname}（{i}）\n违规原因：{user_info['describe']}\n严重程度：{user_info['level']}\n登记人：{user_info['registration']}\n上黑时间：{user_info['add_time']}\n过期时间：{user_info['expiration']}\n{kick}")
                     else:
                         #没查到就不执行
