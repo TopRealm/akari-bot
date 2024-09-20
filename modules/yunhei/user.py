@@ -54,7 +54,7 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
                 get_user = await get_url(f'https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={qqnum}')
                 await msg.finish(f"已将{qqnum}{measure}。\n违规原因：{desc}\n严重程度：{level}\n措施：{measure}\n登记人：{admins[registration]}\n上黑时间：{json.loads(get_user)['data']['add_time']}")
             else:
-                await msg.finish(f"错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r)['msg']}")')
+                await msg.finish(f"错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r)['msg']}")
         else:
             await msg.finish('错误：您没有使用该命令的权限。')
 
