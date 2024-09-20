@@ -81,7 +81,7 @@ async def check(msg:Bot.MessageSession,qqnum:str="all"):
                 detectnum=0
                 for i in group_members:
                     r=requests.get(f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
-                    qqname=json.loads(requests.get(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={i}").text.lstrip('portraitCallBack(').rstrip(')'))[f'{i}'][6]
+                    qqname=json.loads(requests.get(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={i}").text[15:-1])[i][6]
                     user_info=json.loads(r.text)['data']
                     #查到账号
                     if user_info!=[]:
