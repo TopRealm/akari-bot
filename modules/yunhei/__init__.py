@@ -3,7 +3,13 @@ from core.builtins import Bot
 from modules.yunhei import user
 
 
-yunhei = module('yunhei', developers=['NSun200512'], desc='{yunhei.help.desc}', available_for='QQ')
+yunhei = module(
+    'yunhei',
+    developers=['NSun200512'],
+    desc='{yunhei.help.desc}',
+    available_for=[
+        'QQ|Private',
+         'QQ|Group'])
 
 
 @yunhei.command('add <qqnum> <reason> <level> {{yunhei.help.add}}')
