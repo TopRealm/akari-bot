@@ -23,7 +23,7 @@ def save_admins(admins):
 async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
     detect=await msg.call_api("get_group_member_info",group_id=int(str(msg.target.target_id).split('|')[2]),user_id=botnum)
     if detect['role']=='member':
-        await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
+        await msg.finish('{{yunhei.message.needbotadmin}}')
     else:
         admins=load_admins()
         registration=str(msg.target.sender_id).split('|')[1]
@@ -33,7 +33,7 @@ async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
             if qqnum and desc and level:
                 #获取用户名
                 name_get=requests.get(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={qqnum}").text
-                if name_get!='_Callback(\n{"error":{\n"type":"",\n"msg":"对不起，你输入的号码错误"\n}}\n);\n':
+                if name_get!='_Callback(\n{"error":{\n"type":"",\n"msg":"{{yunhei.message.invalidnum}}"\n}}\n);\n':
                     qqname=json.loads(name_get[15:-1])[qqnum][6]
                     #有使用权限者已被单独保存至“registrators.json”。下为检测是否拥有权限
                     expiration=31557600 if level=='轻微' else 0
