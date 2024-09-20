@@ -6,15 +6,17 @@ import os
 
 api_key=Config('yunhei_api_key')
 botnum=Config('qq_account')
+ADMIN_FILE_PATH = 'modules/yunhei/admins.json'
 
 def load_admins():
-    if not os.path.exists('modules/yunhei/admins.json'):
-        with open('modules/yunhei/admins.json', 'w', encoding='utf-8') as f:
+    if not os.path.exists(ADMIN_FILE_PATH):
+        with open(ADMIN_FILE_PATH, 'w', encoding='utf-8') as f:
             f.write('{}')
-    with open('modules/yunhei/admins.json', 'r', encoding='utf-8') as f:
+    with open(ADMIN_FILE_PATH, 'r', encoding='utf-8') as f:
         return json.loads(f.read())
+
 def save_admins(admins):
-    with open('modules/yunhei/admins.json', 'w', encoding='utf-8') as f:
+    with open(ADMIN_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(json.dumps(admins))
 
 #添加部分目前已能完全正常运行
@@ -32,7 +34,7 @@ async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
                 #获取用户名
                 name_get=requests.get(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={qqnum}").text
                 if name_get!='_Callback(\n{"error":{\n"type":"",\n"msg":"对不起，你输入的号码错误"\n}}\n);\n':
-                    qqname=json.loads(name_get.lstrip('portraitCallBack(').rstrip(')'))[{qqnum}][6]
+                    qqname=json.loads(name_get[15:-1])[qqnum][6]
                     #有使用权限者已被单独保存至“registrators.json”。下为检测是否拥有权限
                     expiration=31557600 if level=='轻微' else 0
                     r=requests.post(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={level_dict[level]}&registration={admins[registration]}&expiration={expiration}&desc={desc}")
@@ -50,7 +52,7 @@ async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
                                 await msg.finish(f"踢出用户失败：{e}")
                         await msg.finish(f"已将{qqname}（{qqnum}）{measure}。\n违规原因：{desc}\n严重程度：{level}\n措施：{measure}\n登记人：{admins[registration]}\n上黑时间：{json.loads(requests.get(f'https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={qqnum}').text)['data']['add_time']}")
                     else:
-                        await msg.finish(f'错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r.text)['msg']}')    
+                        await msg.finish(f"错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r.text)['msg']}")    
                 else:
                     await msg.finish('错误：您输入的QQ号不存在。')
             else:
@@ -73,7 +75,7 @@ async def check(msg:Bot.MessageSession,qqnum:str="all"):
                 group_members=[]
                 for i in group_data:
                     group_members.append(i['user_id'])
-                await msg.send_message(f"正在检查群内所有人员……")
+                await msg.send_message("正在检查群内所有人员……")
                 #检测所有的成员
                 summary=[]
                 detectnum=0
@@ -118,12 +120,12 @@ async def admin_add(msg:Bot.MessageSession,qqnum,name):
         if name=="" or qqnum=="":
             await msg.finish('错误：参数不正确，添加管理员账号需要同时提供QQ号与名称。')
         else:
-            list=load_admins()
-            if qqnum in list:
+            admins=load_admins()
+            if qqnum in admins:
                 await msg.finish('错误：该账号已存在。')
             else:
-                list[qqnum]=name
-                save_admins(list)
+                admins[qqnum]=name
+                save_admins(admins)
                 await msg.finish(f'已添加管理员：{name}（{qqnum}）')
 
 async def admin_del(msg:Bot.MessageSession,qqnum):
@@ -135,13 +137,13 @@ async def admin_del(msg:Bot.MessageSession,qqnum):
             await msg.finish('错误：参数不正确，删除管理员账号仅需要提供QQ号，无需提供名称。')
         else:
             
-            list=load_admins()
-            if qqnum not in list:
+            admins=load_admins()
+            if qqnum not in admins:
                 await msg.finish('错误：该账号不存在。')
             else:
-                name=list[qqnum]
-                del list[qqnum]
-                save_admins(list)
+                name=admins[qqnum]
+                del admins[qqnum]
+                save_admins(admins)
                 await msg.finish(f'已删除管理员：{name}（{qqnum}）')
 async def admin_list(msg:Bot.MessageSession):
     detect=await msg.call_api("get_group_member_info",group_id=int(str(msg.target.target_id).split('|')[2]),user_id=botnum)
