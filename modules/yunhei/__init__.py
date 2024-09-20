@@ -2,7 +2,7 @@ from core.component import module
 from core.builtins import Bot
 from modules.yunhei import user
 
-yunhei = module('yunhei', developers=['NSun200512'], desc='{{yunhei.help.desc}}',doc=True)
+yunhei = module('yunhei', developers=['NSun200512'], desc='{yunhei.help.desc}',doc=True)
 
 @yunhei.command('add <qqnum> <reason> <level> {{yunhei.help.add}}')
 async def _(msg:Bot.MessageSession, qqnum:str, reason:str, level:str):
