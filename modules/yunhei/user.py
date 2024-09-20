@@ -3,6 +3,7 @@ import os
 import ujson as json
 
 from core.builtins import Bot
+from core.logger import Logger
 from core.utils.http import get_url, post_url
 from config import Config
 
@@ -40,6 +41,7 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
             if qqnum and desc and level:
                 # 获取用户名
                 name_get = await get_url(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={qqnum}")
+                Logger.debug(name_get)
                 qqname = json.loads(name_get[15:-1])[qqnum][6]
                 # 有使用权限者已被单独保存至“registrators.json”。下为检测是否拥有权限
                 expiration = 31557600 if level == '轻微' else 0
