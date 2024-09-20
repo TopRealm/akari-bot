@@ -3,7 +3,6 @@ import os
 import ujson as json
 
 from core.builtins import Bot
-from core.logger import Logger
 from core.utils.http import get_url, post_url
 from config import Config
 
@@ -41,8 +40,7 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
             if qqnum and desc and level:
                 # 获取用户名
                 name_get = await get_url(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={qqnum}")
-                Logger.debug(name_get)
-                qqname = json.loads(name_get[15:-1])[qqnum][6]
+                qqname = json.loads(name_get[17:-1])[qqnum][6]
                 # 有使用权限者已被单独保存至“registrators.json”。下为检测是否拥有权限
                 expiration = 31557600 if level == '轻微' else 0
                 r = await post_url(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={
@@ -90,7 +88,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 detectnum = 0
                 for i in group_members:
                     name_get = await get_url(f"https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?uins={i}")
-                    qqname = json.loads(name_get[15:-1])[i][6]
+                    qqname = json.loads(name_get[17:-1])[i][6]
                     r = await get_url(
                         f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
                     user_info = json.loads(r)['data']
