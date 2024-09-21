@@ -24,9 +24,9 @@ def save_admins(admins):
     with open(ADMIN_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(json.dumps(admins))
 
-async def get_qqname(msg: Bot.MessageSession,qqnum: str):
-    name=await msg.call_api("get_stranger_info", user_id=int(qqnum))
+async def get_qqname(msg: Bot.MessageSession, qqnum: str):
     try:
+        name = await msg.call_api("get_stranger_info", user_id=int(qqnum))
         return name['nickname']
     except Exception:
         return "QQ用户"
@@ -45,11 +45,10 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
                 expiration = 31536000 if level_dict[level] == 1 else 0
                 get_user = await get_url(f'https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={qqnum}')
                 if json.loads(get_user)['data'] == []:
-                    r = await post_url(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={
-                        level_dict.get(level, level)}&registration={admins[registration]}&expiration={expiration}&desc={desc}")
+                    r = await post_url(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={level_dict.get(level, level)}&registration={admins[registration]}&expiration={expiration}&desc={desc}")
                     if json.loads(r)['code'] == 1:
                         measure = '添加至黑名单'
-                        if level in ["轻微", "中度", "1"]:
+                        if level in ["轻微", "轻度", "1"]:
                             measure += '，时长一年'
                         elif level in ["中等", "中度", "2"]:
                             measure = '永久' + measure
@@ -60,7 +59,8 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
                             except Exception as e:
                                 await msg.finish(f"踢出用户失败：{e}")
                         get_user = await get_url(f'https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={qqnum}')
-                        await msg.finish(f"已将{get_qqname(msg,qqnum)}（{qqnum}）{measure}。\n违规原因：{desc}\n严重程度：{level}\n措施：{measure}\n登记人：{admins[registration]}\n上黑时间：{json.loads(get_user)['data']['add_time']}")
+                        name = await get_qqname(msg, qqnum)
+                        await msg.finish(f"已将{name}（{qqnum}）{measure}。\n违规原因：{desc}\n严重程度：{level}\n措施：{measure}\n登记人：{admins[registration]}\n上黑时间：{json.loads(get_user)['data']['add_time']}")
                     else:
                         await msg.finish(f"错误：添加失败，请检查参数是否正确。若所有参数无误仍添加失败，请联系开发者。\n失败原因：{json.loads(r)['msg']}")
                 else:
@@ -108,11 +108,12 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                                 await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2], user_id=int(i), reject_add_request=True)
                             except Exception as e:
                                 await msg.finish(f"踢出用户失败：{e}")
+                            name = await get_qqname(msg, i)
                             severe_summary.append(
-                                f"{get_qqname(msg,i)}（{i}）\n违规原因：{
-                                    user_info['describe']}\n登记人：{
-                                    user_info['registration']}\n上黑时间：{
-                                    user_info['add_time']}\n")
+                                f"{name}（{i}）\n违规原因：{
+                                user_info['describe']}\n登记人：{
+                                user_info['registration']}\n上黑时间：{
+                                user_info['add_time']}\n")
                             severe+=1
                 if detectnum == 0:
                     report = "未检查出任何位于黑名单内的成员。"
@@ -128,7 +129,8 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 res = json.loads(r)
                 if res['data'] != []:
                     data = res['data']
-                    await msg.finish(f"账号类型：{data['platform']}\n用户名：{get_qqname(msg,data['account_name'])}QQ号：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data['registration']}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
+                    name=await get_qqname(msg,data['account_name'])
+                    await msg.finish(f"账号类型：{data['platform']}\n用户名：{name}QQ号：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data['registration']}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
                 else:
                     await msg.finish('查询失败，该用户不在黑名单中。')
         else:
