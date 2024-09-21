@@ -5,6 +5,7 @@ from modules.yunhei import user
 
 yunhei = module(
     'yunhei',
+    alias={'cx': 'check','tj': 'add'},
     developers=['NSun200512'],
     desc='{yunhei.help.desc}')
 
@@ -14,7 +15,7 @@ async def _(msg: Bot.MessageSession, qqnum: str, reason: str, level: str):
     await user.add(msg, qqnum, reason, level)
 
 
-@yunhei.command('cx [<qqnum>] {{yunhei.help.check}}')
+@yunhei.command('check [<qqnum>] {{yunhei.help.check}}')
 async def _(msg: Bot.MessageSession, qqnum: str = "all"):
     await user.check(msg, qqnum)
 
