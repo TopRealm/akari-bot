@@ -5,7 +5,7 @@ from modules.yunhei import user
 
 yunhei = module(
     'yunhei',
-    alias={'cx': 'check','tj': 'add'},
+    alias={'yunhei cx': 'yunhei check', 'yunhei tj': 'yunhei add'},
     developers=['NSun200512'],
     desc='{yunhei.help.desc}')
 
