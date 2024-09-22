@@ -6,6 +6,5 @@
     "yunhei.help.addadmin": "添加云黑功能管理员",
     "yunhei.help.deladmin": "删除云黑功能管理员",
     "yunhei.help.listadmin": "查看云黑功能管理员联系列表",
-    "yunhei.message.needbotadmin": "错误：本功能需要机器人为群组管理员，请联系群主设置。",
-    "yunhei.message.invalidnum": "对不起，你输入的号码错误"
+    "yunhei.message.needbotadmin": "错误：本功能需要机器人为群组管理员，请联系群主设置。"
 }
