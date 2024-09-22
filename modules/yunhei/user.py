@@ -39,7 +39,7 @@ async def add(msg:Bot.MessageSession, qqnum:str, desc:str,level:str):
                     expiration=31557600 if level=='轻微' else 0
                     r=requests.post(f"https://yunhei.youshou.wiki/add_platform_users?api_key={api_key}&account_type=1&name={qqnum}&level={level_dict[level]}&registration={admins[registration]}&expiration={expiration}&desc={desc}")
                     if json.loads(r.text)['code']==1:
-                        measure='添加至黑名单'
+                        measure='记录违规信息'
                         if level=="轻微":
                             measure+='，时长一年'
                         if level in ["中等", "中度"]:
