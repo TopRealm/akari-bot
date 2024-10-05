@@ -1,0 +1,10 @@
+{
+    "yunhei.help.desc": "云黑功能（建设中）。\n请访问 https://yunhei.youshou.wiki 查询具体信息。",
+    "yunhei.help.add": "添加黑名单成员",
+    "yunhei.help.check": "查询单个黑名单成员或扫描群内的成员",
+    "yunhei.help.list": "列出黑名单成员",
+    "yunhei.help.addadmin": "添加云黑功能管理员",
+    "yunhei.help.deladmin": "删除云黑功能管理员",
+    "yunhei.help.listadmin": "查看云黑功能管理员联系列表",
+    "yunhei.message.needbotadmin": "错误：本功能需要机器人为群组管理员，请联系群主设置。"
+}

@@ -38,7 +38,6 @@ class Plain(PlainT):
     def to_dict(self):
         return {'type': 'plain', 'data': {'text': self.text}}
 
-
 class Url(UrlT):
     mm = False
     disable_mm = False

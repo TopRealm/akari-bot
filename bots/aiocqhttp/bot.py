@@ -64,11 +64,7 @@ async def message_handler(event: Event):
             else:
                 return
     else:
-        filter_msg = False
-        for item in event.message:
-            if re.match(r'.*?<\?xml.*?>.*?', item["data"].get("text", ""), re.MULTILINE | re.DOTALL):
-                filter_msg = True
-        if event.message[0]["type"] in ["json", "xml"] or filter_msg:
+        if event.message[0]["type"] in ["json", "xml"]:
             match_json = event.message[0]["type"] == "json"
             if match_json:
                 load_json = json.loads(html.unescape(event.message[0]["data"]["data"]))
