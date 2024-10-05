@@ -109,6 +109,7 @@ class MessageSession(MessageSessionT):
                 if enable_parse_message:
                     parts = re.split(r'(\[CQ:[^\]]+\])', x.text)
                     parts = [part for part in parts if part]
+                    Logger.warning(str(parts))
                     cnt = 0
                     for part in parts:
                         if re.match(r'\[CQ:[^\]]+\]', part):
