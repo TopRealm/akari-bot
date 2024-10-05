@@ -107,10 +107,10 @@ class MessageSession(MessageSessionT):
         for x in message_chain_assendable:
             if isinstance(x, Plain):
                 if enable_parse_message:
-                    parts = re.split(r'(\[CQ:[^\]]+\])', x.text)
+                    parts = re.split(r'(\[CQ:.+\])', x.text)
                     cnt = 0
                     for part in parts:
-                        if re.match(r'\[CQ:[^\]]+\]', part):
+                        if re.match(r'\[CQ:.+\]', part):
                             try:
                                 cq_data = CQCodeHandler.parse_cq(part)
                                 if cq_data:
@@ -125,7 +125,6 @@ class MessageSession(MessageSessionT):
                             finally:
                                 cnt += 1
                         else:
-                            Logger.warning(str(part))
                             convert_msg_segments = convert_msg_segments + \
                                 MessageSegment.text(('\n' if count != 0 else '') + part)
                 else:
