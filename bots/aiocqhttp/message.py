@@ -108,7 +108,7 @@ class MessageSession(MessageSessionT):
             if isinstance(x, Plain):
                 if enable_parse_message:
                     parts = re.split(r'(\[CQ:[^\]]+\])', x.text)
-                #    parts = [part for part in parts if part]
+                    parts = [part for part in parts if part]
                     Logger.warning(str(parts))
                     cnt = 0
                     for part in parts:
@@ -126,12 +126,10 @@ class MessageSession(MessageSessionT):
                                     MessageSegment.text(('\n' if (count != 0 and cnt == 0) else '') + part)
                             finally:
                                 cnt += 1
-                        elif not part:
-                            convert_msg_segments = convert_msg_segments + \
-                                MessageSegment.text('\n' if (count != 0 and cnt == 0) else '')
                         else:
                             convert_msg_segments = convert_msg_segments + \
-                                MessageSegment.text(('\n' if (count != 0 and cnt == 0) else '') + part)
+                                MessageSegment.text(('\n' if count != 0 else '') + part)
+                    Logger.warning(str(convert_msg_segments))
                 else:
                     convert_msg_segments = convert_msg_segments + \
                         MessageSegment.text(('\n' if count != 0 else '') + x.text)
