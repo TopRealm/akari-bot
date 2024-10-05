@@ -42,9 +42,15 @@ class MessageSession(MessageSessionT):
         quote = True
         wait = True
 
-    async def send_message(self, message_chain, quote=True, disable_secret_check=False,
-                           allow_split_image=True,
-                           callback=None) -> FinishedSession:
+    async def send_message(
+        self,
+        message_chain,
+        quote=True,
+        disable_secret_check=False,
+        enable_parse_message=True,
+        enable_split_image=True,
+        callback=None,
+    ) -> FinishedSession:
         message_chain = MessageChain(message_chain)
         if not message_chain.is_safe and not disable_secret_check:
             return await self.send_message((I18NContext("error.message.chain.unsafe", locale=self.locale.locale)))
@@ -142,7 +148,8 @@ class MessageSession(MessageSessionT):
                 Logger.info(f'[Bot] -> [{self.target.target_id}]: {x.text}')
             elif isinstance(x, Image):
                 split = [x]
-                if allow_split_image:
+                if enable_split_image:
+                    Logger.info(f"Split image: {str(x.__dict__)}")
                     split = await image_split(x)
                 for xs in split:
                     path = await xs.get()

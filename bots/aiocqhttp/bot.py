@@ -1,6 +1,5 @@
 import html
 import logging
-import os
 import re
 import sys
 
@@ -21,11 +20,10 @@ from core.utils.i18n import Locale, default_locale
 from database import BotDBUtil
 
 PrivateAssets.set('assets/private/aiocqhttp')
-EnableDirtyWordCheck.status = True if Config('enable_dirty_check', False) else False
-Url.disable_mm = False if Config('enable_urlmanager', False) else True
+EnableDirtyWordCheck.status = Config('enable_dirty_check', False)
+Url.disable_mm = not Config('enable_urlmanager', False)
 qq_account = str(Config("qq_account", cfg_type=(int, str)))
 enable_listening_self_message = Config("qq_enable_listening_self_message", False)
-string_post = Config("qq_string_post", False)
 
 
 @bot.on_startup
@@ -49,6 +47,9 @@ async def message_handler(event: Event):
                 return await bot.send(event, Locale(default_locale).t('qq.prompt.disable_temp_session'))
     if event.user_id in ignore_ids:
         return
+    string_post = False
+    if isinstance(event.message, str):
+        string_post = True
 
     if string_post:
         filter_msg = re.match(r'.*?\[CQ:(?:json|xml).*?\].*?|.*?<\?xml.*?>.*?', event.message, re.MULTILINE | re.DOTALL)
@@ -229,6 +230,7 @@ async def _(event: Event):
 qq_host = Config("qq_host", cfg_type=str)
 if qq_host:
     argv = sys.argv
+    Info.client_name = client_name
     if 'subprocess' in sys.argv:
         Info.subprocess = True
     host, port = qq_host.split(':')

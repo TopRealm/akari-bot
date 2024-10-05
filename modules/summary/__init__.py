@@ -33,7 +33,7 @@ async def _(msg: Bot.MessageSession):
     if c == 0 or msg.target.target_from == 'TEST|Console' or is_superuser:
         f_msg = await msg.wait_next_message(msg.locale.t('summary.message'), append_instruction=False)
         try:
-            f = re.search(r'\[Ke:forward,id=(.*?)\]', f_msg.as_display()).group(1)
+            f = re.search(r'\[CQ:forward,id=(.*?)\]', f_msg.as_display()).group(1)
             Logger.info(f)
         except AttributeError:
             await msg.finish(msg.locale.t('summary.message.not_found'))
@@ -83,11 +83,10 @@ async def _(msg: Bot.MessageSession):
         if msg.target.target_from != 'TEST|Console' and not is_superuser:
             qc.reset()
 
-        output = await check(output)
+        output = await check(output, msg=msg)
+        o = ''
         for m in output:
-            output = m['content']
-        output = output.replace("<吃掉了>", msg.locale.t("check.redacted"))
-        output = output.replace("<全部吃掉了>", msg.locale.t("check.redacted.all"))
-        await msg.finish(output)
+            o += m['content']
+        await msg.finish(o)
     else:
         await msg.finish(msg.locale.t('message.cooldown', time=int(60 - c)))

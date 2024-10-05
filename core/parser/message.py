@@ -14,9 +14,10 @@ from core.loader import ModulesManager, current_unloaded_modules, err_modules
 from core.logger import Logger
 from core.parser.command import CommandParser
 from core.tos import warn_target
-from core.types import Module
+from core.types import Module, Param
 from core.utils.i18n import Locale, default_locale
 from core.utils.message import remove_duplicate_space
+from core.utils.info import Info
 from database import BotDBUtil
 
 enable_tos = Config('enable_tos', True)
@@ -348,7 +349,21 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                             if param_obj.annotation == Bot.MessageSession:
                                                 kwargs[param_name] = msg
                                                 no_message_session = False
+                                            elif isinstance(param_obj.annotation, Param):
+                                                if param_obj.annotation.name in parsed_msg_:
+                                                    if isinstance(
+                                                            parsed_msg_[
+                                                                param_obj.annotation.name],
+                                                            param_obj.annotation.type):
+                                                        kwargs[param_name] = parsed_msg_[param_obj.annotation.name]
+                                                        del parsed_msg_[param_obj.annotation.name]
+                                                    else:
+                                                        Logger.warning(f'{param_obj.annotation.name} is not a {
+                                                                       param_obj.annotation.type}')
+                                                else:
+                                                    Logger.warning(f'{param_obj.annotation.name} is not in parsed_msg')
                                             param_name_ = param_name
+
                                             if (param_name__ := f'<{param_name}>') in parsed_msg_:
                                                 param_name_ = param_name__
 
@@ -444,6 +459,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                 await tos_abuse_warning(msg, str(e))
                         else:
                             Logger.debug(f'Tos is disabled, check the configuration if it is not work as expected.')
+                    Info.command_parsed += 1
                     if enable_analytics:
                         BotDBUtil.Analytics(msg).add(msg.trigger_msg, command_first_word, 'normal')
 
@@ -556,6 +572,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                     f'Successfully finished session from {identify_str}, returns: {str(e)}. '
                                     f'Times take up: {time_used}')
 
+                            Info.command_parsed += 1
                             if enable_analytics and rfunc.show_typing:
                                 BotDBUtil.Analytics(msg).add(msg.trigger_msg, m, 'regex')
 
