@@ -108,6 +108,7 @@ class MessageSession(MessageSessionT):
             if isinstance(x, Plain):
                 if enable_parse_message:
                     parts = re.split(r'(\[CQ:[^\]]+\])', x.text)
+                    Logger.warning(str(parts))
                     cnt = 0
                     for part in parts:
                         if re.match(r'\[CQ:[^\]]+\]', part):
@@ -125,7 +126,6 @@ class MessageSession(MessageSessionT):
                             finally:
                                 cnt += 1
                         else:
-                            Logger.warning(str(part))
                             convert_msg_segments = convert_msg_segments + \
                                 MessageSegment.text(('\n' if count != 0 else '') + part)
                 else:
