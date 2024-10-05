@@ -126,9 +126,12 @@ class MessageSession(MessageSessionT):
                                     MessageSegment.text(('\n' if (count != 0 and cnt == 0) else '') + part)
                             finally:
                                 cnt += 1
+                        elif not part:
+                            convert_msg_segments = convert_msg_segments + \
+                                MessageSegment.text('\n' if (count != 0 and cnt == 0) else '')
                         else:
                             convert_msg_segments = convert_msg_segments + \
-                                MessageSegment.text(('\n' if count != 0 else '') + part)
+                                MessageSegment.text(('\n' if (count != 0 and cnt == 0) else '') + part)
                 else:
                     convert_msg_segments = convert_msg_segments + \
                         MessageSegment.text(('\n' if count != 0 else '') + x.text)
