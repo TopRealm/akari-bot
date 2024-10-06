@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import html
 import random
 import re
 import traceback
@@ -105,21 +106,37 @@ class MessageSession(MessageSessionT):
         count = 0
         for x in message_chain_assendable:
             if isinstance(x, Plain):
-                cq_codes = CQCodeHandler.pattern.findall(x.text)
-                if enable_parse_message and cq_codes:
-                    segments = CQCodeHandler.pattern.split(x.text)
-                    for segment in segments:
-                        if segment:
-                            convert_msg_segments = convert_msg_segments + \
-                                MessageSegment.text(('\n' if count != 0 else '') + segment)
+                if enable_parse_message:
+                    parts = re.split(r'(\[CQ:[^\]]+\])', x.text)
+                    parts = [part for part in parts if part]
+                    previous_was_cq = False
+                    #  CQ码消息段相连会导致自动转义，故使用零宽字符`\u200B`隔开
+                    for i, part in enumerate(parts):
+                        if re.match(r'\[CQ:[^\]]+\]', part):
+                            try:
+                                cq_data = CQCodeHandler.parse_cq(part)
+                                if cq_data:
+                                    if previous_was_cq:
+                                        convert_msg_segments = convert_msg_segments + MessageSegment.text('\u200B')
+                                    convert_msg_segments = convert_msg_segments + \
+                                        MessageSegment.text('\n' if (count != 0 and i == 0) else '') + \
+                                        MessageSegment(type_=cq_data['type'], data=cq_data['data'])
+                                else:
+                                    if previous_was_cq:
+                                        convert_msg_segments = convert_msg_segments + MessageSegment.text('\u200B')
+                                    convert_msg_segments = convert_msg_segments + \
+                                        MessageSegment.text(('\n' if (count != 0 and i == 0) else '') + part)
+                            except Exception:
+                                if previous_was_cq:
+                                    convert_msg_segments = convert_msg_segments + MessageSegment.text('\u200B')
+                                convert_msg_segments = convert_msg_segments + \
+                                    MessageSegment.text(('\n' if (count != 0 and i == 0) else '') + part)
+                            finally:
+                                previous_was_cq = True
                         else:
-                            cq_code_data = CQCodeHandler.parse_cq(segment)
-                            if cq_code_data:
-                                Logger.debug(str(cq_code_data))
-                                try:
-                                    convert_msg_segments = convert_msg_segments + MessageSegment(cq_code_data)
-                                except Exception:
-                                    convert_msg_segments = convert_msg_segments + MessageSegment.text(segment)
+                            convert_msg_segments = convert_msg_segments + \
+                                MessageSegment.text(('\n' if count != 0 else '') + part)
+                            previous_was_cq = False
                 else:
                     convert_msg_segments = convert_msg_segments + \
                         MessageSegment.text(('\n' if count != 0 else '') + x.text)
@@ -195,6 +212,7 @@ class MessageSession(MessageSessionT):
     def as_display(self, text_only=False):
         if isinstance(self.session.message.message, str):
 
+            m = html.unescape(self.session.message.message)
             if text_only:
                 m = re.sub(r'\[CQ:text,qq=(.*?)]', r'\1', m)
                 m = re.sub(CQCodeHandler.pattern, '', m)
@@ -256,6 +274,7 @@ class MessageSession(MessageSessionT):
     async def to_message_chain(self):
         lst = []
         if isinstance(self.session.message.message, str):
+            m = html.unescape(self.session.message.message)
             m = re.sub(r'\[CQ:at,qq=(.*?)]', r'QQ|\1', m)
             spl = re.split(r'(\[CQ:.*?])', m)
             for s in spl:
