@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI
+import html
 import re
 
-from bots.aiocqhttp.utils import CQCodeHandler
 from config import Config
 from core.builtins import Bot
 from core.component import module
@@ -35,7 +35,7 @@ async def _(msg: Bot.MessageSession):
         f_msg = await msg.wait_next_message(msg.locale.t('summary.message'), append_instruction=False)
         try:
             f = re.search(r'\[CQ:forward,id=(.*?)\]', f_msg.as_display()).group(1)
-            f = CQCodeHandler.escape_special_char(f)
+            f = html.unescape(f)
             Logger.info(f)
         except AttributeError:
             await msg.finish(msg.locale.t('summary.message.not_found'))
