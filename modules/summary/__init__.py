@@ -35,7 +35,6 @@ async def _(msg: Bot.MessageSession):
         f_msg = await msg.wait_next_message(msg.locale.t('summary.message'), append_instruction=False)
         try:
             f = re.search(r'\[CQ:forward,id=(.*?)\]', f_msg.as_display()).group(1)
-            f = html.unescape(f)
             Logger.info(f)
         except AttributeError:
             await msg.finish(msg.locale.t('summary.message.not_found'))
