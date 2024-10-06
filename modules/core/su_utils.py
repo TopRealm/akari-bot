@@ -449,7 +449,7 @@ echo = module('echo', required_superuser=True, base=True, doc=True)
 async def _(msg: Bot.MessageSession, dis: Param("<display_msg>", str) = None):
     if not dis:
         msg = await msg.wait_next_message()
-        dis = msg.as_display(text_only=True)
+        dis = msg.as_display()
     await msg.finish(dis, enable_parse_message=False)
 
 say = module('say', required_superuser=True, base=True, doc=True)
