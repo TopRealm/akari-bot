@@ -108,7 +108,7 @@ class MessageSession(MessageSessionT):
             if isinstance(x, Plain):
                 if enable_parse_message:
                     parts = re.split(r'(\[CQ:[^\]]+\])', x.text)
-                    parts = [html.unescape(part) for part in parts if part]
+                    parts = [part for part in parts if part]
                     Logger.warning(str(parts))
                     cnt = 0
                     for part in parts:
@@ -117,7 +117,7 @@ class MessageSession(MessageSessionT):
                                 cq_data = CQCodeHandler.parse_cq(part)
                                 if cq_data:
                                     convert_msg_segments = convert_msg_segments + \
-                                        MessageSegment.text('\n' if (count != 0 and cnt == 0) else '') + MessageSegment(cq_data)
+                                        MessageSegment.text('\n' if (count != 0 and cnt == 0) else '') + MessageSegment(type_=cq_data['type'], data=cq_data['data'])
                                 else:
                                     convert_msg_segments = convert_msg_segments + \
                                         MessageSegment.text(('\n' if (count != 0 and cnt == 0) else '') + part)
