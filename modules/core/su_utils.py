@@ -444,8 +444,10 @@ if Bot.FetchTarget.name == 'QQ':
 echo = module('echo', required_superuser=True, base=True, doc=True)
 
 
-@echo.command('<display_msg>')
-async def _(msg: Bot.MessageSession, dis: Param("<display_msg>", str)):
+@echo.command('[<display_msg>]')
+async def _(msg: Bot.MessageSession, dis: Param("<display_msg>", str) = None):
+    if not dis:
+        dis = await msg.wait_next_message()
     await msg.finish(dis, enable_parse_message=False)
 
 
