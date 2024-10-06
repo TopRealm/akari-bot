@@ -456,7 +456,6 @@ else:
     async def _(msg: Bot.MessageSession, dis: Param("<display_msg>", str) = None):
         await msg.finish(dis)
 
-
 say = module('say', required_superuser=True, base=True, doc=True)
 
 
