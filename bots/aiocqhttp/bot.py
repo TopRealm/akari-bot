@@ -52,22 +52,8 @@ async def message_handler(event: Event):
     if isinstance(event.message, str):
         string_post = True
 
-'''
+    reply_id = None
     if string_post:
-        match_json = re.match(r'\\[CQ:json,data=(.*?)\\]', event.message, re.MULTILINE | re.DOTALL)
-        if match_json:
-            load_json = json.loads(html.unescape(match_json.group(1)))
-            if load_json['app'] == 'com.tencent.multimsg':
-                event.message = f'[CQ:forward,id={load_json["meta"]["detail"]["resid"]}]'
-    else:
-        if event.message[0]["type"] == "json":
-            load_json = json.loads(event.message[0]["data"]["data"])
-            if load_json['app'] == 'com.tencent.multimsg':
-                event.message = [{"type": "forward", "data": {"id": f"{load_json["meta"]["detail"]["resid"]}"}}]
-'''
-
-   reply_id = None
-   if string_post:
         match_reply = re.match(r'^\[CQ:reply,id=(-?\d+).*\].*', event.message)
         if match_reply:
             reply_id = int(match_reply.group(1))
