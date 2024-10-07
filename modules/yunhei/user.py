@@ -130,7 +130,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 if res['data'] != []:
                     data = res['data']
                     name=await get_qqname(msg,data['account_name'])
-                    await msg.finish(f"账号类型：{data['platform']}\n用户名：{name}QQ号：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data['registration']}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
+                    await msg.finish(f"账号类型：{data['platform']}\n用户名：{name}\nQQ号：{data['account_name']}\n违规原因：{data['describe']}\n严重等级：{data['level']}\n登记人：{data['registration']}\n上黑时间：{data['add_time']}\n过期时间：{data['expiration']}")
                 else:
                     await msg.finish('查询失败，该用户不在黑名单中。')
         else:
