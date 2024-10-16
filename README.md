@@ -4,7 +4,7 @@
 原项目说明见下
 
 <div align="center">
-  <img width="256" src="./assets/character_marked.png" alt="logo">
+  <img width="512" src="./assets/character_marked.png" alt="logo">
 
 # 小可 · AkariBot v4
 
