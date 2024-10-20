@@ -1,12 +1,12 @@
 import itertools
-import random
 
 from simpleeval import simple_eval
 
 from core.builtins import Bot
 from core.component import module
-from core.utils.petal import gained_petal, lost_petal
 from core.utils.game import PlayState
+from core.utils.petal import gained_petal, lost_petal
+from core.utils.random import Random
 from core.utils.text import isint
 
 no_solution_lst = ['无解', '無解', 'none', 'n/a', 'na', 'n.a.', ]
@@ -106,7 +106,7 @@ def contains_all_numbers(expr, numbers):
             else:
                 return False
         i += 1
-        
+
     if all(used_count[str(num)] == numbers.count(num) for num in numbers):
         return True
     else:
@@ -127,7 +127,7 @@ async def _(msg: Bot.MessageSession, use_markdown=False):
     else:
         play_state.enable()
 
-    numbers = [random.randint(1, 13) for _ in range(4)]
+    numbers = [Random.randint(1, 13) for _ in range(4)]
     solution = await find_solution(numbers)
 
     answer = await msg.wait_next_message(msg.locale.t('twenty_four.message', numbers=numbers), timeout=None)

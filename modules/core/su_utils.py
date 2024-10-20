@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 
 
-import ujson as json
+import orjson as json
 
 
 from config import Config, CFG
@@ -309,9 +309,9 @@ if Info.subprocess:
 
     def write_version_cache(msg: Bot.MessageSession):
         update = os.path.abspath(PrivateAssets.path + '/cache_restart_author')
-        write_version = open(update, 'w')
-        write_version.write(json.dumps({'From': msg.target.target_from, 'ID': msg.target.target_id}))
-        write_version.close()
+        with open(update, 'w') as write_version:
+            write_version.write(json.dumps({'From': msg.target.target_from,
+                                'ID': msg.target.target_id}).decode('utf-8'))
 
     restart_time = []
 

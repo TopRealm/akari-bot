@@ -8,24 +8,25 @@ from pathlib import Path
 from typing import List, Union
 
 import aiocqhttp.exceptions
-import ujson as json
+import orjson as json
 from aiocqhttp import MessageSegment
+from tenacity import retry, wait_fixed, stop_after_attempt
 
 from bots.aiocqhttp.client import bot
 from bots.aiocqhttp.info import client_name
 from bots.aiocqhttp.utils import CQCodeHandler, qq_frame_type
 from config import Config
-from core.builtins import Bot, base_superuser_list, command_prefix, I18NContext, Image, Plain, Temp, Voice, MessageTaskManager
+from core.builtins import Bot, base_superuser_list, command_prefix, I18NContext, Image, Plain, Temp, Voice, \
+    MessageTaskManager
 from core.builtins.message import MessageSession as MessageSessionT
 from core.builtins.message.chain import MessageChain
 from core.exceptions import SendMessageFailed
 from core.logger import Logger
 from core.types import FetchTarget as FetchTargetT, FinishedSession as FinS
 from core.utils.image import msgchain2image
+from core.utils.random import Random
 from core.utils.storedata import get_stored_list
 from database import BotDBUtil
-
-from tenacity import retry, wait_fixed, stop_after_attempt
 
 enable_analytics = Config('enable_analytics', False)
 
@@ -512,7 +513,7 @@ class FetchTarget(FetchTargetT):
             async def post_in_whitelist(lst):
                 for l in lst:
                     await l
-                    await asyncio.sleep(random.randint(1, 5))
+                    await asyncio.sleep(Random.randint(1, 5))
 
             if in_whitelist:
                 asyncio.create_task(post_in_whitelist(in_whitelist))
@@ -520,7 +521,7 @@ class FetchTarget(FetchTargetT):
             async def post_not_in_whitelist(lst):
                 for f in lst:
                     await f
-                    await asyncio.sleep(random.randint(15, 30))
+                    await asyncio.sleep(Random.randint(15, 30))
 
             if else_:
                 asyncio.create_task(post_not_in_whitelist(else_))

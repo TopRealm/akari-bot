@@ -1,20 +1,20 @@
 import os
+from collections import Counter
 from enum import Enum
 from typing import List, Optional
 
-from attr import define, field
-from collections import Counter
-from PIL import Image, ImageDraw, ImageFont
-import random
 import unicodedata
+from PIL import Image, ImageDraw, ImageFont
+from attr import define, field
 
 from config import Config
 from core.builtins import Bot, I18NContext, Image as BImage, Plain
 from core.component import module
 from core.logger import Logger
-from core.utils.petal import gained_petal
 from core.utils.cooldown import CoolDown
 from core.utils.game import PlayState
+from core.utils.petal import gained_petal
+from core.utils.random import Random
 
 assets_path = os.path.abspath('./assets/wordle')
 text_mode = Config('wordle_disable_image', False)
@@ -127,7 +127,7 @@ class WordleBoard:
 
     @staticmethod
     def from_random_word():
-        return WordleBoard(random.choice(answers_list))
+        return WordleBoard(Random.choice(answers_list))
 
     def reset_board(self):
         self.word = ""
@@ -275,8 +275,8 @@ async def _(msg: Bot.MessageSession):
 @wordle.command('stop {{game.help.stop}}')
 async def terminate(msg: Bot.MessageSession):
     board = WordleBoard.from_random_word()
-    play_state = PlayState('wordle', msg, all=True)
-    qc = CoolDown('wordle', msg, all=True)
+    play_state = PlayState('wordle', msg)
+    qc = CoolDown('wordle', msg)
     if play_state.check():
         play_state.disable()
         board.reset_board()
