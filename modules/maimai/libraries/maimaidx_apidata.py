@@ -47,7 +47,7 @@ async def update_alias() -> bool:
         url = "https://download.fanyu.site/maimai/alias.json"
         data = await get_url(url, 200, fmt='json')
 
-        with open(song_alias_path, 'w') as file:
+        with open(song_alias_path, 'wb') as file:
             file.write(json.dumps(data))
     except Exception:
         Logger.error(traceback.format_exc())
@@ -73,7 +73,7 @@ async def get_alias(msg: Bot.MessageSession, sid: str) -> list:
     if not os.path.exists(song_alias_path):
         await msg.finish(msg.locale.t("maimai.message.alias.file_not_found", prefix=msg.prefixes[0]))
     with open(song_alias_path, 'r') as file:
-        data = json.load(file.read())
+        data = json.loads(file.read())
 
     result = []
     if sid in data:
@@ -118,7 +118,7 @@ async def get_record(msg: Bot.MessageSession, payload: dict, use_cache: bool = T
                               fmt='json'
                               )
         if use_cache and data:
-            with open(cache_path, 'w') as f:
+            with open(cache_path, 'wb') as f:
                 f.write(json.dumps(data))
         return data
     except Exception as e:
@@ -170,7 +170,7 @@ async def get_song_record(msg: Bot.MessageSession, payload: dict, sid: Union[str
                 else:
                     backup_data = {}
                 backup_data.update(data)
-                with open(cache_path, 'w') as f:
+                with open(cache_path, 'wb') as f:
                     f.write(json.dumps(backup_data))
             return data
         except Exception as e:
@@ -204,7 +204,7 @@ async def get_total_record(msg: Bot.MessageSession, payload: dict, utage: bool =
                               headers={'Content-Type': 'application/json', 'accept': '*/*'},
                               fmt='json')
         if use_cache and data:
-            with open(cache_path, 'w') as f:
+            with open(cache_path, 'wb') as f:
                 f.write(json.dumps(data))
         if not utage:
             data = {'verlist': [d for d in data['verlist'] if d.get('id', 0) < 100000]}  # 过滤宴谱
@@ -246,8 +246,9 @@ async def get_plate(msg: Bot.MessageSession, payload: dict, version: str, use_ca
                               status_code=200,
                               headers={'Content-Type': 'application/json', 'accept': '*/*'},
                               fmt='json')
+        data = {'verlist': [d for d in data['verlist'] if d.get('id', 0) < 100000]}  # 过滤宴谱
         if use_cache and data:
-            with open(cache_path, 'w') as f:
+            with open(cache_path, 'wb') as f:
                 f.write(json.dumps(data))
         return data
     except Exception as e:

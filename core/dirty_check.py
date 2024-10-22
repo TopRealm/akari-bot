@@ -6,7 +6,7 @@ import base64
 import datetime
 import hashlib
 import hmac
-import json
+import orjson as json
 import time
 from typing import Union, List, Dict
 
@@ -43,7 +43,7 @@ def parse_data(result: dict, msg: Bot.MessageSession = None, additional_text=Non
                             for pos in itemContext['positions']:
                                 filter_words_length = pos['endPos'] - pos['startPos']
                                 if not msg:
-                                    reason = f"<Redacted:{itemDetail['label']}>"
+                                    reason = f"<REDACTED:{itemDetail['label']}>"
                                 else:
                                     reason = msg.locale.t("check.redacted", reason=itemDetail['label'])
                                 content = content[:pos['startPos'] + _offset] + \
@@ -53,13 +53,13 @@ def parse_data(result: dict, msg: Bot.MessageSession = None, additional_text=Non
                                 _offset += len(reason) - filter_words_length
                         else:
                             if not msg:
-                                content = f"<Redacted:{itemDetail['label']}>"
+                                content = f"<REDACTED:{itemDetail['label']}>"
                             else:
                                 content = msg.locale.t("check.redacted", reason=itemDetail['label'])
                         status = False
                 else:
                     if not msg:
-                        content = f"<All Redacted:{itemDetail['label']}>"
+                        content = f"<ALL REDACTED:{itemDetail['label']}>"
                     else:
                         content = msg.locale.t("check.redacted.all", reason=itemDetail['label'])
 
@@ -76,7 +76,7 @@ async def check(*text: Union[str, List[str]], msg: Bot.MessageSession = None, ad
     :param text: 字符串（List/Union）。
     :param msg: 消息会话，若指定则本地化返回的消息。
     :param additional_text: 附加文本，若指定则会在返回的消息中附加此文本。
-    :returns: 经过审核后的字符串。不合规部分会被替换为'<Redacted:原因>，全部不合规则是'<All Redacted:原因>'。
+    :returns: 经过审核后的字符串。不合规部分会被替换为'<REDACTED:原因>，全部不合规则是'<ALL REDACTED:原因>'。
     '''
     access_key_id = Config("check_access_key_id", cfg_type=str)
     access_key_secret = Config("check_access_key_secret", cfg_type=str)
@@ -131,7 +131,7 @@ async def check(*text: Union[str, List[str]], msg: Bot.MessageSession = None, ad
         gmt_format = '%a, %d %b %Y %H:%M:%S GMT'
         date = datetime.datetime.now(datetime.UTC).strftime(gmt_format)
         nonce = 'LittleC sb {}'.format(time.time())
-        content_md5 = base64.b64encode(hashlib.md5(json.dumps(body).encode('utf-8')).digest()).decode('utf-8')
+        content_md5 = base64.b64encode(hashlib.md5(json.dumps(body)).digest()).decode('utf-8')
         headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
@@ -188,6 +188,6 @@ async def check_bool(*text: Union[str, List[str]]) -> bool:
 
 def rickroll(msg: Bot.MessageSession):
     if Config("enable_rickroll", True) and Config("rickroll_msg", cfg_type=str):
-        return msg.locale.tl_str(Config("rickroll_msg", cfg_type=str))
+        return msg.locale.t_str(Config("rickroll_msg", cfg_type=str))
     else:
         return msg.locale.t("error.message.chain.unsafe")

@@ -1,4 +1,3 @@
-import random
 import traceback
 from copy import deepcopy
 from typing import Dict, List, Optional, Union, Tuple, Any
@@ -7,6 +6,7 @@ import orjson as json
 
 from core.logger import Logger
 from core.utils.http import get_url
+from core.utils.random import Random
 from .chunithm_mapping import *
 
 
@@ -101,7 +101,7 @@ class MusicList(List[Music]):
         return None
 
     def random(self):
-        return random.choice(self)
+        return Random.choice(self)
 
     def filter(self,
                *,
@@ -164,7 +164,7 @@ class TotalList:
             url = f"https://www.diving-fish.com/api/chunithmprober/music_data"
             data = await get_url(url, 200, fmt='json')
             if data:
-                with open(song_info_path, 'w') as f:
+                with open(song_info_path, 'wb') as f:
                     f.write(json.dumps(data))
             return data
         except Exception:
