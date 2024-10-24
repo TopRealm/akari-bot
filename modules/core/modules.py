@@ -20,35 +20,25 @@ m = module('module',
            )
 
 
+@m.command(['reload <module> ...',
+            'load <module> ...',
+            'unload <module> ...'],
+           required_superuser=True)
 @m.command(['enable <module>... {{core.help.module.enable}}',
             'enable all {{core.help.module.enable_all}}',
             'disable <module>... {{core.help.module.disable}}',
             'disable all {{core.help.module.disable_all}}',
-            'reload <module> ...',
-            'load <module> ...',
-            'unload <module> ...',
             'list [--legacy] {{core.help.module.list}}'],
            options_desc={'--legacy': '{help.option.legacy}'},
            exclude_from=['QQ|Guild'])
-async def _(msg: Bot.MessageSession):
-    if msg.parsed_msg.get('list', False):
-        legacy = False
-        if msg.parsed_msg.get('--legacy', False):
-            legacy = True
-        await modules_list_help(msg, legacy)
-    await config_modules(msg)
-
-
 @m.command(['enable [-g] <module> ... {{core.help.module.enable}}',
             'enable all [-g] {{core.help.module.enable_all}}',
             'disable [-g]  <module> ... {{core.help.module.disable}}',
             'disable all [-g] {{core.help.module.disable_all}}',
-            'reload <module> ...',
-            'load <module> ...',
-            'unload <module> ...',
             'list [--legacy] {{core.help.module.list}}'],
            options_desc={'-g': '{core.help.option.module.g}', '--legacy': '{help.option.legacy}'},
            available_for=['QQ|Guild'])
+
 async def _(msg: Bot.MessageSession):
     if msg.parsed_msg.get('list', False):
         legacy = False
@@ -126,8 +116,12 @@ async def config_modules(msg: Bot.MessageSession):
 
                     if modules_[m].desc:
                         recommend_modules_help_doc_list.append(msg.locale.t_str(modules_[m].desc))
-                    hdoc = CommandParser(modules_[m], msg=msg, bind_prefix=modules_[m].bind_prefix,
-                                         command_prefixes=msg.prefixes).return_formatted_help_doc()
+                    hdoc = CommandParser(
+                        modules_[m],
+                        msg=msg,
+                        bind_prefix=modules_[m].bind_prefix,
+                        command_prefixes=msg.prefixes,
+                        is_superuser=msg.check_super_user()).return_formatted_help_doc()
                     recommend_modules_help_doc_list.append(hdoc)
                 except InvalidHelpDocTypeError:
                     pass

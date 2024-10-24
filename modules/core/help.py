@@ -2,10 +2,10 @@ import base64
 import re
 from io import BytesIO
 import traceback
-from typing import Dict, List, Optional
 
 import aiohttp
 import orjson as json
+from jinja2 import FileSystemLoader, Environment
 from PIL import Image as PILImage
 
 from config import Config, CFG
@@ -14,13 +14,14 @@ from core.component import module
 from core.loader import ModulesManager, current_unloaded_modules, err_modules
 from core.logger import Logger
 from core.parser.command import CommandParser
-from core.types import Module
 from core.utils.cache import random_cache_path
 from core.utils.http import download
 from core.utils.image_table import ImageTable, image_table_render
 from core.utils.web_render import WebRender, webrender
 
-from jinja2 import FileSystemLoader, Environment
+
+env = Environment(loader=FileSystemLoader('assets/templates'))
+
 
 hlp = module('help', base=True, doc=True)
 
@@ -37,39 +38,43 @@ async def bot_help(msg: Bot.MessageSession, module: str):
             help_name = alias[module].split()[0]
         else:
             help_name = module.split()[0]
+
         if help_name in current_unloaded_modules:
             await msg.finish(msg.locale.t("parser.module.unloaded", module=help_name))
         elif help_name in err_modules:
             await msg.finish(msg.locale.t("error.module.unloaded", module=help_name))
         elif help_name in module_list:
             module_ = module_list[help_name]
-            if module_.desc:
-                desc = module_.desc
-                if locale_str := re.match(r'\{(.*)}', desc):
-                    if locale_str:
-                        desc = msg.locale.t(locale_str.group(1))
-                msgs.append(desc)
-            help_ = CommandParser(module_list[help_name], msg=msg, bind_prefix=module_list[help_name].bind_prefix,
-                                  command_prefixes=msg.prefixes)
-            if help_.args:
-                msgs.append(help_.return_formatted_help_doc())
+            if msg.check_super_user() or not (module_.required_superuser or module_.required_base_superuser):
+                if module_.desc:
+                    desc = msg.locale.t_str(module_.desc)
+                    msgs.append(desc)
+                help_ = CommandParser(module_list[help_name], msg=msg, bind_prefix=module_list[help_name].bind_prefix,
+                                      command_prefixes=msg.prefixes)
+                if help_.args:
+                    msgs.append(help_.return_formatted_help_doc())
 
-            doc = '\n'.join(msgs)
-            if module_.regex_list.set:
-                doc += '\n' + msg.locale.t("core.message.help.support_regex")
-                for regex in module_.regex_list.set:
-                    pattern = None
-                    if isinstance(regex.pattern, str):
-                        pattern = regex.pattern
-                    elif isinstance(regex.pattern, re.Pattern):
-                        pattern = regex.pattern.pattern
-                    if pattern:
-                        desc = regex.desc
-                        if desc:
-                            doc += f'\n{pattern} ' + msg.locale.t("core.message.help.regex.detail",
-                                                                  msg=msg.locale.t_str(desc))
-                        else:
-                            doc += f'\n{pattern} ' + msg.locale.t("core.message.help.regex.no_information")
+                doc = '\n'.join(msgs)
+                if module_.regex_list.set:
+                    doc += '\n' + msg.locale.t("core.message.help.support_regex")
+                    regex_list = module_.regex_list.get(
+                        msg.target.target_from, show_required_superuser=msg.check_super_user())
+                    for regex in regex_list:
+                        pattern = None
+                        if isinstance(regex.pattern, str):
+                            pattern = regex.pattern
+                        elif isinstance(regex.pattern, re.Pattern):
+                            pattern = regex.pattern.pattern
+                        if pattern:
+                            desc = regex.desc
+                            if desc:
+                                doc += f'\n{pattern} ' + msg.locale.t("core.message.help.regex.detail",
+                                                                      msg=msg.locale.t_str(desc))
+                            else:
+                                doc += f'\n{pattern} ' + msg.locale.t("core.message.help.regex.no_information")
+            else:
+                doc = ''
+
             module_alias = module_.alias
             malias = []
             if module_alias:
@@ -117,12 +122,9 @@ async def bot_help(msg: Bot.MessageSession, module: str):
 @hlp.command('[--legacy] {{core.help.help}}',
              options_desc={'--legacy': '{help.option.legacy}'})
 async def _(msg: Bot.MessageSession):
-    module_list = ModulesManager.return_modules_list(
-        target_from=msg.target.target_from)
-    target_enabled_list = msg.enabled_modules
     legacy_help = True
     if not msg.parsed_msg and msg.Feature.image:
-        imgs = await help_generator(msg, module_list, target_enabled_list)
+        imgs = await help_generator(msg)
         if imgs:
             legacy_help = False
             imgchain = []
@@ -139,6 +141,9 @@ async def _(msg: Bot.MessageSession):
                                                  url=Config('donate_url', cfg_type=str)))
             await msg.finish(imgchain + help_msg_list)
     if legacy_help:
+        module_list = ModulesManager.return_modules_list(
+            target_from=msg.target.target_from)
+        target_enabled_list = msg.enabled_modules
         help_msg = [msg.locale.t("core.message.help.legacy.base")]
         essential = []
         for x in module_list:
@@ -176,12 +181,9 @@ async def _(msg: Bot.MessageSession):
 
 
 async def modules_list_help(msg: Bot.MessageSession, legacy):
-    module_list = ModulesManager.return_modules_list(
-        target_from=msg.target.target_from)
-    target_enabled_list = msg.enabled_modules
     legacy_help = True
     if msg.Feature.image and not legacy:
-        imgs = await help_generator(msg, module_list, target_enabled_list, show_disabled_modules=True, show_base_modules=False)
+        imgs = await help_generator(msg, show_disabled_modules=True, show_base_modules=False)
         if imgs:
             legacy_help = False
             imgchain = []
@@ -195,6 +197,9 @@ async def modules_list_help(msg: Bot.MessageSession, legacy):
                                 url=Config('help_url', cfg_type=str)))
             await msg.finish(imgchain + help_msg)
     if legacy_help:
+        module_list = ModulesManager.return_modules_list(
+            target_from=msg.target.target_from)
+        target_enabled_list = msg.enabled_modules
         module_ = []
         for x in module_list:
             if x[0] == '_':
@@ -220,14 +225,16 @@ async def modules_list_help(msg: Bot.MessageSession, legacy):
         await msg.finish(help_msg)
 
 
-env = Environment(loader=FileSystemLoader('assets/templates'))
+async def help_generator(msg: Bot.MessageSession, show_base_modules: bool = True, show_disabled_modules: bool = False, use_local: bool = True):
+    module_list = ModulesManager.return_modules_list(
+        target_from=msg.target.target_from)
+    target_enabled_list = msg.enabled_modules
 
-
-async def help_generator(msg: Bot.MessageSession, module_list: Dict[str, Module], target_enabled_list: Optional[List[str]] = [], show_base_modules: bool = True, show_disabled_modules: bool = False, use_local=True):
     if not WebRender.status:
         return False
     elif not WebRender.local:
         use_local = False
+
     essential = {}
     module_ = {}
     for key, value in module_list.items():
@@ -238,28 +245,26 @@ async def help_generator(msg: Bot.MessageSession, module_list: Dict[str, Module]
         else:
             module_[key] = value
 
-
     if not show_disabled_modules:
         module_ = {k: v for k, v in module_.items() if k in target_enabled_list}
-    
+
     if show_base_modules:
         module_list = {**essential, **module_}
     else:
         module_list = module_
 
     html_content = env.get_template('help_doc.html').render(
+        CommandParser=CommandParser,
+        len=len,
         module_list=module_list,
         msg=msg,
         show_disabled_modules=show_disabled_modules,
-        target_enabled_list=target_enabled_list,
-        len=len,
-        CommandParser=CommandParser)
+        target_enabled_list=target_enabled_list)
     fname = random_cache_path() + '.html'
     with open(fname, 'w', encoding='utf-8') as fi:
         fi.write(html_content)
 
     d = {'content': html_content, 'element': '.botbox'}
-
     html_ = json.dumps(d)
 
     try:
@@ -284,8 +289,8 @@ async def help_generator(msg: Bot.MessageSession, module_list: Dict[str, Module]
         else:
             Logger.info('[Webrender] Generation Failed.')
             return False
-    read = open(pic)
-    load_img = json.loads(read.read())
+    with open(pic) as read:
+        load_img = json.loads(read.read())
     img_lst = []
     for x in load_img:
         b = base64.b64decode(x)
