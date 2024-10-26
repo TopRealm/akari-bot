@@ -287,7 +287,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                                             prefix=msg.prefixes[0])
                             await msg.send_message(desc)
                         else:
-                            await msg.send_message(ErrorMessage("{error.module.unbound}", module=command_first_word))
+                            await msg.send_message(ErrorMessage("{error.module.unbound}", module=command_first_word, locale=msg.locale.locale))
                         return
 
                     if module.required_base_superuser:
@@ -419,7 +419,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                             except InvalidHelpDocTypeError:
                                 Logger.error(traceback.format_exc())
                                 await msg.send_message(
-                                    ErrorMessage("{error.module.helpdoc.invalid}", module=command_first_word))
+                                    ErrorMessage("{error.module.helpdoc.invalid}", module=command_first_word, locale=msg.locale.locale))
                                 return
 
                         await execute_submodule(msg, command_first_word, command_split)
@@ -561,7 +561,7 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
                                     if datetime.now().timestamp() - match_hash_cache[msg.target.target_id][
                                             matched_hash] < 10:
                                         Logger.warning('Match loop detected, skipping...')
-                                        await msg.send_message(msg.locale.t("parser.matched.but.try.again.later"))
+                                        await msg.send_message(msg.locale.t("parser.matched.but_try_again_later"))
                                         continue
                                 match_hash_cache[msg.target.target_id][matched_hash] = datetime.now().timestamp()
                                 if enable_tos and rfunc.show_typing:
