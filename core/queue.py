@@ -1,6 +1,7 @@
 import asyncio
 import traceback
 import datetime
+from uuid import uuid4
 
 import orjson as json
 
@@ -14,6 +15,8 @@ _queue_tasks = {}
 
 
 class JobQueue:
+    name = 'Internal|' + str(uuid4())
+
     @classmethod
     async def add_job(cls, target_client: str, action, args, wait=True):
         taskid = BotDBUtil.JobQueue.add(target_client, action, args)
@@ -68,14 +71,19 @@ async def check_job_queue():
         if tsk.hasDone:
             _queue_tasks[tskid]['result'] = json.loads(tsk.returnVal)
             _queue_tasks[tskid]['flag'].set()
+    get_internal = BotDBUtil.JobQueue.get_all(target_client=JobQueue.name)
     get_all = BotDBUtil.JobQueue.get_all(target_client=Bot.FetchTarget.name)
-    for tsk in get_all:
+    for tsk in get_internal + get_all:
         Logger.debug(f'Received job queue task {tsk.taskid}, action: {tsk.action}')
         args = json.loads(tsk.args)
         Logger.debug(f'Args: {args}')
         timestamp = tsk.timestamp
-        if (datetime.datetime.now() - timestamp).total_seconds() > 7200:
-            Logger.warning(f'Task {tsk.taskid} timeout, {(datetime.datetime.now() - timestamp).total_seconds()}')
+        if BotDBUtil.time_offset is not None and datetime.datetime.now().timestamp() - timestamp.timestamp() - \
+                BotDBUtil.time_offset > 7200:
+            Logger.warning(f'Task {tsk.taskid} timeout, {
+                           datetime.datetime.now().timestamp() - timestamp.timestamp() - BotDBUtil.time_offset}, skip.')
+            return_val(tsk, {}, status=False)
+            continue
         try:
             if tsk.action == 'validate_permission':
                 fetch = await Bot.FetchTarget.fetch_target(args['target_id'], args['sender_id'])
@@ -96,7 +104,12 @@ async def check_job_queue():
                 except Exception:
                     Logger.error(traceback.format_exc())
                     return_val(tsk, {'send': False})
-
+            if tsk.action == 'verify_timezone':
+                timestamp = tsk.timestamp
+                tz_ = datetime.datetime.now().timestamp() - timestamp.timestamp()
+                Logger.debug(f'Timezone offset: {tz_}')
+                BotDBUtil.time_offset = tz_
+                return_val(tsk, {})
         except Exception:
             f = traceback.format_exc()
             Logger.error(f)
