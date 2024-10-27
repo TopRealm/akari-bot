@@ -12,6 +12,7 @@ from bots.aiocqhttp.message import MessageSession, FetchTarget
 from config import Config
 from core.bot import load_prompt, init_async
 from core.builtins import EnableDirtyWordCheck, PrivateAssets, Url
+from core.logger import Logger
 from core.parser.message import parser
 from core.tos import tos_report
 from core.types import MsgInfo, Session

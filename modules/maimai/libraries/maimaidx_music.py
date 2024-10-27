@@ -79,8 +79,6 @@ class Chart(Dict):
             return self['notes'][3] if len(self['notes']) == 5 else 0
         elif item == 'brk':
             return self['notes'][-1]
-        elif item == 'dxscore':
-            return sum(self['charter']) * 3
         elif item == 'charter':
             return self['charter']
         return super().__getattribute__(item)
