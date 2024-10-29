@@ -1,8 +1,6 @@
 import asyncio
 import re
 
-import ipaddress
-
 from core.builtins import Bot
 from core.component import module
 from core.dirty_check import check
@@ -18,12 +16,8 @@ async def main(msg: Bot.MessageSession):
     raw = msg.parsed_msg.get('-r', False)
     showplayer = msg.parsed_msg.get('-p', False)
 
-    match_object = re.match(r'(.*)[\s:](.*)', server_address, re.M | re.I)
-    if match_object:
-        server_address = match_object.group(1)
-
-    if check_local_ip(server_address):
-        await msg.finish(msg.locale.t('server.message.local_ip'))
+    if check_local_address(server_address):
+        await msg.finish(msg.locale.t('server.message.local_address'))
 
     java_info, bedrock_info = await asyncio.gather(
         query_java_server(msg, server_address, raw, showplayer),
@@ -31,21 +25,34 @@ async def main(msg: Bot.MessageSession):
     )
 
     sendmsg = [java_info, bedrock_info]
-    if sendmsg:
-        sendmsg = '\n'.join(sendmsg)
-        sendmsg = await check(sendmsg, msg=msg)
-        t = ''.join(x['content'] for x in sendmsg)
-        await msg.finish(t)
-    else:
+    if sendmsg == ['', '']:
         await msg.finish(msg.locale.t('server.message.not_found'))
+    else:
+        sendmsg = '\n'.join(sendmsg).split('\n')
+        sendmsg = await check(*sendmsg, msg=msg)
+        t = '\n'.join(x['content'] for x in sendmsg)
+        await msg.finish(t.strip())
 
 
-def check_local_ip(server_address):
-    if server_address.lower() == 'localhost':
+def check_local_address(server_address):
+    if 'localhost' in server_address.lower():
         return True
 
-    try:
-        ip = ipaddress.ip_address(server_address)
-        return ip.is_private or ip.is_loopback
-    except ValueError:
-        return False
+    match_serip = re.match(r'(.*?)\.(.*?)\.(.*?)\.(.*?)', server_address)
+    if match_serip:
+        if match_serip.group(1) == '192':
+            if match_serip.group(2) == '168':
+                return True
+        if match_serip.group(1) == '172':
+            if 16 <= int(match_serip.group(2)) <= 31:
+                return True
+        if match_serip.group(1) == '10':
+            if 0 <= int(match_serip.group(2)) <= 255:
+                return True
+        if match_serip.group(1) == '127':
+            return True
+        if match_serip.group(1) == '0':
+            if match_serip.group(2) == '0':
+                if match_serip.group(3) == '0':
+                    return True
+    return False

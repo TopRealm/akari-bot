@@ -78,7 +78,7 @@ async def get_alias(msg: Bot.MessageSession, sid: str) -> list:
     result = []
     if sid in data:
         result = data[sid]  # 此处的列表是歌曲别名列表
-
+        result = sorted(result)
     return result
 
 
