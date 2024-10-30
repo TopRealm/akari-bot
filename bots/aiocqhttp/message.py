@@ -15,7 +15,7 @@ from tenacity import retry, wait_fixed, stop_after_attempt
 from bots.aiocqhttp.client import bot
 from bots.aiocqhttp.info import *
 from bots.aiocqhttp.utils import CQCodeHandler, qq_frame_type
-from config import Config
+from core.config import Config
 from core.builtins import Bot, base_superuser_list, command_prefix, I18NContext, Image, Plain, Temp, Voice, \
     MessageTaskManager
 from core.builtins.message import MessageSession as MessageSessionT
@@ -25,7 +25,7 @@ from core.logger import Logger
 from core.types import FetchTarget as FetchTargetT, FinishedSession as FinS
 from core.utils.image import msgchain2image
 from core.utils.storedata import get_stored_list
-from database import BotDBUtil
+from core.database import BotDBUtil
 
 enable_analytics = Config('enable_analytics', False)
 
@@ -404,6 +404,8 @@ class FetchTarget(FetchTargetT):
                 if fet.target.target_from == target_guild_name:
                     if fet.session.target not in guild_list:
                         continue
+                if BotDBUtil.TargetInfo(fet.target.target_id).is_muted:
+                    continue
                 lst.append(fet)
         return lst
 

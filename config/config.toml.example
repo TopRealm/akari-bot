@@ -33,7 +33,6 @@ yunhei_api_key =
 api_port = 5000
 base_superuser = ["QQ|2596322644",]
 debug = false
-cache_path = "./cache/"
 command_prefix = ["~", "～",]
 confirm_command = ["是", "对", "對", "yes", "Yes", "YES", "y", "Y",]
 disabled_bots = ["",]
