@@ -515,6 +515,27 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 reference = "mirrors"
 
 [[package]]
+name = "botpy"
+version = "0.1.0"
+description = ""
+optional = false
+python-versions = "^3.12"
+files = []
+develop = false
+
+[package.dependencies]
+aiohttp = "^3.10.10"
+apscheduler = "^3.10.4"
+pre-commit = "^4.0.1"
+pyyaml = "^6.0.2"
+
+[package.source]
+type = "git"
+url = "https://github.com/Teahouse-Studios/botpy.git"
+reference = "HEAD"
+resolved_reference = "56c66983f36918fa433a71e1cb7db18a16825def"
+
+[[package]]
 name = "caio"
 version = "0.9.17"
 description = "Asynchronous file IO for Linux MacOS or Windows."
@@ -4042,6 +4063,22 @@ files = [
 type = "legacy"
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 reference = "mirrors"
+
+[[package]]
+name = "qq-botpy"
+version = "1.2.1"
+description = "qq robot client with python3"
+optional = false
+python-versions = "*"
+files = [
+    {file = "qq-botpy-1.2.1.tar.gz", hash = "sha256:442172a0557a9b43d2777d1c5e072090a9d1a54d588d1c5da8d3efc014f4887f"},
+    {file = "qq_botpy-1.2.1-py3-none-any.whl", hash = "sha256:18b215690dfed88f711322136ec54b6760040b9b1608eb5db7a44e00f59e4f01"},
+]
+
+[package.dependencies]
+aiohttp = ">=3.7.4,<4"
+APScheduler = "*"
+PyYAML = "*"
 
 [[package]]
 name = "quart"
