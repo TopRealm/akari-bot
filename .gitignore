@@ -28,3 +28,4 @@ modules/ask/tools/self_knowledge
 output/*
 assets/modules_list.json
 assets/discord_slash_list.json
+modules/yunhei/admins.json
