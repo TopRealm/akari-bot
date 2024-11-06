@@ -6,21 +6,21 @@ import botpy
 from botpy.message import C2CMessage, DirectMessage, GroupMessage, Message
 
 from bots.ntqq.info import *
-from bots.ntqq.message import MessageSession
+from bots.ntqq.message import MessageSession, FetchTarget
 from core.bot import init_async, load_prompt
 from core.builtins import EnableDirtyWordCheck, PrivateAssets, Url
 from core.config import Config
 from core.logger import Logger
 from core.parser.message import parser
 from core.path import assets_path
-from core.types import MsgInfo, Session, FetchTarget
+from core.types import MsgInfo, Session
 from core.utils.info import Info
 
 PrivateAssets.set(os.path.join(assets_path, 'private', 'ntqq'))
 EnableDirtyWordCheck.status = Config('enable_dirty_check', False)
 Url.disable_mm = False
-qq_appid = Config("qq_appid", cfg_type=str)
-qq_secret = Config("qq_secret", cfg_type=str)
+qq_appid = str(Config("qq_bot_appid", cfg_type=(int, str)))
+qq_secret = Config("qq_bot_secret", cfg_type=str)
 
 
 class MyClient(botpy.Client):
@@ -51,7 +51,7 @@ class MyClient(botpy.Client):
                 sender=message.author.id))
         if not message.content:
             message.content = '/help'
-        if message.content.startswith('/'):
+        if message.content.strip().startswith('/'):
             prefix = ['/']
             require_enable_modules = False
         await parser(msg, prefix=prefix, require_enable_modules=require_enable_modules)
@@ -60,6 +60,8 @@ class MyClient(botpy.Client):
         reply_id = None
         if message.message_reference:
             reply_id = message.message_reference.message_id
+        prefix = None
+        require_enable_modules = True
         msg = MessageSession(
             MsgInfo(
                 target_id=f'{target_guild_name}|{message.guild_id}|{message.channel_id}',
@@ -74,7 +76,10 @@ class MyClient(botpy.Client):
                 message=message,
                 target=f'{message.guild_id}|{message.channel_id}',
                 sender=message.author.id))
-        await parser(msg)
+        if message.content.strip().startswith('/'):
+            prefix = ['/']
+            require_enable_modules = False
+        await parser(msg, prefix=prefix, require_enable_modules=require_enable_modules)
 
     async def on_group_at_message_create(self, message: GroupMessage):
         message.content = re.sub(r'<@(.*?)>', '', message.content).strip()
@@ -99,7 +104,7 @@ class MyClient(botpy.Client):
                 sender=message.author.member_openid))
         if not message.content:
             message.content = '/help'
-        if message.content.startswith('/'):
+        if message.content.strip().startswith('/'):
             prefix = ['/']
             require_enable_modules = False
         await parser(msg, prefix=prefix, require_enable_modules=require_enable_modules)
@@ -108,6 +113,8 @@ class MyClient(botpy.Client):
         reply_id = None
         if message.message_reference:
             reply_id = message.message_reference.message_id
+        prefix = None
+        require_enable_modules = True
         msg = MessageSession(
             MsgInfo(
                 target_id=f'{target_direct_name}|{message.guild_id}|{message.channel_id}',
@@ -122,12 +129,17 @@ class MyClient(botpy.Client):
                 message=message,
                 target=f'{message.guild_id}|{message.channel_id}',
                 sender=message.author.id))
-        await parser(msg)
+        if message.content.strip().startswith('/'):
+            prefix = ['/']
+            require_enable_modules = False
+        await parser(msg, prefix=prefix, require_enable_modules=require_enable_modules)
 
     async def on_c2c_message_create(self, message: C2CMessage):
         reply_id = None
         if message.message_reference:
             reply_id = message.message_reference.message_id
+        prefix = None
+        require_enable_modules = True
         msg = MessageSession(
             MsgInfo(
                 target_id=f'{target_C2C_name}|{message.author.user_openid}',
@@ -142,7 +154,10 @@ class MyClient(botpy.Client):
                 message=message,
                 target=message.author.user_openid,
                 sender=message.author.user_openid))
-        await parser(msg)
+        if message.content.strip().startswith('/'):
+            prefix = ['/']
+            require_enable_modules = False
+        await parser(msg, prefix=prefix, require_enable_modules=require_enable_modules)
 
 
 intents = botpy.Intents.none()

@@ -7,24 +7,20 @@ from botpy.message import C2CMessage, DirectMessage, GroupMessage, Message
 from botpy.types.message import Reference
 
 from bots.ntqq.info import *
-from core.builtins import Bot, Plain, Image, MessageSession as MessageSessionT, I18NContext, MessageTaskManager
+from core.builtins import Bot, Plain, Image, MessageSession as MessageSessionT, I18NContext, Url, MessageTaskManager
 from core.builtins.message.chain import MessageChain
 from core.config import Config
 from core.database import BotDBUtil
 from core.logger import Logger
-from core.types import FetchTarget as FetchTargetT, \
-    FinishedSession as FinS
+from core.types import FetchTarget as FetchTargetT, FinishedSession as FinishedSessionT
 from core.utils.http import download
 
 enable_analytics = Config('enable_analytics', False)
 enable_send_url = Config('qq_bot_enable_send_url', False)
 
 
-class FinishedSession(FinS):
+class FinishedSession(FinishedSessionT):
     async def delete(self):
-        """
-        用于删除这条消息。
-        """
         if self.session.target.target_from in [target_guild_name, target_direct_name]:
             try:
                 from bots.ntqq.bot import client
@@ -42,6 +38,7 @@ class MessageSession(MessageSessionT):
         forward = False
         delete = True
         quote = True
+        typing = False
         wait = False
 
     async def send_message(self, message_chain, quote=False, disable_secret_check=False,
@@ -52,7 +49,7 @@ class MessageSession(MessageSessionT):
 
         plains = []
         images = []
-        url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$\-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+        url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$\-_@.&+]|[!*\\(\\)\\/,]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
         for x in message_chain.as_sendable(self, embed=False):
             if isinstance(x, Plain):
                 plains.append(x)
@@ -66,33 +63,101 @@ class MessageSession(MessageSessionT):
             lines = msg.split('\n')
             for line in lines:
                 if enable_send_url:
-                    line = url_pattern.sub(r'str(Url("\1", use_mm=True))', line)
+                    line = url_pattern.sub(lambda match: str(Url(match.group(0), use_mm=True)), line)
                 elif url_pattern.findall(line):
                     continue
                 filtered_msg.append(line)
             msg = '\n'.join(filtered_msg).strip()
-
+            image_1 = None
+            sends = []
             if isinstance(self.session.message, Message):
-                image = await images[0].get() if images else None
-                send = await self.session.message.reply(content=msg, file_image=image, message_reference=Reference(message_id=self.session.message.id) if quote and self.session.message else None)
+                if images:
+                    image_1 = images[0]
+                    images.pop(0)
+                send_img = await image_1.get() if image_1 else None
+                msg_quote = Reference(
+                    message_id=self.session.message.id,
+                    ignore_get_message_error=False) if quote and self.session.message and not send_img else None
+                send = await self.session.message.reply(content=msg,
+                                                        file_image=send_img,
+                                                        message_reference=msg_quote)
+                Logger.info(f'[Bot] -> [{self.target.target_id}]: {msg}')
+                if image_1:
+                    Logger.info(f'[Bot] -> [{self.target.target_id}]: Image: {str(image_1.__dict__)}')
+                if images:
+                    for img in images:
+                        send_img = await img.get()
+                        send = await self.session.message.reply(file_image=send_img)
+                        Logger.info(f'[Bot] -> [{self.target.target_id}]: Image: {str(img.__dict__)}')
+                        if send:
+                            sends.append(send)
+                sends.append(send)
             elif isinstance(self.session.message, DirectMessage):
-                image = await images[0].get() if images else None
-                send = await self.session.message.reply(content=msg, file_image=image, message_reference=Reference(message_id=self.session.message.id) if quote and self.session.message else None)
+                if images:
+                    image_1 = images[0]
+                    images.pop(0)
+                send_img = await image_1.get() if image_1 else None
+                msg_quote = Reference(
+                    message_id=self.session.message.id,
+                    ignore_get_message_error=False) if quote and self.session.message and not send_img else None
+                send = await self.session.message.reply(content=msg, file_image=send_img, message_reference=msg_quote)
+                sends.append(send)
+                Logger.info(f'[Bot] -> [{self.target.target_id}]: {msg}')
+                if image_1:
+                    Logger.info(f'[Bot] -> [{self.target.target_id}]: Image: {str(image_1.__dict__)}')
+                if images:
+                    for img in images:
+                        send_img = await img.get()
+                        send = await self.session.message.reply(file_image=send_img)
+                        Logger.info(f'[Bot] -> [{self.target.target_id}]: Image: {str(img.__dict__)}')
+                        if send:
+                            sends.append(send)
             elif isinstance(self.session.message, GroupMessage):
-                #  不是很懂如何发图片orz..
-                #                media = await self.session.message._api.post_group_file(group_openid=self.session.message.group_openid, file_type=1, url=image)
-                # send = await self.session.message.reply(content=msg, media=media,
-                # message_reference=Reference(message_id=self.session.message.id) if quote
-                # and self.session.message else None)
-                msg = '\n' + msg
-                send = await self.session.message.reply(content=msg, message_reference=Reference(message_id=self.session.message.id) if quote and self.session.message else None)
+                seq = self.session.message.msg_seq if self.session.message.msg_seq else 1
+                if msg:
+                    msg = '\n' + msg
+                    send = await self.session.message.reply(content=msg, msg_seq=seq)
+                    Logger.info(f'[Bot] -> [{self.target.target_id}]: {msg.strip()}')
+                    if send:
+                        sends.append(send)
+                    seq += 1
+                if images:
+                    for img in images:
+                        send_img = await self.session.message._api.post_group_file(group_openid=self.session.message.group_openid,
+                                                                                   file_type=1,
+                                                                                   file_data=await img.get_base64())
+                        send = await self.session.message.reply(msg_type=7, media=send_img, msg_seq=seq)
+                        Logger.info(f'[Bot] -> [{self.target.target_id}]: Image: {str(img.__dict__)}')
+                        if send:
+                            sends.append(send)
+                        seq += 1
+                self.session.message.msg_seq = seq
             elif isinstance(self.session.message, C2CMessage):
-                #  不是很懂如何发图片orz..
-                send = await self.session.message.reply(content=msg, message_reference=Reference(message_id=self.session.message.id) if quote and self.session.message else None)
+                seq = self.session.message.msg_seq if self.session.message.msg_seq else 1
+                if msg:
+                    send = await self.session.message.reply(content=msg, msg_seq=seq)
+                    Logger.info(f'[Bot] -> [{self.target.target_id}]: {msg.strip()}')
+                    if send:
+                        sends.append(send)
+                    seq += 1
+                if images:
+                    for img in images:
+                        send_img = await self.session.message._api.post_c2c_file(openid=self.session.message.author.user_openid,
+                                                                                 file_type=1,
+                                                                                 file_data=await img.get_base64())
+                        send = await self.session.message.reply(msg_type=7, media=send_img, msg_seq=seq)
+                        Logger.info(f'[Bot] -> [{self.target.target_id}]: Image: {str(img.__dict__)}')
+                        if send:
+                            sends.append(send)
+                        seq += 1
+                self.session.message.msg_seq = seq
+        msg_ids = []
+        for x in sends:
+            msg_ids.append(x['id'])
+            if callback:
+                MessageTaskManager.add_callback(x['id'], callback)
 
-        if callback:
-            MessageTaskManager.add_callback(send['id'], callback)
-        return FinishedSession(self, send['id'], sends)
+        return FinishedSession(self, msg_ids, sends)
 
     async def check_native_permission(self):
         if isinstance(self.session.message, Message):
@@ -104,7 +169,7 @@ class MessageSession(MessageSessionT):
         elif isinstance(self.session.message, DirectMessage):
             return True
         elif isinstance(self.session.message, GroupMessage):
-            ...  # QQ群好像无法获取成员权限信息..
+            ...  # 群组好像无法获取成员权限信息...
         elif isinstance(self.session.message, C2CMessage):
             return True
         return False
@@ -142,7 +207,14 @@ class MessageSession(MessageSessionT):
             self.msg = msg
 
         async def __aenter__(self):
-            pass
+            if self.msg.target.target_from in [target_guild_name, target_direct_name]:
+                emoji_id = str(Config('qq_typing_emoji', '181', (str, int)))
+                emoji_type = 1 if int(emoji_id) < 9000 else 2
+                from bots.ntqq.bot import client
+                await client.api.put_reaction(channel_id=self.msg.target.target_id.split('|')[-1],
+                                              message_id=self.msg.target.message_id,
+                                              emoji_type=emoji_type,
+                                              emoji_id=emoji_id)
 
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             pass
@@ -154,7 +226,7 @@ class FetchTarget(FetchTargetT):
     @staticmethod
     async def fetch_target(target_id, sender_id=None) -> Union[Bot.FetchedSession]:
         target_pattern = r'|'.join(re.escape(item) for item in target_name_list)
-        match_target = re.match(fr"({target_pattern})\|(.*)", target_id)
+        match_target = re.match(fr'^({target_pattern})\|(.*)', target_id)
         if match_target:
             target_from = sender_from = match_target.group(1)
             target_id = match_target.group(2)
@@ -202,6 +274,8 @@ class FetchTarget(FetchTargetT):
             for x in get_target_id:
                 fetch = await FetchTarget.fetch_target(x.targetId)
                 if fetch:
+                    if BotDBUtil.TargetInfo(fetch.target.target_id).is_muted:
+                        continue
                     try:
                         msgchain = message
                         if isinstance(message, str):

@@ -10,8 +10,7 @@ from core.config import Config
 from core.builtins import Bot, Plain, Image, Voice, MessageSession as MessageSessionT, I18NContext, MessageTaskManager
 from core.builtins.message.chain import MessageChain
 from core.logger import Logger
-from core.types import FetchTarget as FetchTargetT, \
-    FinishedSession as FinS
+from core.types import FetchTarget as FetchTargetT, FinishedSession as FinishedSessionT
 from core.utils.http import download
 from core.utils.image import image_split
 from core.database import BotDBUtil
@@ -19,11 +18,8 @@ from core.database import BotDBUtil
 enable_analytics = Config('enable_analytics', False)
 
 
-class FinishedSession(FinS):
+class FinishedSession(FinishedSessionT):
     async def delete(self):
-        """
-        用于删除这条消息。
-        """
         try:
             for x in self.result:
                 await x.delete()
@@ -211,6 +207,8 @@ class FetchTarget(FetchTargetT):
             for x in get_target_id:
                 fetch = await FetchTarget.fetch_target(x.targetId)
                 if fetch:
+                    if BotDBUtil.TargetInfo(fetch.target.target_id).is_muted:
+                        continue
                     try:
                         msgchain = message
                         if isinstance(message, str):

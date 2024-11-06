@@ -22,7 +22,7 @@ from core.builtins.message import MessageSession as MessageSessionT
 from core.builtins.message.chain import MessageChain
 from core.exceptions import SendMessageFailed
 from core.logger import Logger
-from core.types import FetchTarget as FetchTargetT, FinishedSession as FinS
+from core.types import FetchTarget as FetchTargetT, FinishedSession as FinishedSessionT
 from core.utils.image import msgchain2image
 from core.utils.storedata import get_stored_list
 from core.database import BotDBUtil
@@ -30,11 +30,8 @@ from core.database import BotDBUtil
 enable_analytics = Config('enable_analytics', False)
 
 
-class FinishedSession(FinS):
+class FinishedSession(FinishedSessionT):
     async def delete(self):
-        """
-        用于删除这条消息。
-        """
         if self.session.target.target_from in [target_group_name, target_private_name]:
             try:
                 for x in self.message_id:
@@ -86,9 +83,9 @@ class MessageSession(MessageSessionT):
         embed = False
         forward = True
         delete = True
-        wait = True
         quote = True
         typing = True
+        wait = True
 
     async def send_message(self, message_chain, quote=True, disable_secret_check=False,
                            enable_parse_message=True, enable_split_image=True,
@@ -505,6 +502,8 @@ class FetchTarget(FetchTargetT):
                     if fetch.target.target_from == target_guild_name:
                         if fetch.session.target not in guild_list:
                             continue
+                    if BotDBUtil.TargetInfo(fetch.target.target_id).is_muted:
+                        continue
 
                     if fetch.target.target_from in [target_private_name, target_guild_name]:
                         in_whitelist.append(post_(fetch))

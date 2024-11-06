@@ -35,7 +35,9 @@ bots_and_required_configs = {
         'matrix_device_id',
         'matrix_token'],
     'api': [],
-    'ntqq': ['qq_appid', 'qq_secret'],
+    'ntqq': [
+        'qq_bot_appid',
+        'qq_bot_secret'],
 }
 
 
@@ -64,6 +66,7 @@ def go(bot_name: str = None, subprocess: bool = False, binary_mode: bool = False
         importlib.import_module(f"bots.{bot_name}.bot")
     except ModuleNotFoundError:
         Logger.error(f"[{bot_name}] ???, entry not found.")
+
         sys.exit(1)
 
 
