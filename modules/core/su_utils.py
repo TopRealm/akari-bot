@@ -18,14 +18,14 @@ from core.path import cache_path
 from core.parser.message import check_temp_ban, remove_temp_ban
 from core.tos import pardon_user, warn_user
 from core.types import Param
-from core.utils.info import Info, get_all_sender_name, get_all_target_name
+from core.utils.info import Info, get_all_sender_prefix, get_all_target_prefix
 from core.utils.storedata import get_stored_list, update_stored_list
 from core.utils.text import isfloat, isint, decrypt_string
 from core.database import BotDBUtil
 
 
-target_list = get_all_target_name()
-sender_list = get_all_sender_name()
+target_list = get_all_target_prefix()
+sender_list = get_all_sender_prefix()
 
 
 su = module('superuser', alias='su', required_superuser=True, base=True, doc=True, exclude_from=['TEST|Console'])
@@ -490,13 +490,27 @@ async def _(msg: Bot.MessageSession, display_msg: str):
 post_ = module('post', required_superuser=True, base=True, doc=True)
 
 
-@post_.command('<post_msg>')
+@post_.command('<target> <post_msg>')
+async def _(msg: Bot.MessageSession, target: str, post_msg: str):
+    if not target.startswith(f'{msg.target.client_name}|'):
+        await msg.finish(msg.locale.t('message.id.invalid.target', target=msg.target.target_from))
+    post_msg = f'{Locale(Config('locale', 'zh_cn')).t("core.message.post.prefix")} {post_msg}'
+    session = await Bot.FetchTarget.fetch_target(target)
+    confirm = await msg.wait_confirm(msg.locale.t("core.message.post.confirm", target=target, post_msg=post_msg), append_instruction=False)
+    if confirm:
+        await Bot.FetchTarget.post_global_message(post_msg, [session])
+        await msg.finish(msg.locale.t("core.message.post.success"))
+    else:
+        await msg.finish()
+
+
+@post_.command('global <post_msg>')
 async def _(msg: Bot.MessageSession, post_msg: str):
     post_msg = f'{Locale(Config('locale', 'zh_cn')).t("core.message.post.prefix")} {post_msg}'
-    confirm = await msg.wait_confirm(msg.locale.t("core.message.post.confirm", post_msg=post_msg), append_instruction=False)
+    confirm = await msg.wait_confirm(msg.locale.t("core.message.post.global.confirm", post_msg=post_msg), append_instruction=False)
     if confirm:
         await Bot.FetchTarget.post_global_message(post_msg)
-        await msg.finish(msg.locale.t("core.message.post.prompt"))
+        await msg.finish(msg.locale.t("core.message.post.success"))
     else:
         await msg.finish()
 
