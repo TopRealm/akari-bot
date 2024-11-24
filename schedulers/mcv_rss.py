@@ -7,13 +7,13 @@ import orjson as json
 from bs4 import BeautifulSoup
 from google_play_scraper import app as google_play_scraper
 
-from core.config import Config
 from core.builtins import I18NContext, FormattedTime
+from core.config import Config
+from core.constants.info import Secret
 from core.logger import Logger
 from core.queue import JobQueue
 from core.scheduler import Scheduler, IntervalTrigger
 from core.utils.http import get_url
-from core.utils.ip import IP
 from core.utils.storedata import get_stored_list, update_stored_list
 from core.utils.web_render import webrender
 
@@ -122,7 +122,7 @@ async def mcv_rss():
 
 @Scheduler.scheduled_job(IntervalTrigger(seconds=180))
 async def mcbv_rss():
-    if IP.country == 'China' or not IP.country:
+    if Secret.ip_country == 'China' or not Secret.ip_country:
         return  # 中国大陆无法访问Google Play商店
     try:
         verlist = get_stored_list('scheduler', 'mcbv_rss')

@@ -7,11 +7,11 @@ import unicodedata
 from PIL import Image, ImageDraw, ImageFont
 from attr import define, field
 
-from core.config import Config
 from core.builtins import Bot, I18NContext, Image as BImage, Plain
 from core.component import module
+from core.config import Config
+from core.constants.path import assets_path, noto_sans_bold_path
 from core.logger import Logger
-from core.path import assets_path, noto_sans_bold_path
 from core.utils.cooldown import CoolDown
 from core.utils.game import PlayState
 from core.utils.petal import gained_petal
@@ -255,20 +255,21 @@ async def _(msg: Bot.MessageSession):
             else:
                 await wait.send_message([BImage(board_image.image)])
 
-    play_state.disable()
-    attempt = board.get_trials() - 1
-    g_msg = msg.locale.t('wordle.message.finish', answer=board.word)
-    if board.board[-1] == board.word:
-        g_msg = msg.locale.t('wordle.message.finish.success', attempt=attempt)
-        petal = 2 if attempt <= 3 else 1
-        petal += 1 if hard_mode else 0
-        if reward := await gained_petal(msg, petal):
-            g_msg += '\n' + reward
-    qc.reset()
-    if text_mode:
-        await msg.finish(board.format_board() + '\n' + g_msg, quote=False)
-    else:
-        await msg.finish([BImage(board_image.image), Plain(g_msg)], quote=False)
+    if board.is_game_over():
+        play_state.disable()
+        attempt = board.get_trials() - 1
+        g_msg = msg.locale.t('wordle.message.finish', answer=board.word)
+        if board.board[-1] == board.word:
+            g_msg = msg.locale.t('wordle.message.finish.success', attempt=attempt)
+            petal = 2 if attempt <= 3 else 1
+            petal += 1 if hard_mode else 0
+            if reward := await gained_petal(msg, petal):
+                g_msg += '\n' + reward
+        qc.reset()
+        if text_mode:
+            await msg.finish(board.format_board() + '\n' + g_msg, quote=False)
+        else:
+            await msg.finish([BImage(board_image.image), Plain(g_msg)], quote=False)
 
 
 @wordle.command('stop {{game.help.stop}}')
@@ -280,7 +281,7 @@ async def terminate(msg: Bot.MessageSession):
         play_state.disable()
         board.reset_board()
         qc.reset()
-        await msg.finish(msg.locale.t('wordle.message.stop', answer=play_state.check('answer')))
+        await msg.finish(msg.locale.t('wordle.message.stop', answer=play_state.get('answer')))
     else:
         await msg.finish(msg.locale.t('game.message.stop.none'))
 

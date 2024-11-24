@@ -10,16 +10,19 @@ from bots.matrix import client
 from bots.matrix.client import bot
 from bots.matrix.info import *
 from bots.matrix.message import MessageSession, FetchTarget
-from core.bot import load_prompt, init_async
+from core.bot_init import load_prompt, init_async
 from core.builtins import PrivateAssets, Url
+from core.config import Config
+from core.constants.default import ignored_sender_default
+from core.constants.path import assets_path
 from core.logger import Logger
 from core.parser.message import parser
-from core.path import assets_path
 from core.types import MsgInfo, Session
 from core.utils.info import Info
 
 PrivateAssets.set(os.path.join(assets_path, 'private', 'matrix'))
 Url.disable_mm = True
+ignored_sender = Config("ignored_sender", ignored_sender_default)
 
 
 async def on_sync(resp: nio.SyncResponse):
@@ -61,6 +64,10 @@ async def on_message(room: nio.MatrixRoom, event: nio.RoomMessageFormatted):
     if event.source['content']['msgtype'] == 'm.notice':
         # https://spec.matrix.org/v1.9/client-server-api/#mnotice
         return
+    target_id = f'{target_prefix}|{room.room_id}'
+    sender_id = f'{sender_prefix}|{event.sender}'
+    if sender_id in ignored_sender:
+        return
     reply_id = None
     if 'm.relates_to' in event.source['content']:
         relatesTo = event.source['content']['m.relates_to']
@@ -80,8 +87,8 @@ async def on_message(room: nio.MatrixRoom, event: nio.RoomMessageFormatted):
         Logger.error(f"Failed to get display name for {event.sender}")
         return
 
-    msg = MessageSession(MsgInfo(target_id=f'{target_prefix}|{room.room_id}',
-                                 sender_id=f'{sender_prefix}|{event.sender}',
+    msg = MessageSession(MsgInfo(target_id=target_id,
+                                 sender_id=sender_id,
                                  target_from=target_prefix,
                                  sender_from=sender_prefix,
                                  sender_prefix=resp.displayname,
@@ -221,7 +228,7 @@ async def start():
     await bot.set_presence('offline')
 
 
-if bot:
+if bot and Config("enable", False, cfg_type=bool, table_name='bot_matrix'):
     Info.client_name = client_name
     if 'subprocess' in sys.argv:
         Info.subprocess = True

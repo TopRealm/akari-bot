@@ -8,13 +8,13 @@ import nio
 
 from bots.matrix.client import bot, homeserver_host
 from bots.matrix.info import *
-from core.config import Config
 from core.builtins import Bot, Plain, Image, Voice, MessageSession as MessageSessionT, I18NContext, MessageTaskManager
 from core.builtins.message.chain import MessageChain
+from core.config import Config
+from core.database import BotDBUtil
 from core.logger import Logger
 from core.types import FetchTarget as FetchedTargetT, FinishedSession as FinishedSessionT
 from core.utils.image import image_split
-from core.database import BotDBUtil
 
 enable_analytics = Config("enable_analytics", False)
 
@@ -138,12 +138,19 @@ class MessageSession(MessageSessionT):
                     # https://spec.matrix.org/v1.9/client-server-api/#fallbacks-for-rich-replies
                     # todo: standardize fallback for m.image, m.video, m.audio, and m.file
                     reply_to_type = self.session.message['content']['msgtype']
-                    content[
-                        'body'] = f">{' *' if reply_to_type == 'm.emote' else ''} <{self.session.sender}> {self.session.message['content']['body']}\n\n{x.text}"
+                    content['body'] = f">{
+                        ' *' if reply_to_type == 'm.emote' else ''} <{
+                        self.session.sender}> {
+                        self.session.message['content']['body']}\n\n{
+                        x.text}"
                     content['format'] = 'org.matrix.custom.html'
                     html_text = x.text.replace('\n', '<br />')
-                    content[
-                        'formatted_body'] = f"<mx-reply><blockquote><a href=\"https://matrix.to/#/{self.session.target}/{reply_to}?via={homeserver_host}\">In reply to</a>{' *' if reply_to_type == 'm.emote' else ''} <a href=\"https://matrix.to/#/{self.session.sender}\">{self.session.sender}</a><br/>{self.session.message['content']['body']}</blockquote></mx-reply>{html_text}"
+                    content['formatted_body'] = f"<mx-reply><blockquote><a href=\"https://matrix.to/#/{
+                        self.session.target}/{reply_to}?via={homeserver_host}\">In reply to</a>{
+                        ' *' if reply_to_type == 'm.emote' else ''} <a href=\"https://matrix.to/#/{
+                        self.session.sender}\">{
+                        self.session.sender}</a><br/>{
+                        self.session.message['content']['body']}</blockquote></mx-reply>{html_text}"
                 Logger.info(f'[Bot] -> [{self.target.target_id}]: {x.text}')
             elif isinstance(x, Image):
                 split = [x]
