@@ -9,11 +9,12 @@ import orjson as json
 from PIL import Image as PILImage
 from tabulate import tabulate
 
+from core.constants.info import Info
 from core.logger import Logger
 from core.joke import joke
 from core.utils.cache import random_cache_path
 from core.utils.http import download
-from core.utils.web_render import WebRender, webrender
+from core.utils.web_render import webrender
 
 
 class ImageTable:
@@ -23,9 +24,9 @@ class ImageTable:
 
 
 async def image_table_render(table: Union[ImageTable, List[ImageTable]], save_source=True, use_local=True) -> Union[List[PILImage], bool]:
-    if not WebRender.status:
+    if not Info.web_render_status:
         return False
-    elif not WebRender.local:
+    elif not Info.web_render_local_status:
         use_local = False
     pic = False
 

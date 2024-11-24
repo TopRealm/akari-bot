@@ -6,11 +6,11 @@ from uuid import uuid4
 import orjson as json
 
 from core.builtins import Bot, MessageChain
+from core.database import BotDBUtil
+from core.database.tables import JobQueueTable
 from core.logger import Logger
 from core.utils.info import get_all_clients_name
 from core.utils.ip import append_ip, fetch_ip_info
-from core.database import BotDBUtil
-from core.database.tables import JobQueueTable
 
 _queue_tasks = {}
 queue_actions = {}
@@ -105,11 +105,14 @@ async def check_job_queue():
                 Logger.warning(f'Unknown action {tsk.action}, skip.')
             return_val(tsk, {}, status=False)
         except QueueFinished:
-            Logger.info(f'Task {tsk.action}({tsk.taskid}) finished.')
+            Logger.debug(f'Task {tsk.action}({tsk.taskid}) finished.')
         except Exception:
             f = traceback.format_exc()
             Logger.error(f)
-            return_val(tsk, {'traceback': f}, status=False)
+            try:
+                return_val(tsk, {'traceback': f}, status=False)
+            except QueueFinished:
+                pass
 
 
 @action('validate_permission')

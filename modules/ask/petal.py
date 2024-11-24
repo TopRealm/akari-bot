@@ -4,10 +4,10 @@ from decimal import Decimal
 
 import orjson as json
 
-from core.config import Config
 from core.builtins import Bot
+from core.config import Config
+from core.constants.path import cache_path
 from core.logger import Logger
-from core.path import cache_path
 from core.utils.http import get_url
 
 ONE_K = Decimal('1000')
@@ -24,7 +24,7 @@ CNY_TO_PETAL = 100  # 100 petal = 1 CNY
 
 
 async def get_petal_exchange_rate():
-    api_key = Config('exchange_rate_api_key', '')
+    api_key = Config('exchange_rate_api_key', cfg_type=str, secret=True)
     api_url = f'https://v6.exchangerate-api.com/v6/{api_key}/pair/USD/CNY'
     try:
         data = await get_url(api_url, 200, attempt=1, fmt='json', logging_err_resp=False)
