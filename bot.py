@@ -38,7 +38,7 @@ bots_and_required_configs = {
         'matrix_device_id',
         'matrix_token'],
     'api': [],
-    'ntqq': [
+    'qqbot': [
         'qq_bot_appid',
         'qq_bot_secret'],
 }
@@ -125,7 +125,7 @@ def run_bot():
         if bl in bots_and_required_configs:
             abort = False
             for c in bots_and_required_configs[bl]:
-                if not Config(c):
+                if not Config(c, _global=True):
                     Logger.error(f'Bot {bl} requires config {c} but not found, abort to launch.')
                     abort = True
                     break
@@ -178,7 +178,7 @@ if __name__ == '__main__':
         while True:
             try:
                 run_bot()  # Process will block here so
-                Logger.critical('All bots exited unexpectedly, please check the output')
+                Logger.critical('All bots exited unexpectedly, please check the output.')
                 break
             except RestartBot:
                 for ps in processes:

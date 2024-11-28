@@ -12,9 +12,10 @@ from core.constants import *
 from core.utils.i18n import Locale
 from core.utils.text import isint
 
-def generate_config(file_path, language):
+
+def generate_config(dir_path, language):
     config_code_list = {}
-    path_ = os.path.join(file_path, config_filename)
+    path_ = os.path.join(dir_path, config_filename)
 
     dir_list = ['bots', 'core', 'modules', 'schedulers']
     exclude_dir_list = [os.path.join('core', 'config'), os.path.join('core', 'scripts')]
@@ -44,7 +45,7 @@ def generate_config(file_path, language):
 
     from core.config import Config, CFGManager  # noqa
 
-    CFGManager.switch_config_path(file_path)
+    CFGManager.switch_config_path(dir_path)
 
     for dir in dir_list:
         for root, dirs, files in os.walk(dir):
@@ -69,7 +70,16 @@ def generate_config(file_path, language):
                                         break
                                     param_text += param
                                 config_code_list[param_text] = file_path
-
+    # filtered_config_code_map = {}
+    # for c in config_code_list:
+    #     opt = c.split(',')[0]
+    #     if opt not in filtered_config_code_map:
+    #         filtered_config_code_map[opt] = c
+    #     else:
+    #         if len(c) > len(filtered_config_code_map[opt]):
+    #             print(f'Conflict found: {filtered_config_code_map[opt]}')
+    #             filtered_config_code_map[opt] = c
+    # config_code_list = [filtered_config_code_map[c] for c in filtered_config_code_map]
     for c in config_code_list:
         if c.endswith(','):
             c = c[:-1]
