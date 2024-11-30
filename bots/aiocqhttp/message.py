@@ -215,9 +215,9 @@ class MessageSession(MessageSessionT):
             m = html.unescape(self.session.message.message)
             if text_only:
                 m = re.sub(r'\[CQ:text,qq=(.*?)]', r'\1', m)
-                m = re.sub(CQCodeHandler.pattern, '', m)
+                m = CQCodeHandler.pattern.sub('', m)
             else:
-                m = CQCodeHandler.pattern.sub(CQCodeHandler.filter_cq, m)
+                m = CQCodeHandler.filter_cq(m)
                 m = re.sub(r'\[CQ:at,qq=(.*?)]', fr'{sender_prefix}|\1', m)
                 m = re.sub(r'\[CQ:json,data=(.*?)]', r'\1', m).replace("\\/", "/")
                 m = re.sub(r'\[CQ:text,qq=(.*?)]', r'\1', m)
@@ -375,7 +375,7 @@ class FetchTarget(FetchTargetT):
             return Bot.FetchedSession(target_from, target_id, sender_from, sender_id)
 
     @staticmethod
-    async def fetch_target_list(target_list: list) -> List[Bot.FetchedSession]:
+    async def fetch_target_list(target_list) -> List[Bot.FetchedSession]:
         lst = []
         group_list_raw = await bot.call_action('get_group_list')
         group_list = []
@@ -408,7 +408,7 @@ class FetchTarget(FetchTargetT):
         return lst
 
     @staticmethod
-    async def post_message(module_name, message, user_list: List[Bot.FetchedSession] = None, i18n=False, **kwargs):
+    async def post_message(module_name, message, user_list=[], i18n=False, **kwargs):
         _tsk = []
         blocked = False
         module_name = None if module_name == '*' else module_name

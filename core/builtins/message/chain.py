@@ -1,6 +1,6 @@
 import base64
 import re
-from typing import Union, List, Tuple
+from typing import List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import orjson as json
@@ -22,15 +22,18 @@ from core.builtins.message.internal import (
 )
 from core.builtins.utils import Secret
 from core.logger import Logger
-from core.types.message import MessageChain as MessageChainT
 
 from core.utils.http import url_pattern
 
 
-class MessageChain(MessageChainT):
+class MessageChain:
+    """
+    消息链。
+    """
+
     def __init__(
         self,
-        elements: Union[
+        elements: Optional[Union[
             str,
             List[Union[Plain, Image, Voice, Embed, Url, FormattedTime, I18NContext]],
             Tuple[Union[Plain, Image, Voice, Embed, Url, FormattedTime, I18NContext]],
@@ -41,8 +44,11 @@ class MessageChain(MessageChainT):
             Url,
             FormattedTime,
             I18NContext,
-        ] = None,
+        ]] = None,
     ):
+        """
+        :param elements: 消息链元素
+        """
         self.value = []
         if isinstance(elements, ErrorMessage):
             elements = str(elements)
@@ -130,7 +136,10 @@ class MessageChain(MessageChainT):
             Logger.error(f"Unexpected message type: {elements}")
 
     @property
-    def is_safe(self):
+    def is_safe(self) -> bool:
+        """
+        检查消息链是否安全。
+        """
         def unsafeprompt(name, secret, text):
             return f'{name} contains unsafe text "{secret}": {text}'
 
@@ -181,7 +190,10 @@ class MessageChain(MessageChainT):
                             return False
         return True
 
-    def as_sendable(self, msg: 'MessageSession' = None, embed=True):
+    def as_sendable(self, msg: 'MessageSession' = None, embed: bool = True) -> list:
+        """
+        将消息链转换为可发送的格式。
+        """
         locale = None
         if msg:
             locale = msg.locale.locale
@@ -222,7 +234,10 @@ class MessageChain(MessageChainT):
             )
         return value
 
-    def to_list(self, locale="zh_cn", embed=True, msg: 'MessageSession' = None):
+    def to_list(self, locale: str = "zh_cn", embed: bool = True, msg: 'MessageSession' = None) -> list:
+        """
+        将消息链转换为列表。
+        """
         value = []
         for x in self.value:
             if isinstance(x, Embed) and not embed:
@@ -248,16 +263,34 @@ class MessageChain(MessageChainT):
             )
         return value
 
+    def from_list(self, lst: list):
+        """
+        从列表构造消息链。
+        """
+        raise NotImplementedError
+
     def append(self, element):
+        """
+        添加一个消息链元素到末尾。
+        """
         self.value.append(element)
 
     def remove(self, element):
+        """
+        删除一个消息链元素。
+        """
         self.value.remove(element)
 
     def insert(self, index, element):
+        """
+        在指定位置插入一个消息链元素。
+        """
         self.value.insert(index, element)
 
     def copy(self):
+        """
+        复制一个消息链。
+        """
         return MessageChain(self.value.copy())
 
     def __str__(self):
@@ -266,8 +299,30 @@ class MessageChain(MessageChainT):
     def __repr__(self):
         return self.__str__()
 
+    def __iter__(self):
+        return iter(self.value)
 
-def match_kecode(text: str) -> List[Union[Plain, Image, Voice, Embed]]:
+    def __add__(self, other):
+        if isinstance(other, MessageChain):
+            return MessageChain(self.value + other.value)
+        else:
+            return MessageChain(self.value + other)
+
+    def __radd__(self, other):
+        if isinstance(other, MessageChain):
+            return MessageChain(other.value + self.value)
+        else:
+            return MessageChain(other + self.value)
+
+    def __iadd__(self, other):
+        if isinstance(other, MessageChain):
+            self.value += other.value
+        else:
+            self.value += other
+        return self
+
+
+def match_kecode(text: str) -> List[Union[Plain, Image, Voice]]:
     split_all = re.split(r"(\[Ke:.*?])", text)
     split_all = [x for x in split_all if x]
     elements = []
