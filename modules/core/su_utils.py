@@ -23,7 +23,6 @@ from core.utils.info import Info, get_all_sender_prefix, get_all_target_prefix
 from core.utils.storedata import get_stored_list, update_stored_list
 from core.utils.text import isfloat, isint
 
-
 target_list = get_all_target_prefix()
 sender_list = get_all_sender_prefix()
 
@@ -61,12 +60,12 @@ async def _(msg: Bot.MessageSession):
     if os.path.exists(cache_path):
         if os.listdir(cache_path):
             shutil.rmtree(cache_path)
-            os.makedirs(cache_path)
+            os.makedirs(cache_path, exist_ok=True)
             await msg.finish(msg.locale.t("core.message.purge.success"))
         else:
             await msg.finish(msg.locale.t("core.message.purge.empty"))
     else:
-        os.makedirs(cache_path)
+        os.makedirs(cache_path, exist_ok=True)
         await msg.finish(msg.locale.t("core.message.purge.empty"))
 
 

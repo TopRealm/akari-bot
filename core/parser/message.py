@@ -10,7 +10,8 @@ from core.builtins import command_prefix, ExecutionLockList, ErrorMessage, Messa
     base_superuser_list
 from core.config import Config
 from core.constants.default import bug_report_url_default, qq_account_default
-from core.constants.exceptions import AbuseWarning, FinishedException, InvalidCommandFormatError, InvalidHelpDocTypeError, \
+from core.constants.exceptions import AbuseWarning, FinishedException, InvalidCommandFormatError, \
+    InvalidHelpDocTypeError, \
     WaitCancelException, NoReportException, SendMessageFailed
 from core.database import BotDBUtil
 from core.loader import ModulesManager, current_unloaded_modules, err_modules
@@ -116,7 +117,7 @@ async def check_target_cooldown(msg: Bot.MessageSession):
 
 
 def transform_alias(msg, command: str):
-    aliases = dict(msg.options.get('command_alias').items())
+    aliases = dict(msg.options.get('command_alias', {}).items())
     command_split = msg.trigger_msg.split(' ')  # 切割消息
     for pattern, replacement in aliases.items():
         if re.search(r'\${[^}]*}', pattern):
@@ -484,7 +485,10 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
 
                     if Config('bug_report_url', bug_report_url_default, cfg_type=str):
                         errmsg += '\n' + msg.locale.t('error.prompt.address',
-                                                      url=str(Url(Config('bug_report_url', bug_report_url_default, cfg_type=str), use_mm=False)))
+                                                      url=str(Url(Config('bug_report_url',
+                                                                         bug_report_url_default,
+                                                                         cfg_type=str),
+                                                                  use_mm=False)))
                     await msg.send_message(errmsg)
 
                     if not timeout and report_targets:
@@ -625,7 +629,10 @@ async def parser(msg: Bot.MessageSession, require_enable_modules: bool = True, p
 
                             if Config('bug_report_url', bug_report_url_default, cfg_type=str):
                                 errmsg += '\n' + msg.locale.t('error.prompt.address',
-                                                              url=str(Url(Config('bug_report_url', bug_report_url_default, cfg_type=str), use_mm=False)))
+                                                              url=str(Url(Config('bug_report_url',
+                                                                                 bug_report_url_default,
+                                                                                 cfg_type=str),
+                                                                          use_mm=False)))
                             await msg.send_message(errmsg)
 
                             if not timeout and report_targets:

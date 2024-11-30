@@ -5,11 +5,11 @@ from typing import Union
 import filetype
 
 from core.builtins import Bot, Plain, Image, Voice, Url, confirm_command
+from core.builtins import MessageSession
 from core.component import module
 from core.constants.exceptions import AbuseWarning
 from core.constants.info import Info
 from core.logger import Logger
-from core.builtins import MessageSession
 from core.utils.http import download
 from core.utils.image import svg_render
 from core.utils.image_table import image_table_render, ImageTable
@@ -18,7 +18,6 @@ from .utils.dbutils import WikiTargetInfo
 from .utils.mapping import generate_screenshot_v2_blocklist, special_namespace_list, random_title_list
 from .utils.screenshot_image import generate_screenshot_v1, generate_screenshot_v2
 from .utils.wikilib import WikiLib, PageInfo, InvalidWikiError, QueryInfo
-
 
 wiki = module('wiki',
               alias={'wiki_start_site': 'wiki set',
@@ -260,7 +259,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                                 i_msg_lst.append(Plain(session.locale.t('wiki.message.invalid_section.select')))
                                 i_msg_lst.append(Plain(session.locale.t('message.reply.prompt')))
 
-                            async def _callback(msg: Bot.MessageSession):
+                            async def _callback(msg: Bot.MessageSession, forum_data=forum_data, r=r):
                                 display = msg.as_display(text_only=True)
                                 if isint(display) and int(display) <= len(forum_data) - 1:
                                     await query_pages(session, title=forum_data[display]['text'], start_wiki_api=r.info.api)

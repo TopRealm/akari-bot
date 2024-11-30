@@ -1,11 +1,10 @@
 import base64
 import re
 from typing import List, Optional, Tuple, Union, Any
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import orjson as json
-
-from typing import TYPE_CHECKING
 
 from core.builtins.message.elements import elements_map, MessageElement, PlainElement, EmbedElement, \
     ErrorMessageElement, FormattedTimeElement, I18NContextElement, URLElement, ImageElement, VoiceElement
@@ -30,9 +29,10 @@ class MessageChain:
         self,
         elements: Optional[Union[
             str,
-            List[Union[MessageElement]],
-            Tuple[Union[MessageElement]],
-            MessageElement
+            List[MessageElement],
+            Tuple[MessageElement],
+            MessageElement,
+            'MessageChain'
         ]] = None,
     ):
         """

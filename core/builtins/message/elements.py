@@ -1,23 +1,21 @@
 import base64
 import os
+import random
 import re
 from datetime import datetime, timezone
 from typing import Tuple, Optional, TYPE_CHECKING, Dict, Any, Union, List
 from urllib import parse
 
 import aiohttp
+from PIL import Image as PILImage
 from attrs import define
-from cattrs import structure
 from filetype import filetype
 from tenacity import retry, stop_after_attempt
 
 from core.config import Config
 from core.constants import bug_report_url_default
-from core.joke import joke
 from core.constants.info import Info
-from PIL import Image as PILImage
-
-import random
+from core.joke import joke
 from core.utils.cache import random_cache_path
 from core.utils.i18n import Locale
 
@@ -71,7 +69,6 @@ class URLElement(MessageElement):
         """
         :param url: URL
         :param use_mm: 是否使用链接跳板，覆盖全局设置
-        :param disable_mm: 是否禁用链接跳板，覆盖全局设置
         """
         if Info.use_url_manager and use_mm:
             mm_url = f'https://mm.teahouse.team/?source=akaribot&rot13=%s'
@@ -353,15 +350,6 @@ class EmbedElement(MessageElement):
                author: Optional[str] = None,
                footer: Optional[str] = None,
                fields: List[EmbedFieldElement] = None):
-        fields_ = []
-        if fields:
-            for f in fields:
-                if isinstance(f, EmbedFieldElement):
-                    fields_.append(f)
-                elif isinstance(f, dict):
-                    fields_.append(structure(f, EmbedFieldElement))
-                else:
-                    raise TypeError(f"Invalid type {type(f)} for EmbedField.")
         return cls(
             title=title,
             description=description,
@@ -372,7 +360,7 @@ class EmbedElement(MessageElement):
             thumbnail=thumbnail,
             author=author,
             footer=footer,
-            fields=fields_)
+            fields=fields)
 
     def to_message_chain(self, msg: Optional['MessageSession'] = None):
         """

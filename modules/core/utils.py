@@ -1,4 +1,5 @@
 import platform
+import subprocess
 from datetime import datetime, timedelta, UTC
 
 import jwt
@@ -12,8 +13,6 @@ from core.constants import locale_url_default
 from core.database import BotDBUtil
 from core.utils.i18n import get_available_locales, Locale, load_locale_file
 from core.utils.info import Info
-
-import subprocess
 
 jwt_secret = Config('jwt_secret', cfg_type=str, secret=True, table_name='bot_api')
 
@@ -91,7 +90,7 @@ admin = module('admin',
     'add <user> {{core.help.admin.add}}',
     'remove <user> {{core.help.admin.remove}}',
     'list {{core.help.admin.list}}'])
-async def config_gu(msg: Bot.MessageSession):
+async def _(msg: Bot.MessageSession):
     if 'list' in msg.parsed_msg:
         if msg.custom_admins:
             await msg.finish(msg.locale.t("core.message.admin.list") + '\n'.join(msg.custom_admins))
@@ -111,7 +110,7 @@ async def config_gu(msg: Bot.MessageSession):
             confirm = await msg.wait_confirm(msg.locale.t("core.message.admin.remove.confirm"))
             if not confirm:
                 await msg.finish()
-        if user and msg.data.remove_custom_admin(user):
+        elif user and msg.data.remove_custom_admin(user):
             await msg.finish(msg.locale.t("core.message.admin.remove.success", user=user))
 
 
