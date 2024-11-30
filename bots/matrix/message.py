@@ -375,13 +375,15 @@ class FetchedSession(Bot.FetchedSession):
                     elif resp.content['membership'] in ['join', 'leave', 'invite']:
                         self.session.target = room.room_id
                         return
-            Logger.info(f"Could not find any exist private room for {target_id}, trying to create one.")
-            resp = await bot.room_create(visibility=nio.RoomVisibility.private,
-                                         is_direct=True,
-                                         preset=nio.RoomPreset.trusted_private_chat,
-                                         invite=[target_id], )
-            if resp is nio.ErrorResponse:
-                pass
+            Logger.info(
+                f"Could not find any exist private room for {target_id}, trying to create one."
+            )
+            resp = await bot.room_create(
+                visibility=nio.RoomVisibility.private,
+                is_direct=True,
+                preset=nio.RoomPreset.trusted_private_chat,
+                invite=[target_id],
+            )
             room = resp.room_id
             Logger.info(f"Created private messaging room for {target_id}: {room}")
             self.session.target = room
