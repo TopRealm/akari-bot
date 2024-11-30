@@ -108,7 +108,7 @@ class MessageSession(MessageSessionT):
             msg_ids.append(x['msg_id'])
             if callback:
                 MessageTaskManager.add_callback(x['msg_id'], callback)
-        return FinishedSession(self, msg_ids, {self.session.message.channel_type.name.title(): send})
+        return FinishedSession(self, msg_ids, {self.session.message.channel_type.name: send})
 
     async def check_native_permission(self):
         self.session.message: Message

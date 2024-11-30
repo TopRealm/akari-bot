@@ -450,7 +450,6 @@ echo = module('echo', required_superuser=True, base=True, doc=True)
 async def _(msg: Bot.MessageSession, dis: Param("<display_msg>", str)):
     await msg.finish(dis, enable_parse_message=False)
 
-
 say = module('say', required_superuser=True, base=True, doc=True)
 
 
