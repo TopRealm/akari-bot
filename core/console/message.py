@@ -8,6 +8,7 @@ from core.builtins import (Plain, I18NContext, Image, confirm_command, Bot, Fetc
                            FetchedSession as FetchedSessionT, FinishedSession as FinS)
 from core.builtins.message import MessageSession as MessageSessionT
 from core.builtins.message.chain import MessageChain
+from core.builtins.message.elements import PlainElement, ImageElement
 from core.config import Config
 from core.console.info import *
 from core.constants.exceptions import WaitCancelException
@@ -40,10 +41,10 @@ class MessageSession(MessageSessionT):
         message_chain = MessageChain(message_chain)
         self.sent.append(message_chain)
         for x in message_chain.as_sendable(self, embed=False):
-            if isinstance(x, Plain):
+            if isinstance(x, PlainElement):
                 print(x.text)
                 Logger.info(f'[Bot] -> [{self.target.target_id}]: {x.text}')
-            elif isinstance(x, Image):
+            elif isinstance(x, ImageElement):
                 image_path = await x.get()
                 img = PILImage.open(image_path)
                 img.show()
@@ -212,7 +213,7 @@ class FetchTarget(FetchTargetT):
                               sender_id='0')
 
     @staticmethod
-    async def post_message(module_name, message, user_list: List[FetchedSession] = None, i18n=False, **kwargs):
+    async def post_message(module_name, message, user_list=None, i18n=False, **kwargs):
         fetch = await FetchTarget.fetch_target('0')
         if i18n:
             await fetch.send_message(fetch.parent.locale.t(message, **kwargs))

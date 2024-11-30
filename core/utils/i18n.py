@@ -152,7 +152,7 @@ class Locale:
             return key
         # 3. 如果在 fallback 语言中本地化字符串不存在，返回 key
 
-    def t(self, key: Union[str, dict], fallback_failed_prompt: bool = True, **kwargs: Dict[str, Any]) -> str:
+    def t(self, key: Union[str, dict], fallback_failed_prompt: bool = True, **kwargs: Any) -> str:
         """
         获取本地化字符串。
 
@@ -187,7 +187,7 @@ class Locale:
         """
         格式化数字。
 
-        :param text: 数字。
+        :param number: 数字。
         :param precision: 保留小数点位数。
         :param fallback_failed_prompt: 是否添加本地化失败提示。
         :returns: 本地化后的数字。

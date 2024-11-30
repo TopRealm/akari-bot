@@ -11,6 +11,7 @@ from bots.matrix.info import *
 from core.builtins import Bot, Plain, Image, Voice, MessageSession as MessageSessionT, I18NContext, MessageTaskManager, \
     FetchTarget as FetchedTargetT, FinishedSession as FinishedSessionT
 from core.builtins.message.chain import MessageChain
+from core.builtins.message.elements import PlainElement, ImageElement, VoiceElement
 from core.config import Config
 from core.database import BotDBUtil
 from core.logger import Logger
@@ -129,30 +130,11 @@ class MessageSession(MessageSessionT):
                 reply_to = None
                 reply_to_user = None
 
-            if isinstance(x, Plain):
-                content = {
-                    'msgtype': 'm.notice',
-                    'body': x.text
-                }
-                if reply_to and self.session.message:
-                    # https://spec.matrix.org/v1.9/client-server-api/#fallbacks-for-rich-replies
-                    # todo: standardize fallback for m.image, m.video, m.audio, and m.file
-                    reply_to_type = self.session.message['content']['msgtype']
-                    content['body'] = f">{
-                        ' *' if reply_to_type == 'm.emote' else ''} <{
-                        self.session.sender}> {
-                        self.session.message['content']['body']}\n\n{
-                        x.text}"
-                    content['format'] = 'org.matrix.custom.html'
-                    html_text = x.text.replace('\n', '<br />')
-                    content['formatted_body'] = f"<mx-reply><blockquote><a href=\"https://matrix.to/#/{
-                        self.session.target}/{reply_to}?via={homeserver_host}\">In reply to</a>{
-                        ' *' if reply_to_type == 'm.emote' else ''} <a href=\"https://matrix.to/#/{
-                        self.session.sender}\">{
-                        self.session.sender}</a><br/>{
-                        self.session.message['content']['body']}</blockquote></mx-reply>{html_text}"
-                Logger.info(f'[Bot] -> [{self.target.target_id}]: {x.text}')
-            elif isinstance(x, Image):
+            if isinstance(x, PlainElement):
+                content = {"msgtype": "m.notice", "body": x.text}
+                Logger.info(f"[Bot] -> [{self.target.target_id}]: {x.text}")
+                await sendMsg(content)
+            elif isinstance(x, ImageElement):
                 split = [x]
                 if enable_split_image:
                     Logger.info(f"Split image: {str(x.__dict__)}")
@@ -200,8 +182,11 @@ class MessageSession(MessageSessionT):
                                     'mimetype': mimetype,
                                 }
                             }
-                        Logger.info(f'[Bot] -> [{self.target.target_id}]: Image: {str(xs.__dict__)}')
-            elif isinstance(x, Voice):
+                        Logger.info(
+                            f"[Bot] -> [{self.target.target_id}]: Image: {str(xs.__dict__)}"
+                        )
+                        await sendMsg(content)
+            elif isinstance(x, VoiceElement):
                 path = x.path
                 filename = os.path.basename(path)
                 filesize = os.path.getsize(path)
@@ -437,7 +422,7 @@ class FetchTarget(FetchedTargetT):
         return lst
 
     @staticmethod
-    async def post_message(module_name, message, user_list=[], i18n=False, **kwargs):
+    async def post_message(module_name, message, user_list=None, i18n=False, **kwargs):
         module_name = None if module_name == '*' else module_name
         if user_list:
             for x in user_list:
@@ -455,7 +440,7 @@ class FetchTarget(FetchedTargetT):
                 except Exception:
                     Logger.error(traceback.format_exc())
         else:
-            get_target_id = BotDBUtil.TargetInfo.get_target_list(module_name, "Matrix")
+            get_target_id = BotDBUtil.TargetInfo.get_target_list(module_name, client_name)
             for x in get_target_id:
                 fetch = await FetchTarget.fetch_target(x.targetId)
                 if fetch:

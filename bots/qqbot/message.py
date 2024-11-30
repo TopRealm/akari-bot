@@ -10,6 +10,7 @@ from bots.qqbot.info import *
 from core.builtins import (Bot, Plain, Image, MessageSession as MessageSessionT, I18NContext, Url, MessageTaskManager,
                            FetchTarget as FetchTargetT, FinishedSession as FinishedSessionT)
 from core.builtins.message.chain import MessageChain
+from core.builtins.message.elements import PlainElement, ImageElement
 from core.config import Config
 from core.database import BotDBUtil
 from core.logger import Logger
@@ -49,13 +50,13 @@ class MessageSession(MessageSessionT):
         if not message_chain.is_safe and not disable_secret_check:
             return await self.send_message(I18NContext("error.message.chain.unsafe"))
 
-        plains: List[Plain] = []
-        images: List[Image] = []
+        plains: List[PlainElement] = []
+        images: List[ImageElement] = []
 
         for x in message_chain.as_sendable(self, embed=False):
-            if isinstance(x, Plain):
+            if isinstance(x, PlainElement):
                 plains.append(x)
-            elif isinstance(x, Image):
+            elif isinstance(x, ImageElement):
                 images.append(x)
         sends = []
         if len(plains + images) != 0:
@@ -212,7 +213,7 @@ class MessageSession(MessageSessionT):
     def as_display(self, text_only=False):
         msg = self.session.message.content
         if self.target.target_from in [target_guild_prefix, target_direct_prefix]:
-            msg = re.sub(r'<@(.*?)>', fr'{sender_prefix}|Tiny|\1', msg)
+            msg = re.sub(r'<@(.*?)>', fr'{sender_tiny_prefix}|\1', msg)
         else:
             msg = re.sub(r'<@(.*?)>', fr'{sender_prefix}|\1', msg)
         return msg
@@ -305,7 +306,7 @@ class FetchTarget(FetchTargetT):
         return lst
 
     @staticmethod
-    async def post_message(module_name, message, user_list=[], i18n=False, **kwargs):
+    async def post_message(module_name, message, user_list=None, i18n=False, **kwargs):
         module_name = None if module_name == '*' else module_name
         if user_list:
             for x in user_list:
@@ -323,7 +324,7 @@ class FetchTarget(FetchTargetT):
                 except Exception:
                     Logger.error(traceback.format_exc())
         else:
-            get_target_id = BotDBUtil.TargetInfo.get_target_list(module_name, "QQ|Bot")
+            get_target_id = BotDBUtil.TargetInfo.get_target_list(module_name, client_name)
             for x in get_target_id:
                 fetch = await FetchTarget.fetch_target(x.targetId)
                 if fetch:
