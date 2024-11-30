@@ -1,0 +1,11 @@
+{
+    "yunhei.help.desc": "Cloud Blacklist feature (under construction).\nPlease visit https://yunhei.youshou.wiki for more information.",
+    "yunhei.help.add": "Add a blacklist member",
+    "yunhei.help.check": "Check a single blacklist member or scan members in the group",
+    "yunhei.help.list": "List blacklist members",
+    "yunhei.help.addadmin": "Add Cloud Blacklist administrator",
+    "yunhei.help.deladmin": "Remove Cloud Blacklist administrator",
+    "yunhei.help.listadmin": "View Cloud Blacklist administrator contact list",
+    "yunhei.message.needbotadmin": "Error: This feature requires the bot to be a group admin. Please contact the group owner to set it.",
+    "yunhei.message.invalidnum": "Sorry, the number you entered is incorrect."
+}
