@@ -39,19 +39,19 @@ class PlainElement(MessageElement):
     text: str
 
     @classmethod
-    def assign(cls, text: str,
-               *texts: Tuple[str],
-               disable_joke: bool = False):
+    def assign(cls, *texts,
+               disable_joke: bool = False,
+               comment: str = None):
         """
-        :param text: 文本内容
-        :param texts: 额外的文本内容
+        :param texts: 文本内容
         :param disable_joke: 是否禁用愚人节功能
+        :param comment: 注释
         """
-        text = str(text)
-        for t in texts:
-            text += str(t)
+        text = ''.join([str(x) for x in texts])
         if not disable_joke:
             text = joke(text)
+        if comment:
+            text += '\n' + comment
         return cls(text=text)
 
 
@@ -65,7 +65,7 @@ class URLElement(MessageElement):
     md_format = Info.use_url_md_format
 
     @classmethod
-    def assign(cls, url: str, use_mm: bool = True):
+    def assign(cls, url: str, use_mm: bool = False):
         """
         :param url: URL
         :param use_mm: 是否使用链接跳板，覆盖全局设置
