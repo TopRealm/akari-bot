@@ -1,14 +1,15 @@
 import os
 
-import ujson as json
+import orjson as json
 
 from core.builtins import Bot
+from core.constants.default import qq_account_default
 from core.utils.http import get_url, post_url
 from core.config import Config
 
 
-api_key = Config('yunhei_api_key')
-botnum = Config('qq_account')
+api_key = Config('yunhei_api_key', cfg_type=str, secret=True)
+botnum = Config('qq_account', default=qq_account_default, cfg_type=(str, int), table_name='bot_aiocqhttp')
 ADMIN_FILE_PATH = 'modules/yunhei/admins.json'
 
 
@@ -36,7 +37,7 @@ async def get_qqname(msg: Bot.MessageSession, qqnum: str):
 
 
 async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[2]), user_id=botnum)
+    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('{{yunhei.message.needbotadmin}}')
     else:
@@ -57,7 +58,7 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
                             measure = '永久' + measure
                         elif level in ["严重", "重度", "3"]:
                             try:
-                                await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2], user_id=int(qqnum), reject_add_request=True)
+                                await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[-1], user_id=int(qqnum), reject_add_request=True)
                                 measure = '踢出群并永久' + measure
                             except Exception as e:
                                 await msg.finish(f"踢出用户失败：{e}")
@@ -75,7 +76,7 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
 
 
 async def check(msg: Bot.MessageSession, qqnum: str = "all"):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[2]), user_id=botnum)
+    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
@@ -85,7 +86,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
             # 执行“群内大清理”的情况
             if qqnum == "all":
                 # 获取群员列表
-                group_data = await msg.call_api("get_group_member_list", group_id=int(str(msg.target.target_id).split('|')[2]))
+                group_data = await msg.call_api("get_group_member_list", group_id=int(str(msg.target.target_id).split('|')[-1]))
                 group_members = []
                 for i in group_data:
                     group_members.append(i['user_id'])
@@ -108,7 +109,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                         # 严重的特殊反应
                         if user_info['level'] == "严重":
                             try:
-                                await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[2], user_id=int(i), reject_add_request=True)
+                                await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[-1], user_id=int(i), reject_add_request=True)
                             except Exception as e:
                                 await msg.finish(f"踢出用户失败：{e}")
                             name = await get_qqname(msg, i)
@@ -141,7 +142,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
 
 
 async def admin_add(msg: Bot.MessageSession, qqnum, name=None):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[2]), user_id=botnum)
+    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
 
@@ -157,7 +158,7 @@ async def admin_add(msg: Bot.MessageSession, qqnum, name=None):
 
 
 async def admin_del(msg: Bot.MessageSession, qqnum):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[2]), user_id=botnum)
+    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
 
@@ -172,7 +173,7 @@ async def admin_del(msg: Bot.MessageSession, qqnum):
 
 
 async def admin_list(msg: Bot.MessageSession):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[2]), user_id=botnum)
+    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
