@@ -3,13 +3,12 @@ import os
 import orjson as json
 
 from core.builtins import Bot
-from core.constants.default import qq_account_default
 from core.utils.http import get_url, post_url
 from core.config import Config
 
 
 api_key = Config('yunhei_api_key', cfg_type=str, secret=True)
-botnum = Config('qq_account', default=qq_account_default, cfg_type=(str, int), table_name='bot_aiocqhttp')
+botnum = Config('qq_account', cfg_type=(str, int), table_name='bot_aiocqhttp')
 ADMIN_FILE_PATH = 'modules/yunhei/admins.json'
 
 
