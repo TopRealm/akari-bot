@@ -4,7 +4,13 @@ from core.queue import JobQueue
 from core.scheduler import CronTrigger, Scheduler
 from modules.weekly import get_weekly
 from modules.weekly.teahouse import get_rss as get_teahouse_rss
+from modules.weekly.ysarchives import get_rss as get_ysarchives_rss
+from datetime import datetime
 
+
+def is_odd_week():
+    today = datetime.now()
+    return today.isocalendar()[1] % 2 != 0
 
 @Scheduler.scheduled_job(CronTrigger.from_crontab('0 9 * * MON'))
 async def weekly_rss():
@@ -23,3 +29,12 @@ async def weekly_rss():
 
     weekly = await get_teahouse_rss()
     await JobQueue.trigger_hook_all('teahouse_weekly_rss', weekly=weekly)
+
+
+@Scheduler.scheduled_job(trigger=CronTrigger.from_crontab('0 9 * * MON'))
+async def weekly_rss():
+    Logger.info('Checking ysarchives biweekly...')
+
+    if is_odd_week():
+        weekly = await get_ysarchives_rss()
+        await JobQueue.trigger_hook_all('ysarchives_weekly_rss', weekly=weekly)
