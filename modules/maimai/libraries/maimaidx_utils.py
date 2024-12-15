@@ -112,10 +112,13 @@ async def generate_best50_text(msg: Bot.MessageSession, payload: dict) -> Messag
         music = (await total_list.get()).by_id(str(chart["song_id"]))
         dxscore_max = sum(music['charts'][chart['level_index']]['notes']) * 3
         dxstar = calc_dxstar(chart["dxScore"], dxscore_max)
-        rank = next(
-            # 根据成绩获得等级
-            rank for interval, rank in score_to_rate.items() if interval[0] <= chart["achievements"] < interval[1]
-        )
+        try:
+            rank = next(
+                # 根据成绩获得等级
+                rank for interval, rank in score_to_rate.items() if interval[0] <= chart["achievements"] < interval[1]
+            )
+        except StopIteration:
+            continue
         title = chart["title"]
         title = title[:17] + '...' if len(title) > 20 else title
         line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:<5} {:<20}\n".format(
@@ -136,10 +139,13 @@ async def generate_best50_text(msg: Bot.MessageSession, payload: dict) -> Messag
     for idx, chart in enumerate(sd_charts, start=1):
         level = ''.join(filter(str.isalpha, chart["level_label"]))[:3].upper()
         dxstar = calc_dxstar(chart["dxScore"], dxscore_max)
-        rank = next(
-            # 根据成绩获得等级
-            rank for interval, rank in score_to_rate.items() if interval[0] <= chart["achievements"] < interval[1]
-        )
+        try:
+            rank = next(
+                # 根据成绩获得等级
+                rank for interval, rank in score_to_rate.items() if interval[0] <= chart["achievements"] < interval[1]
+            )
+        except StopIteration:
+            continue
         title = chart["title"]
         title = title[:17] + '...' if len(title) > 20 else title
         line = "#{:<2} {:>5} {:<3} {:>8.4f}% {:<4} {:<3} {:<4} {:>4}->{:<3} {:<5} {:<20}\n".format(
@@ -165,8 +171,7 @@ async def generate_best50_text(msg: Bot.MessageSession, payload: dict) -> Messag
     img = await msgchain2image([Plain(html)])
     if img:
         return img
-    else:
-        await msg.finish(msg.locale.t("error.config.webrender.invalid"))
+    await msg.finish(msg.locale.t("error.config.webrender.invalid"))
 
 
 async def get_rank(msg: Bot.MessageSession, payload: dict, use_cache: bool = True):
@@ -231,10 +236,13 @@ async def get_player_score(msg: Bot.MessageSession, payload: dict, input_id: str
                     fc = entry["fc"]
                     fs = entry["fs"]
                     level_index = entry["level_index"]
-                    score_rank = next(
-                        # 根据成绩获得等级
-                        rank for interval, rank in score_to_rate.items() if interval[0] <= achievements < interval[1]
-                    )
+                    try:
+                        score_rank = next(
+                            # 根据成绩获得等级
+                            rank for interval, rank in score_to_rate.items() if interval[0] <= achievements < interval[1]
+                        )
+                    except StopIteration:
+                        continue
                     combo_rank = combo_mapping.get(fc, "")  # Combo字典转换
                     sync_rank = sync_mapping.get(fs, "")  # Sync字典转换
                     dxscore = entry.get("dxScore", 0)
@@ -252,10 +260,13 @@ async def get_player_score(msg: Bot.MessageSession, payload: dict, input_id: str
                 fc = entry["fc"]
                 fs = entry["fs"]
                 level_index = entry["level_index"]
-                score_rank = next(
-                    # 根据成绩获得等级
-                    rank for interval, rank in score_to_rate.items() if interval[0] <= achievements < interval[1]
-                )
+                try:
+                    score_rank = next(
+                        # 根据成绩获得等级
+                        rank for interval, rank in score_to_rate.items() if interval[0] <= achievements < interval[1]
+                    )
+                except StopIteration:
+                    continue
                 combo_rank = combo_mapping.get(fc, "")  # Combo字典转换
                 sync_rank = sync_mapping.get(fs, "")  # Sync字典转换
                 level_scores[level_index].append((diffs[level_index], achievements, score_rank, combo_rank, sync_rank))
@@ -655,8 +666,7 @@ async def get_grade_info(msg: Bot.MessageSession, grade: str):
             value = conv_dict[key]
             new_key = next((k for k, v in conv_dict.items() if v == value), None)
             return value, new_key
-        else:
-            return None, input_key
+        return None, input_key
 
     grade = grade.upper()  # 输入强制转换为大写以适配字典
     grade_key, grade = key_process(grade, grade_mapping)
@@ -694,7 +704,7 @@ async def get_grade_info(msg: Bot.MessageSession, grade: str):
             music_data_remaster = (await total_list.get()).filter(ds=(base[0], base[1]), diff=[4])
             music_data = music_data_master + music_data_remaster
 
-            for i in range(4):
+            for _ in range(4):
                 music = Random.choice(music_data)
                 if music in music_data_master and music in music_data_remaster:
                     level = Random.randint(3, 4)
@@ -712,7 +722,7 @@ async def get_grade_info(msg: Bot.MessageSession, grade: str):
         else:
             level = 2
             music_data = (await total_list.get()).filter(ds=(base[0], base[1]), diff=[level])
-            for i in range(4):
+            for _ in range(4):
                 music = music_data.random()
                 chart_info.append(
                     f"{

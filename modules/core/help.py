@@ -313,7 +313,7 @@ async def help_generator(msg: Bot.MessageSession,
 
     if not Info.web_render_status:
         return False
-    elif not Info.web_render_local_status:
+    if not Info.web_render_local_status:
         use_local = False
 
     dev_module_list = []
@@ -325,7 +325,7 @@ async def help_generator(msg: Bot.MessageSession,
             continue
         if value.rss and not msg.Feature.rss:
             continue
-        elif not is_superuser and value.required_superuser or \
+        if not is_superuser and value.required_superuser or \
                 not is_base_superuser and value.required_base_superuser:
             continue
 

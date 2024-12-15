@@ -48,11 +48,11 @@ def generate_config(dir_path, language):
 
     CFGManager.switch_config_path(dir_path)
 
-    for dir in dir_list:
-        for root, dirs, files in os.walk(dir):
+    for _dir in dir_list:
+        for root, _, _files in os.walk(_dir):
             if root in exclude_dir_list:
                 continue
-            for file in files:
+            for file in _files:
                 if file.endswith('.py'):
                     file_path = os.path.join(root, file)
                     with open(file_path, 'r', encoding='utf-8') as f:
@@ -106,8 +106,7 @@ Please input the number of the language you want to use: """)
         if isint(lang) and (langI := (int(lang) - 1)) in range(len(lang_list)):
             lang = list(lang_list.keys())[langI]
             break
-        else:
-            print('Invalid input, please try again.')
+        print('Invalid input, please try again.')
 
     generate_config(config_path, lang)
 
@@ -154,8 +153,8 @@ if __name__ == '__main__':
         if not os.path.exists(config_store_path_bak):
             repack = True
             break
-        for root, _, files in os.walk(config_store_path_):
-            for file in files:
+        for root, _, files_ in os.walk(config_store_path_):
+            for file in files_:
                 file_path = os.path.join(root, file)
                 file_path_bak = file_path.replace(config_store_path, config_store_path_bak)
                 if not os.path.exists(file_path_bak):
