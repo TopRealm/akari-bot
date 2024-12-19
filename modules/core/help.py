@@ -30,7 +30,7 @@ hlp = module('help', base=True, doc=True)
 
 @hlp.command('<module> [--legacy] {{core.help.help.detail}}',
              options_desc={'--legacy': '{help.option.legacy}'})
-async def bot_help(msg: Bot.MessageSession, module: str):
+async def _(msg: Bot.MessageSession, module: str):
     is_base_superuser = msg.target.sender_id in base_superuser_list
     is_superuser = msg.check_super_user()
     module_list = ModulesManager.return_modules_list(
@@ -73,7 +73,7 @@ async def bot_help(msg: Bot.MessageSession, module: str):
                 pass
             else:
                 if regex_list:
-                    mdocs.append(msg.locale.t("core.help.regex"))
+                    mdocs.append(msg.locale.t("core.help.regex.note"))
                     for regex in regex_list:
                         pattern = None
                         if isinstance(regex.pattern, str):
@@ -93,7 +93,7 @@ async def bot_help(msg: Bot.MessageSession, module: str):
                 if module_.alias:
                     for a in module_.alias:
                         malias.append(f'{a} -> {module_.alias[a]}')
-                if module_.developers:
+                if module_.developers and not module_.base:
                     devs = msg.locale.t('message.delimiter').join(module_.developers)
                     devs_msg = '\n' + msg.locale.t("core.help.author") + devs
                 else:
@@ -121,21 +121,21 @@ async def bot_help(msg: Bot.MessageSession, module: str):
                     pass
                 elif any((module_.alias, module_.desc, module_.developers, help_.return_formatted_help_doc(), regex_list)):
                     try:
-                        html_content = env.get_template('help_doc_detail.html').render(msg=msg,
-                                                                                       module=module_,
-                                                                                       help=help_,
-                                                                                       help_name=help_name,
-                                                                                       regex_list=regex_list,
-                                                                                       escape=escape,
-                                                                                       isinstance=isinstance,
-                                                                                       str=str,
-                                                                                       repattern=re.Pattern)
+                        html_content = env.get_template('help_doc.html').render(msg=msg,
+                                                                                module=module_,
+                                                                                help=help_,
+                                                                                help_name=help_name,
+                                                                                regex_list=regex_list,
+                                                                                escape=escape,
+                                                                                isinstance=isinstance,
+                                                                                str=str,
+                                                                                repattern=re.Pattern)
 
                         fname = f'{random_cache_path()}.html'
                         with open(fname, 'w', encoding='utf-8') as fi:
                             fi.write(html_content)
 
-                        d = {'content': html_content, 'element': '.content-layout'}
+                        d = {'content': html_content, 'element': '.botbox'}
                         html_ = json.dumps(d)
 
                         try:
@@ -172,16 +172,16 @@ async def bot_help(msg: Bot.MessageSession, module: str):
                             bio = BytesIO(b)
                             bimg = PILImage.open(bio)
                             img_lst.append(Image(bimg))
-                        await msg.finish(img_lst + [Plain(wiki_msg)])
+                        await msg.finish(img_lst + [Plain(wiki_msg.strip())])
                     except Exception:
                         Logger.error(traceback.format_exc())
 
                 if wiki_msg:
-                    await msg.finish(wiki_msg)
+                    await msg.finish(wiki_msg.strip())
                 else:
                     await msg.finish(msg.locale.t("core.help.info.none"))
 
-            doc_msg = (doc + devs_msg + wiki_msg).lstrip()
+            doc_msg = (doc + devs_msg + wiki_msg).strip()
             if doc_msg:
                 await msg.finish(doc_msg)
             else:
@@ -348,7 +348,7 @@ async def help_generator(msg: Bot.MessageSession,
     if not show_dev_modules:
         module_list = {k: v for k, v in module_.items() if k not in dev_module_list}
 
-    html_content = env.get_template('help_doc.html').render(
+    html_content = env.get_template('module_list.html').render(
         CommandParser=CommandParser,
         is_base_superuser=is_base_superuser,
         is_superuser=is_superuser,
