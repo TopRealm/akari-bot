@@ -31,3 +31,5 @@ assets/bots_list.json
 assets/discord_slash_list.json
 assets/modules_list.json
 assets/schedulers_list.json
+modules/yunhei/admins.json
+

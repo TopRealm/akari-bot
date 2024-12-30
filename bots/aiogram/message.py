@@ -137,7 +137,7 @@ class MessageSession(MessageSessionT):
 
     async def check_native_permission(self):
         if not self.session.message:
-            chat = await bot.get_chat(self.session.target)
+            chat = await dp.bot.get_chat(self.session.target)
         else:
             chat = self.session.message.chat
         if chat.type == "private":
