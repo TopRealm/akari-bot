@@ -489,12 +489,7 @@ async def parser(msg: Bot.MessageSession,
                         errmsg = msg.locale.t('error.prompt.report', detail=str(e))
 
                     if Config('bug_report_url', bug_report_url_default, cfg_type=str):
-                        bug_report_url = Url(
-                            Config(
-                                'bug_report_url',
-                                bug_report_url_default,
-                                cfg_type=str),
-                            use_mm=False)
+                        bug_report_url = Url(Config('bug_report_url', bug_report_url_default, cfg_type=str), use_mm=False)
                         errmsg += '\n' + msg.locale.t('error.prompt.address', url=bug_report_url)
                     await msg.send_message(errmsg)
 
@@ -635,12 +630,7 @@ async def parser(msg: Bot.MessageSession,
                                 errmsg = msg.locale.t('error.prompt.report', detail=str(e))
 
                             if Config('bug_report_url', bug_report_url_default, cfg_type=str):
-                                bug_report_url = Url(
-                                    Config(
-                                        'bug_report_url',
-                                        bug_report_url_default,
-                                        cfg_type=str),
-                                    use_mm=False)
+                                bug_report_url = Url(Config('bug_report_url', bug_report_url_default, cfg_type=str), use_mm=False)
                                 errmsg += '\n' + msg.locale.t('error.prompt.address', url=bug_report_url)
                             await msg.send_message(errmsg)
 
