@@ -72,6 +72,7 @@ botpy = {git = "https://github.com/Teahouse-Studios/botpy.git"}
 tomlkit = "^0.13.2"
 cattrs = "^24.1.2"
 argon2-cffi = "^23.1.0"
+slowapi = "^0.1.9"
 genshin = "^1.7.1"
 pydantic = "^2.7.4"
 

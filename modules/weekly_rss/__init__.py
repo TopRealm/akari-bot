@@ -29,7 +29,7 @@ async def _(fetch: Bot.FetchTarget, ctx: Bot.ModuleHookContext):
         weekly_tw = [Image(x) for x in await msgchain2image(weekly_tw)]
     post_msg = {"zh_cn": weekly_cn, "zh_tw": weekly_tw, "fallback": weekly_cn}
     await fetch.post_message("weekly_rss", I18NContext(post_msg), i18n=True)
-    Logger.info("Weekly checked.")
+    Logger.success("Weekly checked.")
 
 
 teahouse_weekly_rss = module(
@@ -68,7 +68,7 @@ async def _(fetch: Bot.FetchTarget, ctx: Bot.ModuleHookContext):
         weekly_tw = [Image(x) for x in await msgchain2image(weekly_tw)]
     post_msg = {"zh_cn": weekly_cn, "zh_tw": weekly_tw, "fallback": weekly_cn}
     await fetch.post_message("teahouse_weekly_rss", I18NContext(post_msg), i18n=True)
-    Logger.info("Teahouse Weekly checked.")
+    Logger.success("Teahouse Weekly checked.")
 
 
 ysarchives_weekly_rss = module('ysarchives_weekly_rss',
@@ -99,4 +99,4 @@ async def weekly_rss(fetch: Bot.FetchTarget, ctx: Bot.ModuleHookContext):
         weekly_tw = Image(await msgchain2image(weekly_tw))
     post_msg = {'zh_cn': weekly_cn, 'zh_tw': weekly_tw, 'fallback': weekly_cn}
     await fetch.post_message('ysarchives_weekly_rss', I18NContext(post_msg), i18n=True)
-    Logger.info('YsArchives Biweekly checked.')
+    Logger.success('YsArchives Biweekly checked.')
