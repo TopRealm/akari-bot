@@ -136,7 +136,7 @@ async def generate_best50_text(msg: Bot.MessageSession, payload: dict) -> Messag
         )
         html += line
     html += f"New ({sum(chart['ra'] for chart in dx_charts)})\n"
-    for idx, chart in enumerate(dx_charts, start=1):
+    for idx, chart in enumerate(sd_charts, start=1):
         level = ''.join(filter(str.isalpha, chart["level_label"]))[:3].upper()
         dxstar = calc_dxstar(chart["dxScore"], dxscore_max)
         try:
