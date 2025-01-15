@@ -26,6 +26,7 @@ from core.utils.info import Info
 from core.utils.message import remove_duplicate_space
 
 qq_account = Config("qq_account", cfg_type=(int, str), table_name='bot_aiocqhttp')
+qq_limited_emoji = str(Config('qq_limited_emoji', 10060, (str, int), table_name='bot_aiocqhttp'))
 
 default_locale = Config("default_locale", cfg_type=str)
 enable_tos = Config('enable_tos', True)
@@ -446,15 +447,24 @@ async def parser(msg: Bot.MessageSession,
                 except SendMessageFailed:
                     if msg.target.target_from == qq_group_prefix:  # wtf onebot 11
                         obi = await get_onebot_implementation()
-                        if obi == 'ntqq':
-                            await msg.call_api('set_msg_emoji_like', message_id=msg.session.message.message_id,
-                                               emoji_id=str(Config('qq_limited_emoji', 10060, (str, int), table_name='bot_aiocqhttp')))
-                        elif obi == 'lagrange':
-                            await msg.call_api('group_poke', group_id=msg.session.target, user_id=int(qq_account))
-                        elif obi == 'shamrock':
-                            await msg.call_api('send_group_msg', group_id=msg.session.target, message=f'[CQ:touch,id={qq_account}]')
-                        elif obi == 'go-cqhttp':
-                            await msg.call_api('send_group_msg', group_id=msg.session.target, message=f'[CQ:poke,qq={qq_account}]')
+                        if obi in ["llonebot", "napcat"]:
+                            await msg.call_api("set_msg_emoji_like",
+                                               message_id=msg.session.message.message_id,
+                                               emoji_id=qq_limited_emoji)
+                        elif obi == "lagrange":
+                            await msg.call_api("set_group_reaction",
+                                               group_id=msg.session.target,
+                                               message_id=msg.session.message.message_id,
+                                               code=qq_limited_emoji,
+                                               is_add=True)
+                        elif obi == "shamrock":
+                            await msg.call_api("send_group_msg",
+                                               group_id=msg.session.target,
+                                               message=f"[CQ:touch,id={qq_account}]")
+                        elif obi == "go-cqhttp":
+                            await msg.call_api("send_group_msg",
+                                               group_id=msg.session.target,
+                                               message=f"[CQ:poke,qq={qq_account}]")
                         else:
                             pass
                     await msg.send_message(msg.locale.t("error.message.limited"))
