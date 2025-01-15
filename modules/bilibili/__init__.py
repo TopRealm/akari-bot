@@ -72,7 +72,7 @@ async def _(msg: Bot.MessageSession):
 async def parse_shorturl(shorturl):
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(shorturl, allow_redirects=False)
+            resp = await client.get(shorturl, follow_redirects=False)
             target_url = resp.headers.get("Location")
 
         video = re.search(r"/video/([^/?]+)", target_url)
