@@ -19,7 +19,7 @@ class DrawPlateList:
         song_complete,
         remaster_required,
         goal_mark,
-        image_size=100,
+        image_size=80,
         spacing=10,
         margin=20,
         rank_colors=[
@@ -89,7 +89,7 @@ class DrawPlateList:
                         [x_offset, y_offset, x_offset + self.image_size, y_offset + self.image_size],
                         fill=(240, 240, 240),
                     )
-                    font = ImageFont.truetype(noto_sans_demilight_path, 15, encoding="utf-8")
+                    font = ImageFont.truetype(noto_sans_demilight_path, 16, encoding="utf-8")
                     bbox = draw.textbbox((0, 0), str(sid), font=font)
                     text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
                     text_x = x_offset + (self.image_size - text_width) // 2
@@ -137,7 +137,7 @@ class DrawPlateList:
                         )
 
                 # 绘制封面ID
-                font = ImageFont.truetype(noto_sans_demilight_path, 12, encoding="utf-8")
+                font = ImageFont.truetype(noto_sans_demilight_path, 10, encoding="utf-8")
                 bbox = draw.textbbox((0, 0), str(sid), font=font)
                 text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
                 text_x = x_offset + large_bar_width + (small_bar_width - text_width) // 2
@@ -148,7 +148,7 @@ class DrawPlateList:
                     overlay = Image.new("RGBA", (self.image_size, self.image_size), (0, 0, 0, 180))  # 半透明黑色
                     self.img.paste(overlay, (x_offset, y_offset), overlay)  # 使用overlay进行粘贴
 
-                    font = ImageFont.truetype(noto_sans_demilight_path, 48, encoding="utf-8")
+                    font = ImageFont.truetype(noto_sans_demilight_path, 36, encoding="utf-8")
                     bbox = draw.textbbox((0, 0), self.goal_mark, font=font)
                     text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
                     text_x = x_offset + (self.image_size - text_width) // 2
