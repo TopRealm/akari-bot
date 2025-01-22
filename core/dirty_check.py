@@ -43,20 +43,17 @@ def parse_data(result: dict, additional_text=None) -> Dict:
                         if "positions" in itemContext:
                             for pos in itemContext["positions"]:
                                 filter_words_length = pos["endPos"] - pos["startPos"]
-                                reason = f"[Ke:i18n,i18nkey=check.redacted,reason={itemDetail['label']}]"
-                                content = (
-                                    content[: pos["startPos"] + _offset]
-                                    + reason
-                                    + content[pos["endPos"] + _offset:]
-                                )
+                                reason = f"[i18n:check.redacted,reason={itemDetail['label']}]"
+                                content = (content[: pos["startPos"] + _offset] +
+                                           reason + content[pos["endPos"] + _offset:])
                                 if additional_text:
                                     content += "\n" + additional_text + "\n"
                                 _offset += len(reason) - filter_words_length
                         else:
-                            content = f"[Ke:i18n,i18nkey=check.redacted,reason={itemDetail['label']}]"
+                            content = f"[i18n:check.redacted,reason={itemDetail['label']}]"
                         status = False
                 else:
-                    content = f"[Ke:i18n,i18nkey=check.redacted.all,reason={itemDetail['label']}]"
+                    content = f"[i18n:check.redacted.all,reason={itemDetail['label']}]"
 
                     if additional_text:
                         content += "\n" + additional_text + "\n"
@@ -110,7 +107,7 @@ async def check(*text: Union[str, List[str]], additional_text=None) -> List[Dict
             "tasks": [{"dataId": f"Nullcat is god {time.time()}", "content": x} for x in call_api_list_],
         }
         root = "https://green.cn-shanghai.aliyuncs.com"
-        url = f"/green/text/scan"
+        url = "/green/text/scan"
 
         gmt_format = "%a, %d %b %Y %H:%M:%S GMT"
         date = datetime.datetime.now(datetime.UTC).strftime(gmt_format)
@@ -169,12 +166,11 @@ async def check_bool(*text: Union[str, List[str]]) -> bool:
     return False
 
 
-def rickroll(msg: Bot.MessageSession) -> str:
+def rickroll() -> str:
     """合规检查失败时输出的Rickroll消息。
 
-    :param msg: 消息会话。
     :returns: Rickroll消息。
     """
     if Config("enable_rickroll", True) and Config("rickroll_msg", cfg_type=str):
-        return msg.locale.t_str(Config("rickroll_msg", cfg_type=str))
-    return msg.locale.t("error.message.chain.unsafe")
+        return Config("rickroll_msg", cfg_type=str)
+    return "[i18n:error.message.chain.unsafe]"

@@ -31,9 +31,7 @@ async def _(msg: Bot.MessageSession, bid: str, get_detail=False):
         query = f"?aid={bid[2:]}"
     else:
         return await msg.finish(msg.locale.t("bilibili.message.invalid"))
-    res = await get_video_info(msg, query, get_detail)
-    if res:
-        await msg.finish(msg.locale.t("message.cooldown", time=int(30 - res)))
+    await get_video_info(msg, query, get_detail)
 
 
 @bili.regex(r"av(\d+)\b", flags=re.I, mode="A", desc="{bilibili.help.regex.av}")
@@ -57,7 +55,8 @@ async def _(msg: Bot.MessageSession):
 @bili.regex(r"(?:http[s]?://)?(?:bili(?:22|33|2233)\.cn|b23\.tv)/([A-Za-z0-9]{7})(?:/.*?|)",
             mode="A",
             desc="{bilibili.help.regex.url}",
-            text_only=False,
+            show_typing=False,
+            text_only=False
             )
 async def _(msg: Bot.MessageSession):
     matched = msg.matched_msg[:5]

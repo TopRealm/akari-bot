@@ -106,16 +106,16 @@ async def temp_ban_check(msg: Bot.MessageSession):
 
 async def check_target_cooldown(msg: Bot.MessageSession):
     cooldown_time = int(msg.options.get('cooldown_time', 0))
-    neutralized = bool(await msg.check_native_permission() or await msg.check_permission() or msg.check_super_user())
+    neutralized = bool(await msg.check_permission() or msg.check_super_user())
 
     if cooldown_time and not neutralized:
-        if cooldown_counter.get(msg.target.target_id, {}).get(msg.target.sender_id) is not None:
-            time = int(datetime.now().timestamp() - cooldown_counter[msg.target.target_id][msg.target.sender_id]['ts'])
+        if cooldown_counter.get(msg.target.target_id, {}).get(msg.target.sender_id):
+            time = datetime.now().timestamp() - cooldown_counter[msg.target.target_id][msg.target.sender_id]['ts']
             if time > cooldown_time:
                 cooldown_counter[msg.target.target_id].update(
                     {msg.target.sender_id: {'ts': datetime.now().timestamp()}})
             else:
-                await msg.finish(msg.locale.t('message.cooldown.manual', time=cooldown_time - time))
+                await msg.finish(msg.locale.t('message.cooldown.manual', time=int(cooldown_time - time)))
         else:
             cooldown_counter[msg.target.target_id] = {msg.target.sender_id: {'ts': datetime.now().timestamp()}}
 

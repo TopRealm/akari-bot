@@ -1,4 +1,3 @@
-import asyncio.exceptions
 import os
 import re
 import socket
@@ -80,7 +79,7 @@ async def get_url(
         async with httpx.AsyncClient(
             headers=headers,
             proxy=proxy,
-            verify=False if debug else True
+            verify=not debug
         ) as client:
             if cookies:
                 ck = SimpleCookie()
@@ -111,10 +110,9 @@ async def get_url(
                         if callable(attr):
                             return attr()
                         return attr
-                    else:
-                        raise ValueError(f"NoSuchMethod: {fmt}")
+                    raise ValueError(f"NoSuchMethod: {fmt}")
                 return resp.text
-            except asyncio.exceptions.TimeoutError:
+            except httpx.TimeoutException:
                 raise ValueError("Request timeout")
             except Exception as e:
                 if logging_err_resp:
@@ -160,7 +158,7 @@ async def post_url(
         async with httpx.AsyncClient(
             headers=headers,
             proxy=proxy,
-            verify=False if debug else True
+            verify=not debug
         ) as client:
             if cookies:
                 ck = SimpleCookie()
@@ -191,10 +189,9 @@ async def post_url(
                         if callable(attr):
                             return attr()
                         return attr
-                    else:
-                        raise ValueError(f"NoSuchMethod: {fmt}")
+                    raise ValueError(f"NoSuchMethod: {fmt}")
                 return resp.text
-            except asyncio.exceptions.TimeoutError:
+            except httpx.TimeoutException:
                 raise ValueError("Request timeout")
             except Exception as e:
                 if logging_err_resp:
