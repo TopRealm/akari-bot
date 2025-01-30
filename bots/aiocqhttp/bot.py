@@ -23,6 +23,8 @@ from core.tos import tos_report
 from core.types import MsgInfo, Session
 from core.utils.i18n import Locale
 
+from hypercorn import Config as HyperConfig
+
 PrivateAssets.set(os.path.join(assets_path, 'private', 'aiocqhttp'))
 Info.dirty_word_check = Config('enable_dirty_check', False)
 Info.use_url_manager = Config('enable_urlmanager', False)
@@ -207,8 +209,7 @@ async def _(event: Event):
         if event.duration >= 259200:
             result = True
         if result and not sender_info.is_super_user:
-            reason = Locale(default_locale).t('tos.message.reason.mute')
-            await tos_report(sender_id, target_id, reason, banned=True)
+            await tos_report(sender_id, target_id, "{tos.message.reason.mute}", banned=True)
             BotDBUtil.GroupBlockList.add(target_id)
             await bot.call_action('set_group_leave', group_id=event.group_id)
             sender_info.edit('isInAllowList', False)
@@ -224,8 +225,7 @@ async def _(event: Event):
         sender_id = f'{sender_prefix}|{event.operator_id}'
         sender_info = BotDBUtil.SenderInfo(sender_id)
         if not sender_info.is_super_user:
-            reason = Locale(default_locale).t('tos.message.reason.kick')
-            await tos_report(sender_id, target_id, reason, banned=True)
+            await tos_report(sender_id, target_id, "{tos.message.reason.kick}", banned=True)
             BotDBUtil.GroupBlockList.add(target_id)
             sender_info.edit('isInAllowList', False)
             sender_info.edit('isInBlockList', True)
@@ -249,6 +249,7 @@ qq_host = Config("qq_host", default=qq_host_default, table_name='bot_aiocqhttp')
 if qq_host and Config("enable", False, table_name='bot_aiocqhttp'):
     argv = sys.argv
     Info.client_name = client_name
+    HyperConfig.startup_timeout = 120
     if 'subprocess' in sys.argv:
         Info.subprocess = True
     host, port = qq_host.split(':')
