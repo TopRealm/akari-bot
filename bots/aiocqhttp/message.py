@@ -5,7 +5,7 @@ import random
 import re
 import traceback
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Optional, Dict
 
 import aiocqhttp.exceptions
 import orjson as json
@@ -118,6 +118,7 @@ class MessageSession(MessageSessionT):
         callback=None,
     ) -> FinishedSession:
 
+        send = None
         message_chain = MessageChain(message_chain)
         message_chain_assendable = message_chain.as_sendable(self, embed=False)
 
@@ -332,7 +333,7 @@ class MessageSession(MessageSessionT):
     async def fake_forward_msg(self, nodelist):
         if self.target.target_from == target_group_prefix:
             get_ = get_stored_list(Bot.FetchTarget, "forward_msg")
-            if not get_["status"]:
+            if isinstance(get_, dict) and get_.get("status"):
                 await self.send_message(
                     self.locale.t("core.message.forward_msg.disabled")
                 )
@@ -342,6 +343,47 @@ class MessageSession(MessageSessionT):
                 group_id=int(self.session.target),
                 messages=nodelist,
             )
+        elif self.target.target_from == target_private_prefix:
+            await bot.call_action(
+                'send_private_forward_msg',
+                user_id=int(self.target.sender_id.split('|')[1]),
+                messages=nodelist
+            )
+
+    async def msgchain2nodelist(
+        self,
+        msg_chain_list: List[MessageChain],
+        name: Optional[str] = None,
+    ) -> list[Dict]:
+        """将消息链列表转换为节点列表。"""
+        node_list = []
+        for message in msg_chain_list:
+            content = ''
+            for element in message.as_sendable():
+                if all(
+                    (
+                        isinstance(element, PlainElement),
+                        message.as_sendable().index(element) == len(message.as_sendable()) - 1
+                        or len(message.as_sendable()) == 0,
+                    )
+                ):
+                    content += element.text
+                elif isinstance(element, ImageElement):
+                    content += f"[CQ:image,file=base64://{element.get_base64()}]\n"
+                elif isinstance(element, VoiceElement):
+                    content += '[Voice]'
+                else:
+                    content += element.text + '\n'
+            template = {
+                "type": "node",
+                "data": {
+                    "nickname": name if name else Temp().data.get("qq_nickname"),
+                    "user_id": str(Temp().data.get("qq_account")),
+                    "content": content
+                }
+            }
+            node_list.append(template)
+        return node_list
 
     async def delete(self):
         if self.target.target_from in [target_private_prefix, target_group_prefix]:

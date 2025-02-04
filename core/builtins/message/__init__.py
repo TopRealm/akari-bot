@@ -333,6 +333,15 @@ class MessageSession:
         """
         raise NotImplementedError
 
+    async def msgchain2nodelist(self, msg_chain_list: List[MessageChain], name: Optional[str] = None,
+    ) -> list[Dict]:
+        """
+        用于将消息链列表转换为节点列表。(QQ)
+        :param msg_chain_list: 消息链列表，详情参考小可文档。
+        :param name: 用于指定发送者名称。
+        """
+        raise NotImplementedError
+
     async def get_text_channel_list(self) -> List[str]:
         """
         用于获取子文字频道列表（QQ）。
@@ -606,6 +615,9 @@ class MessageSession:
         typing = False
         wait = False
 
+    async def msgchain2nodelist(self, msgchain_lst):
+        pass
+
 
 class FetchedSession:
     """
@@ -628,7 +640,7 @@ class FetchedSession:
             sender_id=f"{sender_from}|{sender_id}",
             target_from=target_from,
             sender_from=sender_from,
-            sender_prefix="",
+            sender_name="",
             client_name="",
             message_id=0,
         )

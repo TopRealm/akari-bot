@@ -80,7 +80,7 @@ def load_slashcommands():
                 modules = "bots.discord.slash." + fun_file
                 importlib.import_module(modules)
                 Logger.success(f"Succeeded loaded bots.discord.slash.{fun_file}!")
-        except BaseException:
+        except Exception:
             tb = traceback.format_exc()
             errmsg = f"Failed to load bots.discord.slash.{fun_file}: \n{tb}"
             Logger.error(errmsg)
@@ -114,7 +114,7 @@ async def on_message(message):
         target=MsgInfo(
             target_id=target_id,
             sender_id=sender_id,
-            sender_prefix=message.author.name,
+            sender_name=message.author.name,
             target_from=target_from,
             sender_from=sender_prefix,
             client_name=client_name,

@@ -4,7 +4,7 @@ from simpleeval import simple_eval
 
 from core.builtins import Bot
 from core.component import module
-from core.utils.game import PlayState
+from core.utils.game import PlayState, GAME_EXPIRED
 from core.utils.petal import gained_petal, lost_petal
 from core.utils.random import Random
 from core.utils.text import isint
@@ -72,25 +72,25 @@ async def find_solution(numbers):
             try:
                 if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
                     return exp
-            except BaseException:
+            except Exception:
                 pass
             exp = f"({perm[0]}{expr[0]}{perm[1]}){expr[1]}({perm[2]}{expr[2]}{perm[3]})"
             try:
                 if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
                     return exp
-            except BaseException:
+            except Exception:
                 pass
             exp = f"{perm[0]}{expr[0]}({perm[1]}{expr[1]}({perm[2]}{expr[2]}{perm[3]}))"
             try:
                 if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
                     return exp
-            except BaseException:
+            except Exception:
                 pass
             exp = f"{perm[0]}{expr[0]}({perm[1]}{expr[1]}{perm[2]}){expr[2]}{perm[3]}"
             try:
                 if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
                     return exp
-            except BaseException:
+            except Exception:
                 pass
     return None
 
@@ -138,7 +138,7 @@ async def _(msg: Bot.MessageSession):
     solution = await find_solution(numbers)
 
     answer = await msg.wait_next_message(
-        msg.locale.t("twenty_four.message", numbers=numbers), timeout=None
+        msg.locale.t("twenty_four.message", numbers=numbers), timeout=GAME_EXPIRED
     )
     expr = answer.as_display(text_only=True)
     if play_state.check():

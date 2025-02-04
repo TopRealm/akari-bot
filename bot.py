@@ -21,13 +21,13 @@ ascii_art = r"""
 encode = "UTF-8"
 
 bots_and_required_configs = {
-    "aiocqhttp": ["qq_host", "qq_account"],
+    "aiocqhttp": ["qq_host"],
     "discord": ["discord_token"],
     "aiogram": ["telegram_token"],
     "kook": ["kook_token"],
     "matrix": ["matrix_homeserver", "matrix_user", "matrix_device_id", "matrix_token"],
     "qqbot": ["qq_bot_appid", "qq_bot_secret"],
-    "web": ["jwt_secret", "api_allow_origins"],
+    "web": ["jwt_secret"],
 }
 
 

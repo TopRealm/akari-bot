@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from core.builtins import MessageSession
 from core.logger import Logger
@@ -116,7 +116,7 @@ class PlayState:
 
     def check(self) -> bool:
         """
-        检查游戏事件状态，若超过时间则自动关闭。
+        检查游戏事件状态。
         """
         if self.target_id not in _ps_lst:
             return False

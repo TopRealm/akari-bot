@@ -13,7 +13,7 @@ from core.config import Config
 from core.constants.path import assets_path, noto_sans_bold_path
 from core.logger import Logger
 from core.utils.cooldown import CoolDown
-from core.utils.game import PlayState
+from core.utils.game import PlayState, GAME_EXPIRED
 from core.utils.petal import gained_petal
 from core.utils.random import Random
 
@@ -237,7 +237,7 @@ async def _(msg: Bot.MessageSession):
             await msg.finish(msg.locale.t("message.cooldown", time=int(c)))
 
     board = WordleBoard.from_random_word()
-    hard_mode = bool(msg.parsed_msg)
+    hard_mode = bool(msg.parsed_msg and "hard" in msg.parsed_msg)
     last_word = None
     board_image = WordleBoardImage(
         wordle_board=board, dark_theme=msg.data.options.get("wordle_dark_theme")
@@ -257,7 +257,7 @@ async def _(msg: Bot.MessageSession):
     await msg.send_message(start_msg)
 
     while board.get_trials() <= 6 and play_state.check() and not board.is_game_over():
-        wait = await msg.wait_next_message(timeout=None)
+        wait = await msg.wait_next_message(timeout=GAME_EXPIRED)
         word = wait.as_display(text_only=True).strip().lower()
         if len(word) != 5 or not (word.isalpha() and word.isascii()):
             continue
