@@ -1,6 +1,5 @@
 from .elements import *
 
-
 Plain = plain = PlainElement.assign
 Image = image = ImageElement.assign
 Voice = voice = VoiceElement.assign
@@ -10,6 +9,7 @@ Url = url = URLElement.assign
 ErrorMessage = error_message = ErrorMessageElement.assign
 FormattedTime = formatted_time = FormattedTimeElement.assign
 I18NContext = i18n_context = I18NContextElement.assign
+Mention = mention = MentionElement.assign
 
 __all__ = [
     "Plain",
@@ -21,6 +21,7 @@ __all__ = [
     "ErrorMessage",
     "FormattedTime",
     "I18NContext",
+    "Mention",
     "plain",
     "image",
     "voice",
@@ -30,4 +31,5 @@ __all__ = [
     "error_message",
     "formatted_time",
     "i18n_context",
+    "mention",
 ]

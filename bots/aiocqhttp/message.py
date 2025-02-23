@@ -24,13 +24,14 @@ from core.builtins import (
     MessageTaskManager,
     FetchTarget as FetchTargetT,
     FinishedSession as FinishedSessionT,
+    Mention,
     Plain,
     Image,
     Voice,
 )
 from core.builtins.message import MessageSession as MessageSessionT
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.elements import PlainElement, ImageElement, VoiceElement
+from core.builtins.message.elements import MentionElement, PlainElement, ImageElement, VoiceElement
 from core.config import Config
 from core.constants.exceptions import SendMessageFailed
 from core.database import BotDBUtil
@@ -99,6 +100,7 @@ class MessageSession(MessageSessionT):
     class Feature:
         image = True
         voice = True
+        mention = True
         embed = False
         forward = True
         delete = True
@@ -199,16 +201,25 @@ class MessageSession(MessageSessionT):
                     convert_msg_segments = convert_msg_segments + MessageSegment.text(
                         ("\n" if count != 0 else "") + x.text
                     )
+                count += 1
             elif isinstance(x, ImageElement):
                 convert_msg_segments = convert_msg_segments + MessageSegment.image(
                     "base64://" + await x.get_base64()
                 )
+                count += 1
             elif isinstance(x, VoiceElement):
                 if self.target.target_from != target_guild_prefix:
                     convert_msg_segments = convert_msg_segments + MessageSegment.record(
                         file=Path(x.path).as_uri()
                     )
-            count += 1
+                    count += 1
+            elif isinstance(x, MentionElement):
+                if x.client == client_name and self.target.target_from == target_group_prefix:
+                    convert_msg_segments = convert_msg_segments + MessageSegment.at(x.id)
+                else:
+                    convert_msg_segments = convert_msg_segments + MessageSegment.text(" ")
+                count += 1
+
         Logger.info(f"[Bot] -> [{self.target.target_id}]: {message_chain_assendable}")
         if self.target.target_from == target_group_prefix:
             try:
@@ -354,33 +365,24 @@ class MessageSession(MessageSessionT):
     async def msgchain2nodelist(
         self,
         msg_chain_list: List[MessageChain],
-        name: Optional[str] = None,
-    ) -> list[Dict]:
-        """将消息链列表转换为节点列表。"""
+        sender_name: Optional[str] = None,
+    ) -> List[dict]:
         node_list = []
         for message in msg_chain_list:
             content = ''
-            for element in message.as_sendable():
-                if all(
-                    (
-                        isinstance(element, PlainElement),
-                        message.as_sendable().index(element) == len(message.as_sendable()) - 1
-                        or len(message.as_sendable()) == 0,
-                    )
-                ):
-                    content += element.text
-                elif isinstance(element, ImageElement):
-                    content += f"[CQ:image,file=base64://{element.get_base64()}]\n"
-                elif isinstance(element, VoiceElement):
-                    content += '[Voice]'
-                else:
-                    content += element.text + '\n'
+            msgchain = message.as_sendable()
+            for x in msgchain:
+                if isinstance(x, PlainElement):
+                    content += x.text + '\n'
+                elif isinstance(x, ImageElement):
+                    content += f"[CQ:image,file=base64://{x.get_base64()}]\n"
+
             template = {
                 "type": "node",
                 "data": {
-                    "nickname": name if name else Temp().data.get("qq_nickname"),
+                    "nickname": sender_name if sender_name else Temp().data.get("qq_nickname"),
                     "user_id": str(Temp().data.get("qq_account")),
-                    "content": content
+                    "content": content.strip()
                 }
             }
             node_list.append(template)
@@ -416,7 +418,7 @@ class MessageSession(MessageSessionT):
         lst = []
         if isinstance(self.session.message.message, str):
             spl = re.split(
-                r"(\[CQ:(?:text|image|record).*?])", self.session.message.message
+                r"(\[CQ:(?:text|image|record|at).*?])", self.session.message.message
             )
             for s in spl:
                 if not s:
@@ -436,6 +438,8 @@ class MessageSession(MessageSessionT):
                                 lst.append(Image(img_src))
                         elif cq_data["type"] == "record":
                             lst.append(Voice(cq_data["data"].get("file")))
+                        elif cq_data["type"] == "at":
+                            lst.append(Mention(f"{sender_prefix}|{cq_data['data'].get('qq')}"))
                         else:
                             lst.append(Plain(s))
                     else:
@@ -454,6 +458,8 @@ class MessageSession(MessageSessionT):
                         lst.append(Image(item["data"]["url"]))
                 elif item["type"] == "record":
                     lst.append(Voice(item["data"]["file"]))
+                elif item["type"] == "at":
+                    lst.append(Mention(f"{sender_prefix}|{cq_data['data'].get('qq')}"))
                 else:
                     lst.append(Plain(CQCodeHandler.generate_cq(item)))
 

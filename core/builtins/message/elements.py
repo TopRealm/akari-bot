@@ -318,6 +318,26 @@ class VoiceElement(MessageElement):
 
 
 @define
+class MentionElement(MessageElement):
+    """
+    提及元素。
+
+    :param id: 提及用户ID。
+    :param client: 平台。
+    """
+
+    client: str
+    id: str
+
+    @classmethod
+    def assign(cls, user_id: str):
+        """
+        :param _id: 用户id。
+        """
+        return deepcopy(cls(client=user_id.split('|')[0], id=user_id.split('|')[-1]))
+
+
+@define
 class EmbedFieldElement(MessageElement):
     """
     Embed字段。
@@ -442,6 +462,7 @@ elements_map = {
         VoiceElement,
         EmbedFieldElement,
         EmbedElement,
+        MentionElement,
     ]
 }
 __all__ = [
@@ -455,5 +476,6 @@ __all__ = [
     "VoiceElement",
     "EmbedFieldElement",
     "EmbedElement",
+    "MentionElement",
     "elements_map",
 ]

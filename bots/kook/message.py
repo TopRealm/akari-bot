@@ -15,12 +15,13 @@ from core.builtins import (
     Voice,
     MessageSession as MessageSessionT,
     I18NContext,
+    Mention,
     MessageTaskManager,
     FetchTarget as FetchTargetT,
     FinishedSession as FinishedSessionT,
 )
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.elements import PlainElement, ImageElement, VoiceElement
+from core.builtins.message.elements import MentionElement, PlainElement, ImageElement, VoiceElement
 from core.config import Config
 from core.database import BotDBUtil
 from core.logger import Logger
@@ -67,6 +68,7 @@ class MessageSession(MessageSessionT):
     class Feature:
         image = True
         voice = True
+        mention = True
         embed = False
         forward = False
         delete = True
@@ -132,7 +134,19 @@ class MessageSession(MessageSessionT):
                 )
                 send.append(send_)
                 count += 1
-
+            elif isinstance(x, MentionElement):
+                if x.client == client_name and self.target.target_from == target_group_prefix:
+                    send_ = await self.session.message.reply(
+                        f"(met){x.id}(met)",
+                        quote=(
+                            quote if quote and count == 0 and self.session.message else None
+                        ),
+                    )
+                    Logger.info(
+                        f"[Bot] -> [{self.target.target_id}]: Mention: {sender_prefix}|{str(x.id)}"
+                    )
+                    send.append(send_)
+                    count += 1
         msg_ids = []
         for x in send:
             msg_ids.append(x["msg_id"])
@@ -178,6 +192,10 @@ class MessageSession(MessageSessionT):
             lst.append(Image(self.session.message.content))
         elif self.session.message.type == MessageTypes.AUDIO:
             lst.append(Voice(self.session.message.content))
+        elif self.session.message.type == MessageTypes.KMD:
+            match = re.match(r'\(met\)(.*?)\(met\)', self.session.message.content)
+            if match.group(1):
+                lst.append(Mention(f"{target_person_prefix}|{str(match.group(1))}"))
         return MessageChain(lst)
 
     async def delete(self):
