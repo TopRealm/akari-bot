@@ -31,7 +31,7 @@ async def _(msg: Bot.MessageSession, username: str = None):
     else:
         return
     if username:
-        query_id = username
+        query_id = username.lower()
     else:
         query_id = CytoidBindInfoManager(msg).get_bind_username()
         if not query_id:

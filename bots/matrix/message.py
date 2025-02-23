@@ -56,7 +56,7 @@ class MessageSession(MessageSessionT):
         if not message_chain.is_safe and not disable_secret_check:
             return await self.send_message((I18NContext("error.message.chain.unsafe", locale=self.locale.locale)))
         self.sent.append(message_chain)
-        sentMessages: list[nio.RoomSendResponse] = []
+        send: list[nio.RoomSendResponse] = []
         for x in message_chain.as_sendable(self, embed=False):
 
             async def sendMsg(content):
@@ -141,13 +141,13 @@ class MessageSession(MessageSessionT):
                     split = await image_split(x)
                 for xs in split:
                     path = await xs.get()
-                    with open(path, "rb") as image:
+                    with open(path, 'rb') as image:
                         filename = os.path.basename(path)
                         filesize = os.path.getsize(path)
                         (content_type, content_encoding) = mimetypes.guess_type(path)
                         if not content_type or not content_encoding:
-                            content_type = "image"
-                            content_encoding = "png"
+                            content_type = 'image'
+                            content_encoding = 'png'
                         mimetype = f"{content_type}/{content_encoding}"
 
                         encrypted = self.session.target in bot.encrypted_rooms
@@ -156,32 +156,31 @@ class MessageSession(MessageSessionT):
                             content_type=mimetype,
                             filename=filename,
                             encrypt=encrypted,
-                            filesize=filesize,
-                        )
+                            filesize=filesize)
                         Logger.info(
                             f"Uploaded image {filename} to media repo, uri: {
                                 upload.content_uri}, mime: {mimetype}, encrypted: {encrypted}")
                         # todo: provide more image info
                         if not encrypted:
                             content = {
-                                "msgtype": "m.image",
-                                "url": upload.content_uri,
-                                "body": filename,
-                                "info": {
-                                    "size": filesize,
-                                    "mimetype": mimetype,
-                                },
+                                'msgtype': 'm.image',
+                                'url': upload.content_uri,
+                                'body': filename,
+                                'info': {
+                                    'size': filesize,
+                                    'mimetype': mimetype,
+                                }
                             }
                         else:
-                            upload_encryption["url"] = upload.content_uri
+                            upload_encryption['url'] = upload.content_uri
                             content = {
-                                "msgtype": "m.image",
-                                "body": filename,
-                                "file": upload_encryption,
-                                "info": {
-                                    "size": filesize,
-                                    "mimetype": mimetype,
-                                },
+                                'msgtype': 'm.image',
+                                'body': filename,
+                                'file': upload_encryption,
+                                'info': {
+                                    'size': filesize,
+                                    'mimetype': mimetype,
+                                }
                             }
                         Logger.info(
                             f"[Bot] -> [{self.target.target_id}]: Image: {str(xs.__dict__)}"
@@ -193,12 +192,12 @@ class MessageSession(MessageSessionT):
                 filesize = os.path.getsize(path)
                 (content_type, content_encoding) = mimetypes.guess_type(path)
                 if not content_type or not content_encoding:
-                    content_type = "audio"
-                    content_encoding = "ogg"
+                    content_type = 'audio'
+                    content_encoding = 'ogg'
                 mimetype = f"{content_type}/{content_encoding}"
 
                 encrypted = self.session.target in bot.encrypted_rooms
-                with open(path, "rb") as audio:
+                with open(path, 'rb') as audio:
                     (upload, upload_encryption) = await bot.upload(
                         audio,
                         content_type=mimetype,
@@ -211,24 +210,24 @@ class MessageSession(MessageSessionT):
                 # todo: provide audio duration info
                 if not encrypted:
                     content = {
-                        "msgtype": "m.audio",
-                        "url": upload.content_uri,
-                        "body": filename,
-                        "info": {
-                            "size": filesize,
-                            "mimetype": mimetype,
-                        },
+                        'msgtype': 'm.audio',
+                        'url': upload.content_uri,
+                        'body': filename,
+                        'info': {
+                            'size': filesize,
+                            'mimetype': mimetype,
+                        }
                     }
                 else:
-                    upload_encryption["url"] = upload.content_uri
+                    upload_encryption['url'] = upload.content_uri
                     content = {
-                        "msgtype": "m.audio",
-                        "body": filename,
-                        "file": upload_encryption,
-                        "info": {
-                            "size": filesize,
-                            "mimetype": mimetype,
-                        },
+                        'msgtype': 'm.audio',
+                        'body': filename,
+                        'file': upload_encryption,
+                        'info': {
+                            'size': filesize,
+                            'mimetype': mimetype,
+                        }
                     }
 
                 Logger.info(
@@ -241,57 +240,49 @@ class MessageSession(MessageSessionT):
                     Logger.info(f"[Bot] -> [{self.target.target_id}]: Mention: {sender_prefix}|{x.id}")
                     await sendMsg(content)
         if callback:
-            for x in sentMessages:
+            for x in send:
                 MessageTaskManager.add_callback(x.event_id, callback)
-        return FinishedSession(
-            self, [resp.event_id for resp in sentMessages], self.session.target
-        )
+        return FinishedSession(self, [resp.event_id for resp in send], self.session.target)
 
     async def check_native_permission(self):
-        if self.session.target.startswith("@") or self.session.sender.startswith("!"):
+        if self.session.target.startswith('@') or self.session.sender.startswith('!'):
             return True
         # https://spec.matrix.org/v1.9/client-server-api/#permissions
-        power_levels = (
-            await bot.room_get_state_event(self.session.target, "m.room.power_levels")
-        ).content
-        level = (
-            power_levels["users"][self.session.sender]
-            if self.session.sender in power_levels["users"]
-            else power_levels["users_default"]
-        )
+        power_levels = (await bot.room_get_state_event(self.session.target, 'm.room.power_levels')).content
+        level = power_levels['users'][self.session.sender] if self.session.sender in power_levels['users'] else power_levels['users_default']
         if level and int(level) >= 50:
             return True
         return False
 
     def as_display(self, text_only=False):
         if not self.session.message:
-            return ""
-        if not text_only or self.session.message["content"]["msgtype"] == "m.text":
-            return str(self.session.message["content"]["body"])
-        if not text_only and "format" in self.session.message["content"]:
-            return str(self.session.message["content"]["formatted_body"])
-        return ""
+            return ''
+        if not text_only or self.session.message['content']['msgtype'] == 'm.text':
+            return str(self.session.message['content']['body'])
+        if not text_only and 'format' in self.session.message['content']:
+            return str(self.session.message['content']['formatted_body'])
+        return ''
 
     async def to_message_chain(self):
         if not self.session.message:
             return MessageChain([])
-        content = self.session.message["content"]
-        msgtype = content["msgtype"]
-        if msgtype == "m.emote":
-            msgtype = "m.text"
-        if msgtype == "m.text":  # compatible with py38
-            text = str(content["body"])
+        content = self.session.message['content']
+        msgtype = content['msgtype']
+        if msgtype == 'm.emote':
+            msgtype = 'm.text'
+        if msgtype == 'm.text':  # compatible with py38
+            text = str(content['body'])
             if self.target.reply_id:
                 # redact the fallback line for rich reply
                 # https://spec.matrix.org/v1.9/client-server-api/#fallbacks-for-rich-replies
-                while text.startswith("> "):
-                    text = "".join(text.splitlines(keepends=True)[1:])
+                while text.startswith('> '):
+                    text = ''.join(text.splitlines(keepends=True)[1:])
             return MessageChain(Plain(text.strip()))
         if msgtype == "m.image":
             url = None
-            if "url" in content:
-                url = str(content["url"])
-            elif "file" in content:
+            if 'url' in content:
+                url = str(content['url'])
+            elif 'file' in content:
                 # todo: decrypt image
                 # url = str(content['file']['url'])
                 return MessageChain([])
@@ -333,20 +324,16 @@ class FetchedSession(Bot.FetchedSession):
 
     async def _resolve_matrix_room_(self):
         target_id: str = self.session.target
-        if target_id.startswith("@"):
+        if target_id.startswith('@'):
             # find private messaging room
             for room in bot.rooms:
                 room = bot.rooms[room]
-                if room.join_rule == "invite" and (
-                    (room.member_count == 2 and target_id in room.users)
-                    or (room.member_count == 1 and target_id in room.invited_users)
-                ):
-                    resp = await bot.room_get_state_event(
-                        room.room_id, "m.room.member", target_id
-                    )
+                if room.join_rule == 'invite' and ((room.member_count == 2 and target_id in room.users)
+                                                   or (room.member_count == 1 and target_id in room.invited_users)):
+                    resp = await bot.room_get_state_event(room.room_id, 'm.room.member', target_id)
                     if resp is nio.ErrorResponse:
                         pass
-                    elif resp.content["membership"] in ["join", "leave", "invite"]:
+                    elif resp.content['membership'] in ['join', 'leave', 'invite']:
                         self.session.target = room.room_id
                         return
             Logger.info(
