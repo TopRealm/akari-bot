@@ -99,7 +99,7 @@
     "core.message.help.command_count": "${count} Command(s)",
     "core.message.help.detail": "Use \"${prefix}help <module name>\" to view details. This fork project is maintained by Youshou Archives. For the project address, see: https://github.com/TopRealm/akari-bot",
     "core.message.help.document": "You can also consult the web documentation for help: ${url}",
-    "core.message.help.donate": "Welcome to sponsor us if you have sufficient funds: ${url}",
+    "core.message.help.donate": "If you are able, you are welcome to contribute to this fork project or the main project.",
     "core.message.help.helpdoc.address": "Online module document: ${url}",
     "core.message.help.legacy.availables": "Currently available module(s):",
     "core.message.help.legacy.availables.none": "There are currently no modules available.",
