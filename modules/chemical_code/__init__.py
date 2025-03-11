@@ -237,6 +237,7 @@ async def _(msg: Bot.MessageSession, pcid: int):
     else:
         await chemical_code(msg, pcid, random_mode=False)
 
+
 async def chemical_code(
     msg: Bot.MessageSession, id: Optional[int] = None, random_mode=True, captcha_mode=False
 ):
