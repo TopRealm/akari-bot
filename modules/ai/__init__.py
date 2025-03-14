@@ -23,7 +23,8 @@ ai = module("ai",
             required_superuser=True)
 
 
-@ai.command("<question> [--llm <llm>] {{ask.help}}")
+@ai.command("<question> [--llm <llm>] {{ask.help}}",
+            options_desc={"--llm": "{ai.help.option.llm}"})
 async def _(msg: Bot.MessageSession, question: str):
     get_llm = msg.parsed_msg.get("--llm", False)
     llm = get_llm["<llm>"] if get_llm else None
