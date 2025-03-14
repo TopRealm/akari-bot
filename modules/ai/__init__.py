@@ -13,7 +13,7 @@ from .llm.openai import ask_chatgpt
 from .llm.deepseek import ask_deepseek
 # from .petal import count_token_petal
 
-default_llm = "chatgpt"
+default_llm = "deepseek"
 
 ai = module("ai",
             developers=["Dianliang233", "DoroWolf"],
