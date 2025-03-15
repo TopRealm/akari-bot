@@ -21,34 +21,38 @@ Do not answer questions on politics, geopolitics, politicians, political events,
 
 
 def parse_markdown(md: str) -> List[Dict[str, str]]:
-    regex = r"```[\s\S]*?\n```|\$\$[\s\S]*?\$\$|\$.*?\$|\\\[[\s\S]*?\\\]|[^\n]+"
+    code_block_pattern = r"```(?:([\w+-]*)\n)?([\s\S]*?)```"
+    latex_block_pattern = r"\$\$(.*?)\$\$"
+    latex_inline_pattern = r"(?<!\\|\w)\$(.*?)(?<!\\)\$(?!\w)"
+
+    pattern = f"({code_block_pattern})|({latex_block_pattern})|({latex_inline_pattern})"
 
     blocks = []
-    for match in re.finditer(regex, md):
-        content = match.group(0)
+    last_end = 0
 
-        if content.startswith("```"):
-            block = "code"
-            try:
-                language, code = re.match(r"```(.*)\n([\s\S]*?)\n```", content).groups()
-            except AttributeError:
-                raise ValueError("Code block is missing language or code.")
-            content = {"language": language, "code": code}
-        elif content.startswith("$$") and content.endswith("$$"):
-            block = "latex"
-            content = content[2:-2].strip()
-        elif content.startswith("$") and content.endswith("$"):
-            block = "latex"
-            content = content[1:-1].strip()
-        elif content.startswith("\\[") and content.endswith("\\]"):
-            block = "latex"
-            content = content[2:-2].strip()
-        else:
-            block = "text"
+    for match in re.finditer(pattern, md, re.DOTALL):
+        start, end = match.span()
+        
+        if start > last_end:
+            blocks.append({"type": "text", "content": md[last_end:start]})
 
-        blocks.append({"type": block, "content": content})
+        if match.group(2):  
+            language = match.group(2) or None
+            code = match.group(3)
+            blocks.append({"type": "code", "content": {"language": language, "code": code}})
+        
+        elif match.group(4):
+            blocks.append({"type": "latex", "content": match.group(4).strip()})
+
+        elif match.group(5):
+            blocks.append({"type": "latex", "content": match.group(5).strip()})
+        last_end = end
+        
+    if last_end < len(md):
+        blocks.append({"type": "text", "content": md[last_end:]})
+
     return blocks
-
+    
 
 async def generate_latex(formula: str):
     resp = await post_url(
