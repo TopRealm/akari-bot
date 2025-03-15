@@ -21,33 +21,38 @@ Do not answer questions on politics, geopolitics, politicians, political events,
 
 
 def parse_markdown(md: str) -> List[Dict[str, str]]:
-    code_block_pattern = r"```(?:([\w+-]*)\n)?([\s\S]*?)```"
-    latex_block_pattern = r"\$\$(.*?)\$\$"
-    latex_inline_pattern = r"(?<!\\|\w)\$(.*?)(?<!\\)\$(?!\w)"
-
-    pattern = f"({code_block_pattern})|({latex_block_pattern})|({latex_inline_pattern})"
+    code_block_pattern = r"```(\w+)?\n([\s\S]*?)\n```"  # 代码块
+    block_latex_pattern = r"\$\$([\s\S]*?)\$\$"  # 块级 LaTeX
+    inline_latex_pattern = r"(?<!\$)\$([^\n\$]+?)\$(?!\$)"  # 行内 LaTeX，避免 $$ 误伤
+    text_split_pattern = r"(```[\s\S]*?```|\$\$[\s\S]*?\$\$|\$[^\n\$]+?\$)"  # 先分块
 
     blocks = []
     last_end = 0
 
-    for match in re.finditer(pattern, md, re.DOTALL):
+    for match in re.finditer(text_split_pattern, md):
         start, end = match.span()
-        
+        content = match.group(0)
+
         if start > last_end:
             blocks.append({"type": "text", "content": md[last_end:start]})
 
-        if match.group(2):  
-            language = match.group(2) or None
-            code = match.group(3)
-            blocks.append({"type": "code", "content": {"language": language, "code": code}})
-        
-        elif match.group(4):
-            blocks.append({"type": "latex", "content": match.group(4).strip()})
+        if content.startswith("```"):
+            code_match = re.match(code_block_pattern, content)
+            if code_match:
+                language = code_match.group(1) or ""
+                code = code_match.group(2).strip()
+                blocks.append({"type": "code", "content": {"language": language, "code": code}})
+        elif content.startswith("$$"):
+            latex_match = re.match(block_latex_pattern, content)
+            if latex_match:
+                blocks.append({"type": "latex", "content": latex_match.group(1).strip()})
+        elif content.startswith("$"):
+            latex_match = re.match(inline_latex_pattern, content)
+            if latex_match:
+                blocks.append({"type": "latex", "content": latex_match.group(1).strip()})
 
-        elif match.group(5):
-            blocks.append({"type": "latex", "content": match.group(5).strip()})
         last_end = end
-        
+
     if last_end < len(md):
         blocks.append({"type": "text", "content": md[last_end:]})
 
