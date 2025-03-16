@@ -8,7 +8,8 @@ from core.constants.exceptions import ConfigValueError
 from core.dirty_check import check
 from core.logger import Logger
 from core.utils.http import post_url
-from ..formatting import INSTRUCTIONS, parse_markdown
+from ..formatting import parse_markdown
+from ..models import INSTRUCTIONS
 
 api_base_url = Config("deepseek_api_url", cfg_type=str, table_name="module_ai", get_url=True)
 api_base_url = api_base_url if api_base_url else "https://api.deepseek.com/v1/"
