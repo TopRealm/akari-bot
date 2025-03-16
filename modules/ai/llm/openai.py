@@ -35,6 +35,7 @@ async def ask_chatgpt(msg: Bot.MessageSession,
                       presence_penalty: float = 0) -> Tuple[List[Dict[str, str]], int]:
     if not client:
         raise ConfigValueError(msg.locale.t("error.config.secret.not_found"))
+    model_name = model_name.lstrip("!")  # 去除超级用户标记
 
     response = client.chat.completions.create(
         model=model_name,
