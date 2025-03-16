@@ -29,8 +29,7 @@ ai = module("ai",
             developers=["Dianliang233", "DoroWolf"],
             desc="{ai.help.desc}",
             doc=True,
-            exclude_from="QQBot",
-            required_superuser=True)
+            exclude_from="QQBot")
 
 
 @ai.command("<question> [--llm <llm>] {{ai.help}}",
