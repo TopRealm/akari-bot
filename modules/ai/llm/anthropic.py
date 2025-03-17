@@ -32,6 +32,7 @@ async def ask_claude(msg: Bot.MessageSession,
                      top_p: float = 1) -> Tuple[List[Dict[str, str]], int]:
     if not client:
         raise ConfigValueError(msg.locale.t("error.config.secret.not_found"))
+    model_name = model_name.lstrip("!")  # 去除超级用户标记
 
     response = client.messages.create(
         model=model_name,

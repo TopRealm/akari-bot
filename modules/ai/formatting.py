@@ -30,10 +30,14 @@ def parse_markdown(md: str) -> List[Dict[str, str]]:
         if content.startswith("```"):
             code_match = re.match(code_block_pattern, content)
             if code_match:
-                language = code_match.group(1) or "text"
+                language = code_match.group(1)
                 code = code_match.group(2).strip()
-                blocks.append({"type": "code", "content": {"language": language, "code": code}})
 
+                if language:
+                    blocks.append({"type": "code", "content": {"language": language, "code": code}})
+                else:
+                    blocks.append({"type": "text", "content": f"```\n{code}\n```"})
+                    
         elif content.startswith("$$"):
             latex_match = re.match(block_latex_pattern, content)
             if latex_match:

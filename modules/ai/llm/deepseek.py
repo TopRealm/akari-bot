@@ -32,6 +32,7 @@ async def ask_deepseek(msg: Bot.MessageSession,
                        presence_penalty: float = 0) -> Tuple[List[Dict[str, str]], int]:
     if not headers:
         raise ConfigValueError(msg.locale.t("error.config.secret.not_found"))
+    model_name = model_name.lstrip("!")  # 去除超级用户标记
 
     payload = {
         "model": model_name,
