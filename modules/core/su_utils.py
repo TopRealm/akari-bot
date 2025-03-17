@@ -292,9 +292,6 @@ async def _(msg: Bot.MessageSession):
             pull_repo_result = await pull_repo()
             if pull_repo_result:
                 await msg.send_message(pull_repo_result)
-            else:
-                Logger.warning('Failed to get Git repository result.')
-                await msg.send_message(msg.locale.t("core.message.git.error"))
         await msg.finish(await update_dependencies())
     else:
         await msg.finish(msg.locale.t("core.message.update.binary_mode"))
