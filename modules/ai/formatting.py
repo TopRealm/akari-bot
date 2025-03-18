@@ -68,10 +68,10 @@ def generate_latex(formula: str):
     fig, ax = plt.subplots()
     text = ax.text(0.5, 0.5, f"${formula}$", fontsize=20, ha='center', va='center')
     ax.set_axis_off()
-    
+
     fig.canvas.draw()
     bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
-    
+
     width, height = bbox.width / fig.dpi, bbox.height / fig.dpi
     plt.close(fig)
 
@@ -103,7 +103,7 @@ async def generate_code_snippet(code: str, language: str):
     )
 
 
-async def rendering_md_table(table: str):
+async def generate_md_table(table: str):
     lines = table.strip().split("\n")
     if len(lines) < 2:
         raise ValueError("Invalid Markdown table format.")
