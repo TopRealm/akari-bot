@@ -15,7 +15,7 @@ def parse_markdown(md: str) -> List[Dict[str, str]]:
     inline_latex_pattern = r"(?<!\$)`?\$([^\n\$]+?)\$`?(?!\$)"  # 行内 LaTeX
     table_pattern = r"(?:\|.*\|\n)+\|(?:[-:| ]+)\|\n(?:\|.*\|\n)+"  # Markdown 表格
     # 先分块
-    text_split_pattern = r"(```[\s\S]*?```|\$\$[\s\S]*?\$\$|`?\$[^\n\$]+?\$`?|(?:\|.*\|\n)+\|(?:[-:| ]+)\|\n(?:\|.*\|\n)+)"
+    text_split_pattern = r"(```[\s\S]*?```|\$\$[\s\S]*?\$\$|\$[^\n\$]+?\$|(?:\|.*\|\n)+\|(?:[-:| ]+)\|\n(?:\|.*\|\n)+)"
 
     blocks = []
     last_end = 0
