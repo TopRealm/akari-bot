@@ -78,6 +78,6 @@ async def _(msg: Bot.MessageSession):
     avaliable_llms = llm_list + (llm_su_list if msg.check_super_user() else [])
 
     if avaliable_llms:
-        await msg.finish(f"{msg.locale.t('ai.message.list.prompt')}\n{'\n'.join(avaliable_llms)}")
+        await msg.finish(f"{msg.locale.t('ai.message.list.prompt')}\n{'\n'.join(sorted(avaliable_llms))}")
     else:
         await msg.finish(msg.locale.t("ai.message.list.none"))

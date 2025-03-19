@@ -4,12 +4,12 @@ from math import ceil
 from core.builtins import Bot
 from core.config import Config
 
-PRECOUNT_TOKEN = 1000
+PREDICT_TOKEN = 1000
 
 
-def precount_petal(msg: Bot.MessageSession, price: float) -> bool:
+def precount_petal(msg: Bot.MessageSession, price: float, predict_token: int = PREDICT_TOKEN) -> bool:
     if Config("enable_petal", False):
-        petal = int(ceil(PRECOUNT_TOKEN * Decimal(price)))
+        petal = int(ceil(predict_token * Decimal(price)))
         return msg.petal >= petal
     return True
 
