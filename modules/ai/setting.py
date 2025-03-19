@@ -23,8 +23,10 @@ else:
 for l in llm_api_list:
     if not l.get("name"):
         l["name"] = l["model_name"]
-    if not l.get("price"):
-        l["price"] = 0
+    if not l.get("price_in"):
+        l["price_in"] = 0
+    if not l.get("price_out"):
+        l["price_out"] = 0
 
 _name_count = {}
 for l in llm_api_list:

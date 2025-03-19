@@ -21,7 +21,7 @@ presence_penalty = Config("llm_presence_penalty", 0, cfg_type=(int, float), tabl
 async def ask_llm(prompt: str,
                   model_name: str,
                   api_url: str,
-                  api_key: str) -> Tuple[List, int]:
+                  api_key: str) -> Tuple[List, int, int]:
     client = AsyncOpenAI(base_url=api_url, api_key=api_key)
     completion = await client.chat.completions.create(
         model=model_name,
@@ -41,7 +41,8 @@ async def ask_llm(prompt: str,
         Logger.info(f"Thought: {reasoning}")
     res = completion.choices[0].message.content
     Logger.info(res)
-    tokens = completion.usage.total_tokens
+    input_tokens = completion.usage.prompt_tokens
+    output_tokens = completion.usage.completion_tokens
 
     res = await check(res)
     resm = "".join(m["content"] for m in res)
@@ -75,4 +76,4 @@ async def ask_llm(prompt: str,
             except Exception:
                 chain.append(I18NContext("ai.message.text2img.error", text=content))
 
-    return chain, tokens
+    return chain, input_tokens, output_tokens

@@ -4,19 +4,32 @@ from math import ceil
 from core.builtins import Bot
 from core.config import Config
 
-PREDICT_TOKEN = 1000
+PREDICT_INPUT_TOKEN = 10
+PREDICT_OUTPUT_TOKEN = 500
 
 
-def precount_petal(msg: Bot.MessageSession, price: float, predict_token: int = PREDICT_TOKEN) -> bool:
+def precount_petal(msg: Bot.MessageSession,
+                   input_price: float,
+                   output_price: float,
+                   input_tokens: int = PREDICT_INPUT_TOKEN,
+                   output_tokens: int = PREDICT_OUTPUT_TOKEN) -> bool:
     if Config("enable_petal", False):
-        petal = int(ceil(predict_token * Decimal(price)))
+        input_petal = int(ceil(input_tokens * Decimal(input_price)))
+        output_petal = int(ceil(output_tokens * Decimal(output_price)))
+        petal = input_petal + output_petal
         return msg.petal >= petal
     return True
 
 
-def count_token_petal(msg: Bot.MessageSession, price: float, tokens: int) -> int:
+def count_token_petal(msg: Bot.MessageSession,
+                      input_price: float,
+                      output_price: float,
+                      input_tokens: int,
+                      output_tokens: int) -> int:
     if Config("enable_petal", False):
-        petal = int(ceil(tokens * Decimal(price)))
+        input_petal = int(ceil(input_tokens * Decimal(input_price)))
+        output_petal = int(ceil(output_tokens * Decimal(output_price)))
+        petal = input_petal + output_petal
         msg.info.modify_petal(-petal)
         return petal
     return 0

@@ -18,7 +18,8 @@ This JSON file should contain an `llm_api_list` array, where each element repres
             "api_url": "https://api.examplellm.com/v1",
             "model_name": "llm-v1",
             "name": "example-llm",
-            "price": 0.001,
+            "price_in": 0.0005,
+            "price_out": 0.0005,
             "superuser": false
         }
     ]
@@ -50,14 +51,18 @@ This JSON file should contain an `llm_api_list` array, where each element repres
     - `true`: Restricted to superusers only.
   - `false` 或 `null`：无须权限。
     - `false` or `null`: No permissions required.
-- `price`：1 个 token 所需的花瓣数量。
-  - The number of petals required per token.
+- `price_in`：1 个输入 token 所需的花瓣数量。
+  - The number of petals required per input token.
+  - 若留空，默认为 `0`。
+    - Defaults to `0` if left empty.
+- `price_out`：1 个输出 token 所需的花瓣数量。
+  - The number of petals required per output token.
   - 若留空，默认为 `0`。
     - Defaults to `0` if left empty.
 
 ---
 
-## 如何计算 `price` 参数？(How to Calculate the `price` Param?)
+## 如何计算 `price` 相关参数？(How to Calculate the `price` Related Param?)
 
 建议按照服务商的定价计算 `price` 值，通常设 1 花瓣 = ¥0.01。
 
@@ -77,14 +82,14 @@ Calculation method:
 
 - **输入成本 (Input cost)：** ¥4 / 1M tokens = ¥0.000004 / token = 0.0004 petal/token
 - **输出成本 (Output cost)：** ¥16 / 1M tokens = ¥0.000016 / token = 0.0016 petal/token
-- **总成本(Total cost)：** 0.002 petal/token
 
 因此，若使用 `deepseek-reasoner`，可设置：
 
 Therefore, if you use `deepseek-reasoner`, you can set:
 
 ```json
-"price": 0.002
+"price_in": 0.0004
+"price_out": 0.0016
 ```
 
 请根据自身情况与服务商定价合理设置 `price`，以进行成本控制。
