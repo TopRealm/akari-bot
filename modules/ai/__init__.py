@@ -49,7 +49,7 @@ async def _(msg: Bot.MessageSession, question: str):
             chain, tokens = await ask_llm(question, llm_info["model_name"], llm_info["api_url"], llm_info["api_key"])
 
             Logger.info(f"{tokens} tokens used while calling AI.")
-            petal = count_token_petal(msg, tokens, llm_info["price"])
+            petal = count_token_petal(msg, llm_info["price"], tokens)
 
             if petal != 0:
                 chain.append(I18NContext("petal.message.cost", amount=petal))
