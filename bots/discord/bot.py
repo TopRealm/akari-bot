@@ -22,11 +22,10 @@ from core.types import MsgInfo, Session
 from core.utils.info import Info
 
 PrivateAssets.set(os.path.join(assets_path, "private", "discord"))
+dc_token = Config("discord_token", cfg_type=str, secret=True, table_name="bot_discord")
 ignored_sender = Config("ignored_sender", ignored_sender_default)
 
 count = 0
-
-dc_token = Config("discord_token", cfg_type=str, secret=True, table_name="bot_discord")
 
 
 @client.event
@@ -111,8 +110,8 @@ async def on_message(message):
     if match_at := re.match(r"^<@(.*?)>", message.content):
         if match_at.group(1) == str(client.user.id):
             message.content = re.sub(r"<@(.*?)>", "", message.content)
-            if message.content in ['', ' ']:
-                message.content = f'{command_prefix[0]}help'
+            if message.content in ["", " "]:
+                message.content = f"{command_prefix[0]}help"
                 prefix = command_prefix
         else:
             return
