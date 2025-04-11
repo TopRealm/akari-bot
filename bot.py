@@ -38,7 +38,7 @@ class RestartBot(Exception):
 
 failed_to_start_attempts = {}
 disabled_bots = []
-processes = []
+processes: list[multiprocessing.Process] = []
 
 
 def init_bot():
@@ -228,6 +228,7 @@ if __name__ == "__main__":
                 break
             except RestartBot:
                 for ps in processes:
+                    loggerFallback.warning(f"Terminating process {ps.pid} ({ps.name})...")
                     ps.terminate()
                     ps.join()
                     ps.close()

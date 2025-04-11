@@ -1,17 +1,18 @@
 import glob
 import os
-import psutil
 import platform
 import re
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 from cpuinfo import get_cpu_info
 from datetime import datetime, timedelta, UTC
 
 import asyncio
 import jwt
 import orjson as json
+import psutil
 import secrets
 import uvicorn
 from argon2 import PasswordHasher
@@ -30,21 +31,33 @@ from bots.web.bot import API_PORT, WEBUI_HOST, WEBUI_PORT  # noqa: E402
 from bots.web.info import client_name  # noqa: E402
 from core.bot_init import init_async  # noqa: E402
 from core.builtins import PrivateAssets  # noqa: E402
+from core.close import cleanup_sessions  # noqa: E402
 from core.config import Config  # noqa: E402
 from core.constants import config_filename, config_path, logs_path  # noqa: E402
 from core.constants.path import assets_path  # noqa: E402
 from core.database.models import SenderInfo, TargetInfo  # noqa: E402
 from core.extra.scheduler import load_extra_schedulers  # noqa: E402
-from core.utils.info import Info  # noqa: E402
+from core.i18n import Locale  # noqa: E402
 from core.loader import ModulesManager  # noqa: E402
 from core.logger import Logger  # noqa: E402
 from core.queue import JobQueue  # noqa: E402
 from core.scheduler import Scheduler  # noqa: E402
-from core.utils.i18n import Locale  # noqa: E402
+from core.utils.info import Info  # noqa: E402
 
 started_time = datetime.now()
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_async(start_scheduler=False)
+    load_extra_schedulers()
+    Scheduler.start()
+    await JobQueue.secret_append_ip()
+    await JobQueue.web_render_status()
+    yield
+    await cleanup_sessions()
+
+app = FastAPI(lifespan=lifespan)
 limiter = Limiter(key_func=get_remote_address)
 ph = PasswordHasher()
 
@@ -122,15 +135,6 @@ app.add_middleware(
 )
 
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
-
-
-@app.on_event("startup")
-async def startup_event():
-    await init_async(start_scheduler=False)
-    load_extra_schedulers()
-    Scheduler.start()
-    await JobQueue.secret_append_ip()
-    await JobQueue.web_render_status()
 
 
 @app.get("/")

@@ -9,7 +9,7 @@ from bots.aiogram.info import *
 from bots.aiogram.message import MessageSession, FetchTarget
 from core.bot_init import load_prompt, init_async
 from core.builtins import PrivateAssets
-from core.close import shutdown
+from core.close import cleanup_sessions
 from core.config import Config
 from core.constants.default import ignored_sender_default
 from core.constants.path import assets_path
@@ -54,13 +54,18 @@ async def on_startup():
     await load_prompt(FetchTarget)
 
 
+async def on_shutdown():
+    await cleanup_sessions()
+
+
 if Config("enable", False, table_name="bot_aiogram"):
     try:
         Info.client_name = client_name
         if "subprocess" in sys.argv:
             Info.subprocess = True
 
-        dp.startup.register(on_startup)
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
 
         asyncio.run(dp.start_polling(bot))
     except KeyboardInterrupt:
