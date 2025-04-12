@@ -398,7 +398,7 @@ class FetchTarget(FetchedTargetT):
                     msgchain = message
                     if isinstance(message, str):
                         if i18n:
-                            msgchain = MessageChain([Plain(x.parent.locale.t(message, **kwargs))])
+                            msgchain = MessageChain([I18NContext(message, **kwargs)])
                         else:
                             msgchain = MessageChain([Plain(message)])
                     msgchain = MessageChain(msgchain)
@@ -422,7 +422,7 @@ class FetchTarget(FetchedTargetT):
                         msgchain = message
                         if isinstance(message, str):
                             if i18n:
-                                msgchain = MessageChain([Plain(fetch.parent.locale.t(message, **kwargs))])
+                                msgchain = MessageChain([I18NContext(message, **kwargs)])
                             else:
                                 msgchain = MessageChain([Plain(message)])
                         msgchain = MessageChain(msgchain)
