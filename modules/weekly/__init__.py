@@ -12,6 +12,7 @@ from core.utils.image import msgchain2image
 from modules.wiki.utils.screenshot_image import generate_screenshot_v2
 from modules.wiki.utils.wikilib import WikiLib
 from .teahouse import get_rss as get_teahouse_rss
+from .ysarchives import get_rss as get_ysarchives_rss
 
 
 async def get_weekly(with_img=False, zh_tw=False):
@@ -108,3 +109,15 @@ async def _(msg: Bot.MessageSession):
     for img in await msgchain2image([Plain(weekly)], msg):
         imgchain.append(Image(img))
     await msg.finish(imgchain)
+
+
+@wky.handle('ysarchives {{weekly.help.ysarchives}}')
+async def _(msg: Bot.MessageSession):
+    weekly = await get_ysarchives_rss()
+    await msg.finish(weekly)
+
+
+@wky.handle('ysarchives image {{weekly.help.ysarchives}}')
+async def _(msg: Bot.MessageSession):
+    weekly = await get_ysarchives_rss()
+    await msg.finish(Image(await msgchain2image([Plain(weekly)], msg)))

@@ -150,7 +150,7 @@ async def _(request: Request):
     return FileResponse(favicon_path)
 
 
-@app.get("/api/")
+@app.get("/api")
 @limiter.limit("2/second")
 async def favicon(request: Request):
     return {"message": "Hello, AkariBot!"}
