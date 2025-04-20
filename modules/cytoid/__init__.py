@@ -32,7 +32,7 @@ async def _(msg: Bot.MessageSession, username: str = None):
     else:
         return
     if username:
-        query_id = username
+        query_id = username.lower()
     else:
         bind_info = await CytoidBindInfo.get_or_none(sender_id=msg.target.sender_id)
         if not bind_info:

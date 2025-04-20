@@ -59,11 +59,14 @@ async def on_shutdown():
 
 
 if Config("enable", False, table_name="bot_aiogram"):
-    Info.client_name = client_name
-    if "subprocess" in sys.argv:
-        Info.subprocess = True
+    try:
+        Info.client_name = client_name
+        if "subprocess" in sys.argv:
+            Info.subprocess = True
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
-    asyncio.run(dp.start_polling(bot))
+        asyncio.run(dp.start_polling(bot))
+    except KeyboardInterrupt:
+        asyncio.run(shutdown())
