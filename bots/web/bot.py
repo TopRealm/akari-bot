@@ -9,10 +9,10 @@ sys.path.append(os.getcwd())
 
 from bots.web.info import client_name  # noqa: E402
 from core.builtins import PrivateAssets  # noqa: E402
-from core.close import cleanup_sessions  # noqa: E402
 from core.config import Config  # noqa: E402
 from core.constants.path import assets_path, webui_path  # noqa: E402
 from core.logger import Logger  # noqa: E402
+from core.terminate import cleanup_sessions  # noqa: E402
 from core.utils.info import Info  # noqa: E402
 
 API_PORT = Config("api_port", 5000, table_name="bot_web")
@@ -32,13 +32,14 @@ async def run_fastapi():
 
 
 async def run_flask():
-    from bots.web.webui import generate_config, app as flask_app  # noqa: E402
-    ucfg = Uconfig()
-    ucfg.bind = [f"{WEBUI_HOST}:{WEBUI_PORT}"]
     if os.path.exists(os.path.join(webui_path, "index.html")):
-        generate_config()
-        Logger.info(f"Visit AkariBot WebUI: http://{WEBUI_HOST}:{WEBUI_PORT}")
-        await serve(flask_app, ucfg)
+        from bots.web.webui import generate_config, app as flask_app  # noqa: E402
+        ucfg = Uconfig()
+        ucfg.bind = [f"{WEBUI_HOST}:{WEBUI_PORT}"]
+        if os.path.exists(os.path.join(webui_path, "index.html")):
+            generate_config()
+            Logger.info(f"Visit AkariBot WebUI: http://{WEBUI_HOST}:{WEBUI_PORT}")
+            await serve(flask_app, ucfg)
 
 
 async def main():

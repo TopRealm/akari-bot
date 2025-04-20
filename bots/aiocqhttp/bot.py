@@ -15,7 +15,6 @@ from core.bot_init import load_prompt, init_async
 from core.builtins import PrivateAssets
 from core.builtins.utils import command_prefix
 from core.builtins.temp import Temp
-from core.close import cleanup_sessions
 from core.config import Config
 from core.constants.default import issue_url_default, ignored_sender_default, qq_host_default
 from core.constants.info import Info
@@ -23,6 +22,7 @@ from core.constants.path import assets_path
 from core.database.models import SenderInfo, TargetInfo, UnfriendlyActionRecords
 from core.i18n import Locale
 from core.parser.message import parser
+from core.terminate import cleanup_sessions
 from core.tos import tos_report
 from core.types import MsgInfo, Session
 
@@ -206,11 +206,11 @@ async def _(event: Event):
         sender_info = await SenderInfo.get(sender_id=sender_id)
         target_id = f"{target_group_prefix}|{event.group_id}"
         target_info = await TargetInfo.get(target_id=target_id)
-        await UnfriendlyActionRecords.create(target_id=event.group_id,
-                                             sender_id=event.operator_id,
+        await UnfriendlyActionRecords.create(target_id=target_id,
+                                             sender_id=sender_id,
                                              action="mute",
                                              detail=str(event.duration))
-        result = await UnfriendlyActionRecords.check_mute(target_id=event.group_id)
+        result = await UnfriendlyActionRecords.check_mute(target_id=target_id)
         if event.duration >= 259200:  # 3 days
             result = True
         if result and not sender_info.superuser:
@@ -229,8 +229,8 @@ async def _(event: Event):
         sender_info = await SenderInfo.get(sender_id=sender_id)
         target_id = f"{target_group_prefix}|{event.group_id}"
         target_info = await TargetInfo.get(target_id=target_id)
-        await UnfriendlyActionRecords.create(target_id=event.group_id,
-                                             sender_id=event.operator_id,
+        await UnfriendlyActionRecords.create(target_id=target_id,
+                                             sender_id=sender_id,
                                              action="kick")
         if not sender_info.superuser:
             reason = Locale(default_locale).t("tos.message.reason.kick")
