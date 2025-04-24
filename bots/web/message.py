@@ -1,4 +1,5 @@
 import asyncio
+import re
 import uuid
 from typing import Union
 
@@ -8,6 +9,7 @@ from fastapi import WebSocket
 from core.builtins import (
     Bot,
     Plain,
+    I18NContext,
     MessageTaskManager,
     FinishedSession as FinS,
     FetchTarget as FetchTargetT
@@ -108,13 +110,23 @@ class FetchTarget(FetchTargetT):
 
     @staticmethod
     async def fetch_target(target_id, sender_id=None):
-        if target_id == f"{target_prefix}|0":
-            return FetchedSession(
-                target_from=target_prefix,
-                target_id="0",
-                sender_from=sender_prefix,
-                sender_id="0",
-            )
+        target_pattern = r"|".join(re.escape(item) for item in target_prefix_list)
+        match_target = re.match(rf"^({target_pattern})\|(.*)", target_id)
+        if match_target:
+            target_from = match_target.group(1)
+            target_id = match_target.group(2)
+            sender_from = None
+            if sender_id:
+                sender_pattern = r"|".join(
+                    re.escape(item) for item in sender_prefix_list
+                )
+                match_sender = re.match(rf"^({sender_pattern})\|(.*)", sender_id)
+                if match_sender:
+                    sender_from = match_sender.group(1)
+                    sender_id = match_sender.group(2)
+            session = Bot.FetchedSession(target_from, target_id, sender_from, sender_id)
+            await session.parent.data_init()
+            return session
 
     @staticmethod
     async def post_message(module_name, message, user_list=None, i18n=False, **kwargs):
