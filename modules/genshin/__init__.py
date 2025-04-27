@@ -3,7 +3,7 @@ import genshin as genshin_py
 from core.component import module
 from core.builtins import Bot
 from core.utils.cooldown import CoolDown
-from config import Config
+from core.config import Config
 
 
 genshin_module = module('genshin_info', alias='yuanshen', desc='原神角色信息查询。', developers=['ZoruaFox'])
@@ -14,7 +14,7 @@ password = Config('hoyolab_password')
 cookies = genshin_py.Client.login_with_password('{username}', '{password}')
 client = genshin_py.Client(cookies, lang="zh-cn")
 
-@genshin_module.handle('uid <number> {{genshin.help.uid}}')
+@genshin_module.handle('uid <number> {[I18N:genshin.help.uid]}')
 async def _(msg: Bot.MessageSession):
     data = await client.get_genshin_user(msg.parsed_msg['<number>'])
     player_level = {data.player.level}

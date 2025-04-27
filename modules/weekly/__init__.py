@@ -111,13 +111,13 @@ async def _(msg: Bot.MessageSession):
     await msg.finish(imgchain)
 
 
-@wky.handle('ysarchives {{weekly.help.ysarchives}}')
+@wky.handle('ysarchives {[I18N:weekly.help.ysarchives]}')
 async def _(msg: Bot.MessageSession):
     weekly = await get_ysarchives_rss()
     await msg.finish(weekly)
 
 
-@wky.handle('ysarchives image {{weekly.help.ysarchives}}')
+@wky.handle('ysarchives image {[I18N:weekly.help.ysarchives]}')
 async def _(msg: Bot.MessageSession):
     weekly = await get_ysarchives_rss()
     await msg.finish(Image(await msgchain2image([Plain(weekly)], msg)))
