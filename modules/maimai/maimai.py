@@ -431,7 +431,7 @@ async def _(msg: Bot.MessageSession, id_or_alias: str):
 
         res.append(msg.locale.t(
             "maimai.message.song",
-            artist=music[sid]["artist"],
+            artist=music["basic_info"]["artist"],
             genre="宴會場",
             bpm=music["basic_info"]["bpm"],
             version=music["basic_info"]["from"],
