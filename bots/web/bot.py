@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.wsgi import WSGIMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from flask import Flask, send_from_directory
+from jwt.exceptions import ExpiredSignatureError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from tortoise.expressions import Q
@@ -77,7 +78,8 @@ async def lifespan(app: FastAPI):
     Scheduler.start()
     await JobQueue.secret_append_ip()
     await JobQueue.web_render_status()
-    Logger.info(f"Visit AkariBot WebUI: {protocol}://{WEB_HOST}:{web_port}/webui")
+    if os.path.exists(os.path.join(webui_path, "index.html")):
+        Logger.info(f"Visit AkariBot WebUI: {protocol}://{WEB_HOST}:{web_port}/webui")
     yield
     await cleanup_sessions()
     sys.exit()
@@ -115,11 +117,16 @@ def verify_jwt(request: Request):
 
     try:
         payload = jwt.decode(auth_token, JWT_SECRET, algorithms=["HS256"])
-        if payload.get("iat") > datetime.now(UTC).timestamp():
-            raise HTTPException(status_code=400, detail="Invalid token")
+        if os.path.exists(PASSWORD_PATH):
+            with open(PASSWORD_PATH, "rb") as f:
+                last_updated = json.loads(f.read()).get("last_updated")
+
+            if last_updated and payload["iat"] < last_updated:
+                raise ExpiredSignatureError
+
         return {"message": "Success", "payload": payload}
 
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid token")
@@ -166,7 +173,6 @@ async def auth(request: Request, response: Response):
     try:
         if not os.path.exists(PASSWORD_PATH):
             payload = {
-                "device_id": str(uuid.uuid4()),
                 "exp": datetime.now(UTC) + timedelta(hours=24),  # 过期时间
                 "iat": datetime.now(UTC),  # 签发时间
                 "iss": "auth-api"  # 签发者
@@ -187,11 +193,11 @@ async def auth(request: Request, response: Response):
         password = body.get("password", "")
         remember = body.get("remember", False)
 
-        with open(PASSWORD_PATH, "r") as file:
-            stored_password = file.read().strip()
+        with open(PASSWORD_PATH, "rb") as file:
+            password_data = json.loads(file.read())
 
         try:
-            ph.verify(stored_password, password)
+            ph.verify(password_data.get("password", ""), password)
         except Exception:
             now = datetime.now(UTC)
             login_failed_attempts[ip] = [t for t in login_failed_attempts[ip] if (now - t).total_seconds() < 600]
@@ -207,7 +213,6 @@ async def auth(request: Request, response: Response):
         login_failed_attempts.pop(ip, None)
 
         payload = {
-            "device_id": str(uuid.uuid4()),
             "exp": datetime.now(UTC) + (timedelta(days=365) if remember else timedelta(hours=24)),
             "iat": datetime.now(UTC),
             "iss": "auth-api"
@@ -244,23 +249,30 @@ async def change_password(request: Request, response: Response):
         if not os.path.exists(PASSWORD_PATH):
             if new_password == "":
                 raise HTTPException(status_code=400, detail="New password required")
-            new_password_hashed = ph.hash(new_password)
-            with open(PASSWORD_PATH, "w") as file:
-                file.write(new_password_hashed)
+
+            password_data = {
+                "password": ph.hash(new_password),
+                "last_updated": datetime.now().timestamp()
+            }
+            with open(PASSWORD_PATH, "wb") as file:
+                file.write(json.dumps(password_data))
             response.delete_cookie("deviceToken")
             return {"message": "Success"}
 
-        with open(PASSWORD_PATH, "r") as file:
-            stored_password = file.read().strip()
+        with open(PASSWORD_PATH, "rb") as file:
+            password_data = json.loads(file.read())
 
         try:
-            ph.verify(stored_password, password)
+            ph.verify(password_data.get("password", ""), password)
         except Exception:
             raise HTTPException(status_code=401, detail="Invalid password")
 
-        new_password_hashed = ph.hash(new_password)
-        with open(PASSWORD_PATH, "w") as file:
-            file.write(new_password_hashed)
+        password_data["password"] = ph.hash(new_password)
+        password_data["last_updated"] = datetime.now().timestamp()
+
+        with open(PASSWORD_PATH, "wb") as file:
+            file.write(json.dumps(password_data))
+
         response.delete_cookie("deviceToken")
         return {"message": "Success"}
     except HTTPException as e:
@@ -282,11 +294,11 @@ async def clear_password(request: Request, response: Response):
         if not os.path.exists(PASSWORD_PATH):
             raise HTTPException(status_code=404, detail="Password not set")
 
-        with open(PASSWORD_PATH, "r") as file:
-            stored_password = file.read().strip()
+        with open(PASSWORD_PATH, "rb") as file:
+            password_data = json.loads(file.read())
 
         try:
-            ph.verify(stored_password, password)
+            ph.verify(password_data.get("password", ""), password)
         except Exception:
             raise HTTPException(status_code=401, detail="Invalid password")
 
@@ -865,43 +877,53 @@ async def restart():
     await cleanup_sessions()
     os._exit(233)
 
-flask_app = Flask(__name__)
+if os.path.exists(os.path.join(webui_path, "index.html")):
+    flask_app = Flask(__name__)
 
+    @flask_app.route("/")
+    @flask_app.route("/<path:path>")
+    def static_files(path=None):
+        return send_from_directory(webui_path, "index.html")
 
-@flask_app.route("/")
-@flask_app.route("/<path:path>")
-def static_files(path=None):
-    return send_from_directory(webui_path, "index.html")
+    app.mount("/webui", WSGIMiddleware(flask_app))
 
+    @app.get("/webui")
+    async def redirect_webui():
+        return RedirectResponse(url="/webui/")
 
-app.mount("/webui", WSGIMiddleware(flask_app))
-
-
-@app.get("/webui")
-async def redirect_webui():
-    return RedirectResponse(url="/webui/")
-
-
-@app.get("/{path:path}")
-async def redirect_root(path=None):
-    if not path:
-        return RedirectResponse(url="/webui")
-    if path.startswith("/api") or path.startswith("/webui"):
-        return RedirectResponse(url=path)
-    static_path = os.path.normpath(os.path.join(webui_path, path))
-    if not static_path.startswith(webui_path) or not os.path.exists(static_path):
-        raise HTTPException(status_code=404, detail="Not found")
-    return FileResponse(static_path)
+    @app.get("/{path:path}")
+    async def redirect_root(path=None):
+        if not path:
+            return RedirectResponse(url="/webui")
+        if path.startswith("/api") or path.startswith("/webui"):
+            return RedirectResponse(url=path)
+        static_path = os.path.normpath(os.path.join(webui_path, path))
+        if not static_path.startswith(webui_path) or not os.path.exists(static_path):
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(static_path)
+else:
+    @app.get("/{path:path}")
+    async def redirect_root(path=None):
+        if not path:
+            return RedirectResponse(url="/api")
+        if path.startswith("/api"):
+            return RedirectResponse(url=path)
+        static_path = os.path.normpath(os.path.join(webui_path, path))
+        if not static_path.startswith(webui_path) or not os.path.exists(static_path):
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(static_path)
 
 
 if Config("enable", True, table_name="bot_web"):
     Info.client_name = client_name
     web_port = find_available_port(WEB_PORT)
     if web_port == 0:
-        Logger.warning(f"API port is disabled, abort to run.")
+        Logger.error(f"API port is disabled, abort to run.")
         sys.exit(0)
     if not enable_https:
         Logger.warning("HTTPS is disabled. HTTP mode is insecure and should only be used in trusted environments.")
-    generate_webui_config(web_port, WEB_HOST, enable_https, default_locale)
+
+    if os.path.exists(os.path.join(webui_path, "index.html")):
+        generate_webui_config(web_port, WEB_HOST, enable_https, default_locale)
 
     uvicorn.run(app, host=WEB_HOST, port=web_port, log_level="info")
