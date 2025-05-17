@@ -486,7 +486,7 @@ async def get_target_list(
 async def get_target_info(request: Request, target_id: str):
     try:
         verify_jwt(request)
-        target_info = await TargetInfo.get_or_none(target_id=target_id)
+        target_info = await TargetInfo.get_by_target_id(target_id, create=False)
         if not target_info:
             raise HTTPException(status_code=404, detail="Not found")
         return {"message": "Success", "target_info": target_info}
@@ -504,7 +504,7 @@ async def edit_target_info(request: Request, target_id: str):
         verify_jwt(request)
         await verify_csrf_token(request)
 
-        target_info = (await TargetInfo.get_or_create(target_id=target_id))[0]
+        target_info = await TargetInfo.get_by_target_id(target_id)
         body = await request.json()
         blocked = body.get("blocked")
         muted = body.get("muted")
@@ -512,6 +512,7 @@ async def edit_target_info(request: Request, target_id: str):
         blocked = body.get("blocked")
         modules = body.get("modules")
         custom_admins = body.get("custom_admins")
+        banned_users = body.get("banned_users")
         target_data = body.get("target_data")
 
         if blocked is not None and not isinstance(blocked, bool):
@@ -524,6 +525,8 @@ async def edit_target_info(request: Request, target_id: str):
             raise HTTPException(status_code=400, detail="'modules' must be list")
         if custom_admins is not None and not isinstance(custom_admins, list):
             raise HTTPException(status_code=400, detail="'custom_admins' must be list")
+        if banned_users is not None and not isinstance(banned_users, list):
+            raise HTTPException(status_code=400, detail="'banned_users' must be list")
         if target_data is not None and not isinstance(target_data, dict):
             raise HTTPException(status_code=400, detail="'target_data' must be dict")
 
@@ -537,6 +540,8 @@ async def edit_target_info(request: Request, target_id: str):
             target_info.modules = modules
         if custom_admins is not None:
             target_info.custom_admins = custom_admins
+        if banned_users is not None:
+            target_info.banned_users = banned_users
         if target_data is not None:
             target_info.target_data = target_data
         await target_info.save()
@@ -555,7 +560,7 @@ async def delete_target_info(request: Request, target_id: str):
     try:
         verify_jwt(request)
         await verify_csrf_token(request)
-        target_info = await TargetInfo.get_or_none(target_id=target_id)
+        target_info = await TargetInfo.get_by_target_id(target_id, create=False)
         if target_info:
             await target_info.delete()
         return {"message": "Success"}
@@ -612,7 +617,7 @@ async def get_sender_list(request: Request,
 async def get_sender_info(request: Request, sender_id: str):
     try:
         verify_jwt(request)
-        sender_info = await SenderInfo.get_or_none(sender_id=sender_id)
+        sender_info = await SenderInfo.get_by_sender_id(sender_id, create=False)
         if not sender_info:
             raise HTTPException(status_code=404, detail="Not found")
         return {"message": "Success", "sender_info": sender_info}
@@ -630,7 +635,7 @@ async def edit_sender_info(request: Request, sender_id: str):
         verify_jwt(request)
         await verify_csrf_token(request)
 
-        sender_info = (await SenderInfo.get_or_create(sender_id=sender_id))[0]
+        sender_info = await SenderInfo.get_by_sender_id(sender_id)
         body = await request.json()
         superuser = body.get("superuser")
         trusted = body.get("trusted")
@@ -680,7 +685,7 @@ async def delete_sender_info(request: Request, sender_id: str):
     try:
         verify_jwt(request)
         await verify_csrf_token(request)
-        sender_info = await SenderInfo.get_or_none(sender_id=sender_id)
+        sender_info = await SenderInfo.get_by_sender_id(sender_id, create=False)
         if sender_info:
             await sender_info.delete()
         return {"message": "Success"}

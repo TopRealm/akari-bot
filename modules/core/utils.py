@@ -110,8 +110,7 @@ async def _(msg: Bot.MessageSession):
             await msg.finish(I18NContext("core.message.admin.already"))
     if "remove" in msg.parsed_msg:
         if user == msg.target.sender_id:
-            confirm = await msg.wait_confirm(I18NContext("core.message.admin.remove.confirm"))
-            if not confirm:
+            if not await msg.wait_confirm(I18NContext("core.message.admin.remove.confirm")):
                 await msg.finish()
         elif user and msg.target_info.config_custom_admin(user, enable=False):
             await msg.finish(I18NContext("core.message.admin.remove.success", user=user))
@@ -123,10 +122,9 @@ async def _(msg: Bot.MessageSession):
     "ban list {[I18N:core.help.admin.ban.list]}",
 )
 async def _(msg: Bot.MessageSession):
-    admin_ban_list = msg.target_data.get("ban", [])
     if "list" in msg.parsed_msg:
-        if admin_ban_list:
-            await msg.finish([I18NContext("core.message.admin.ban.list"), Plain("\n".join(admin_ban_list))])
+        if msg.banned_users:
+            await msg.finish([I18NContext("core.message.admin.ban.list"), Plain("\n".join(msg.custom_admins))])
         else:
             await msg.finish(I18NContext("core.message.admin.ban.list.none"))
     user = msg.parsed_msg["<user>"]
@@ -135,16 +133,15 @@ async def _(msg: Bot.MessageSession):
     if user == msg.target.sender_id:
         await msg.finish(I18NContext("core.message.admin.ban.self"))
     if "ban" in msg.parsed_msg:
-        if user not in admin_ban_list:
-            await msg.target_info.edit_target_data("ban", admin_ban_list + [user])
-            await msg.finish(I18NContext("core.message.admin.ban.success", user=user))
+        if user not in msg.banned_users:
+            if await msg.target_info.config_banned_user(user):
+                await msg.finish(I18NContext("core.message.admin.ban.success", user=user))
         else:
             await msg.finish(I18NContext("core.message.admin.ban.already"))
     if "unban" in msg.parsed_msg:
-        if user in (banlist := admin_ban_list):
-            banlist.remove(user)
-            await msg.target_info.edit_target_data("ban", banlist)
-            await msg.finish(I18NContext("core.message.admin.unban.success", user=user))
+        if user in msg.banned_users:
+            if await msg.target_info.config_banned_user(user, enable=False):
+                await msg.finish(I18NContext("core.message.admin.unban.success", user=user))
         else:
             await msg.finish(I18NContext("core.message.admin.unban.none"))
 
@@ -278,8 +275,7 @@ leave = module(
 
 @leave.command("{[I18N:core.help.leave]}")
 async def _(msg: Bot.MessageSession):
-    confirm = await msg.wait_confirm(I18NContext("core.message.leave.confirm"))
-    if confirm:
+    if await msg.wait_confirm(I18NContext("core.message.leave.confirm")):
         await msg.send_message(I18NContext("core.message.leave.success"))
         await msg.call_api("set_group_leave", group_id=msg.session.target)
     else:

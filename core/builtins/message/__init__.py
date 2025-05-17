@@ -205,6 +205,7 @@ class MessageSession:
         self.muted: Optional[bool] = None
         self.sender_data: Optional[dict] = None
         self.target_data: Optional[dict] = None
+        self.banned_users: Optional[list] = None
         self.custom_admins: Optional[list] = None
         self.enabled_modules: Optional[dict] = None
         self.locale: Optional[Locale] = None
@@ -221,6 +222,7 @@ class MessageSession:
         self.target_info = get_target_info
         self.muted = self.target_info.muted
         self.target_data = self.target_info.target_data
+        self.banned_users = self.target_info.banned_users
         self.custom_admins = self.target_info.custom_admins
         self.enabled_modules = self.target_info.modules
         self.locale = Locale(self.target_info.locale)
@@ -408,9 +410,11 @@ class MessageSession:
             return True
         if message_chain:
             message_chain = MessageChain(message_chain)
-            if append_instruction:
-                message_chain.append(I18NContext("message.wait.prompt.confirm"))
-            send = await self.send_message(message_chain, quote)
+        else:
+            message_chain = MessageChain(I18NContext("core.message.confirm"))
+        if append_instruction:
+            message_chain.append(I18NContext("message.wait.prompt.confirm"))
+        send = await self.send_message(message_chain, quote)
         await asyncio.sleep(0.1)
         flag = asyncio.Event()
         MessageTaskManager.add_task(self, flag, timeout=timeout)
