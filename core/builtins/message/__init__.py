@@ -196,22 +196,23 @@ class MessageSession:
         self.target = target
         self.session = session
         self.sent: List[MessageChain] = []
-        self.trigger_msg: Optional[str] = None
-        self.matched_msg: Optional[Union[Match[str], Tuple[Any]]] = None
-        self.parsed_msg: Optional[dict] = None
+        self.trigger_msg: str = None
+        self.matched_msg: Union[Match[str], Tuple[Any]] = None
+        self.parsed_msg: dict = None
         self.prefixes: List[str] = []
-        self.target_info: Optional[TargetInfo] = None
-        self.sender_info: Optional[SenderInfo] = None
-        self.muted: Optional[bool] = None
-        self.sender_data: Optional[dict] = None
-        self.target_data: Optional[dict] = None
-        self.custom_admins: Optional[list] = None
-        self.enabled_modules: Optional[dict] = None
-        self.locale: Optional[Locale] = None
-        self.name: Optional[str] = None
+        self.target_info: TargetInfo = None
+        self.sender_info: SenderInfo = None
+        self.muted: bool = None
+        self.sender_data: dict = None
+        self.target_data: dict = None
+        self.banned_users: list = None
+        self.custom_admins: list = None
+        self.enabled_modules: dict = None
+        self.locale: Locale = None
+        self.name: str = None
         self._tz_offset = None
-        self.timezone_offset: Optional[timedelta] = None
-        self.petal: Optional[int] = None
+        self.timezone_offset: timedelta = None
+        self.petal: int = None
 
         self.tmp = {}
         asyncio.create_task(self.data_init())
@@ -221,6 +222,7 @@ class MessageSession:
         self.target_info = get_target_info
         self.muted = self.target_info.muted
         self.target_data = self.target_info.target_data
+        self.banned_users = self.target_info.banned_users
         self.custom_admins = self.target_info.custom_admins
         self.enabled_modules = self.target_info.modules
         self.locale = Locale(self.target_info.locale)
@@ -408,9 +410,11 @@ class MessageSession:
             return True
         if message_chain:
             message_chain = MessageChain(message_chain)
-            if append_instruction:
-                message_chain.append(I18NContext("message.wait.prompt.confirm"))
-            send = await self.send_message(message_chain, quote)
+        else:
+            message_chain = MessageChain(I18NContext("core.message.confirm"))
+        if append_instruction:
+            message_chain.append(I18NContext("message.wait.prompt.confirm"))
+        send = await self.send_message(message_chain, quote)
         await asyncio.sleep(0.1)
         flag = asyncio.Event()
         MessageTaskManager.add_task(self, flag, timeout=timeout)
