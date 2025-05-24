@@ -106,7 +106,7 @@ async def _(msg: Bot.MessageSession):
 async def _(msg: Bot.MessageSession):
     weekly = await get_teahouse_rss()
     imgchain = []
-    for img in await msgchain2image([Plain(weekly)], msg):
+    for img in await msgchain2image(Plain(weekly), msg):
         imgchain.append(Image(img))
     await msg.finish(imgchain)
 

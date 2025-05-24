@@ -6,7 +6,7 @@ import orjson as json
 from langconv.converter import LanguageConverter
 from langconv.language.zh import zh_cn
 
-from core.builtins import Bot, Image, MessageChain, Plain
+from core.builtins import Bot, MessageChain, I18NContext, Image, Plain
 from core.constants.exceptions import ConfigValueError
 from core.constants.path import cache_path
 from core.logger import Logger
@@ -49,21 +49,27 @@ async def update_cover() -> bool:
 
 async def update_alias() -> bool:
     try:
-        url = "https://download.xraybot.site/maimai/alias.json"
-        data = await get_url(url, 200, fmt="json")
+        data = await get_url("https://www.yuzuchan.moe/api/maimaidx/maimaidxalias", 200, fmt="json")
+        if data:
+            alias_data = []
+            for song in data["content"]:
+                fmt_data = {
+                    "song_id": song["SongID"],
+                    "name": song["Name"],
+                    "alias": [a for a in song["Alias"] if a != song["Name"]]
+                }
+                alias_data.append(fmt_data)
 
-        with open(mai_alias_path, "wb") as file:
-            file.write(json.dumps(data, option=json.OPT_INDENT_2))
+            with open(mai_alias_path, "wb") as file:
+                file.write(json.dumps(alias_data, option=json.OPT_INDENT_2))
+        return True
     except Exception:
         Logger.error(traceback.format_exc())
         return False
-    return True
 
 
-async def get_info(music: Music, *details) -> MessageChain:
-    info = [
-        Plain(f"{music.id} - {music.title}{" (DX)" if music["type"] == "DX" else ""}")
-    ]
+async def get_info(music: Music, details) -> MessageChain:
+    info = MessageChain(Plain(f"{music.id} - {music.title}{" (DX)" if music["type"] == "DX" else ""}"))
     cover_path = os.path.join(mai_cover_path, f"{music.id}.png")
     if os.path.exists(cover_path):
         info.append(Image(cover_path))
@@ -72,31 +78,38 @@ async def get_info(music: Music, *details) -> MessageChain:
         if os.path.exists(cover_path):
             info.append(Image(cover_path))
     if details:
-        info.extend(details)
+        if not isinstance(details, MessageChain):
+            details = MessageChain(details)
+        info += details
+
     return info
 
 
 async def get_alias(msg: Bot.MessageSession, sid: str) -> list:
     if not os.path.exists(mai_alias_path):
         await msg.finish(
-            msg.locale.t("maimai.message.alias.file_not_found", prefix=msg.prefixes[0])
+            I18NContext("maimai.message.alias.file_not_found", prefix=msg.prefixes[0])
         )
     with open(mai_alias_path, "r", encoding="utf-8") as file:
         data = json.loads(file.read())
 
     result = []
-    if sid in data:
-        result = data[sid]  # 此处的列表是歌曲别名列表
-        result = sorted(result)
+    for song in data:
+        if str(song["song_id"]) == sid:
+            result = sorted(song["alias"])  # 此处的列表是歌曲别名列表
+            break
+
     return result
 
 
 async def search_by_alias(input_: str) -> list:
     result = []
     convinput = LanguageConverter.from_language(zh_cn).convert(input_)
+
     res = (await total_list.get()).filter(title=input_)
     for s in res:
         result.append(s["id"])
+
     if isint(input_):
         music = (await total_list.get()).by_id(input_)
         if music:
@@ -108,10 +121,10 @@ async def search_by_alias(input_: str) -> list:
     with open(mai_alias_path, "r", encoding="utf-8") as file:
         data = json.loads(file.read())
 
-    for sid, aliases in data.items():
-        aliases = [alias.lower() for alias in aliases]
-        if input_ in aliases or convinput in aliases:
-            result.append(sid)  # 此处的列表是歌曲 ID 列表
+    for song in data:
+        aliases = [alias.lower() for alias in song["alias"]]
+        if input_.lower() in aliases or convinput.lower() in aliases:
+            result.append(str(song["song_id"]))  # 此处的列表是歌曲 ID 列表
 
     return list(set(result))
 
@@ -140,21 +153,21 @@ async def get_record(
     except Exception as e:
         if str(e).startswith("400"):
             if "qq" in payload:
-                await msg.finish(msg.locale.t("maimai.message.user_unbound.qq"))
+                await msg.finish(I18NContext("maimai.message.user_unbound.qq"))
             else:
-                await msg.finish(msg.locale.t("maimai.message.user_not_found"))
+                await msg.finish(I18NContext("maimai.message.user_not_found"))
         elif str(e).startswith("403"):
             if "qq" in payload:
-                await msg.finish(msg.locale.t("maimai.message.forbidden.eula"))
+                await msg.finish(I18NContext("maimai.message.forbidden.eula"))
             else:
-                await msg.finish(msg.locale.t("maimai.message.forbidden"))
+                await msg.finish(I18NContext("maimai.message.forbidden"))
         else:
             Logger.error(traceback.format_exc())
         if use_cache and os.path.exists(cache_dir):
             try:
                 with open(cache_dir, "r", encoding="utf-8") as f:
                     data = json.loads(f.read())
-                await msg.send_message(msg.locale.t("maimai.message.use_cache"))
+                await msg.send_message(I18NContext("maimai.message.use_cache"))
                 return data
             except Exception:
                 raise e
@@ -209,7 +222,7 @@ async def get_song_record(
                 try:
                     with open(cache_dir, "r", encoding="utf-8") as f:
                         data = json.loads(f.read())
-                    await msg.send_message(msg.locale.t("maimai.message.use_cache"))
+                    await msg.send_message(I18NContext("maimai.message.use_cache"))
                     return data
                 except Exception:
                     raise e
@@ -242,27 +255,27 @@ async def get_total_record(
                 f.write(json.dumps(data))
         if not utage:
             data = {
-                "verlist": [d for d in data["verlist"] if d.get("id", 0) < 100000]
+                "verlist": [d for d in data["verlist"] if int(d.get("id", 0)) < 100000]
             }  # 过滤宴谱
         return data
     except Exception as e:
         if str(e).startswith("400"):
             if "qq" in payload:
-                await msg.finish(msg.locale.t("maimai.message.user_unbound.qq"))
+                await msg.finish(I18NContext("maimai.message.user_unbound.qq"))
             else:
-                await msg.finish(msg.locale.t("maimai.message.user_not_found"))
+                await msg.finish(I18NContext("maimai.message.user_not_found"))
         elif str(e).startswith("403"):
             if "qq" in payload:
-                await msg.finish(msg.locale.t("maimai.message.forbidden.eula"))
+                await msg.finish(I18NContext("maimai.message.forbidden.eula"))
             else:
-                await msg.finish(msg.locale.t("maimai.message.forbidden"))
+                await msg.finish(I18NContext("maimai.message.forbidden"))
         else:
             Logger.error(traceback.format_exc())
         if use_cache and os.path.exists(cache_dir):
             try:
                 with open(cache_dir, "r", encoding="utf-8") as f:
                     data = json.loads(f.read())
-                await msg.send_message(msg.locale.t("maimai.message.use_cache"))
+                await msg.send_message(I18NContext("maimai.message.use_cache"))
                 if not utage:
                     data = {
                         "verlist": [
@@ -295,7 +308,7 @@ async def get_plate(
             fmt="json",
         )
         data = {
-            "verlist": [d for d in data["verlist"] if d.get("id", 0) < 100000]
+            "verlist": [d for d in data["verlist"] if int(d.get("id", 0)) < 100000]
         }  # 过滤宴谱
         if use_cache and data:
             with open(cache_dir, "wb") as f:
@@ -304,21 +317,21 @@ async def get_plate(
     except Exception as e:
         if str(e).startswith("400"):
             if "qq" in payload:
-                await msg.finish(msg.locale.t("maimai.message.user_unbound.qq"))
+                await msg.finish(I18NContext("maimai.message.user_unbound.qq"))
             else:
-                await msg.finish(msg.locale.t("maimai.message.user_not_found"))
+                await msg.finish(I18NContext("maimai.message.user_not_found"))
         elif str(e).startswith("403"):
             if "qq" in payload:
-                await msg.finish(msg.locale.t("maimai.message.forbidden.eula"))
+                await msg.finish(I18NContext("maimai.message.forbidden.eula"))
             else:
-                await msg.finish(msg.locale.t("maimai.message.forbidden"))
+                await msg.finish(I18NContext("maimai.message.forbidden"))
         else:
             Logger.error(traceback.format_exc())
         if use_cache and os.path.exists(cache_dir):
             try:
                 with open(cache_dir, "r", encoding="utf-8") as f:
                     data = json.loads(f.read())
-                await msg.send_message(msg.locale.t("maimai.message.use_cache"))
+                await msg.send_message(I18NContext("maimai.message.use_cache"))
                 return data
             except Exception:
                 raise e
