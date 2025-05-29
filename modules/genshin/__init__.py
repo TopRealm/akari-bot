@@ -14,7 +14,7 @@ password = Config('hoyolab_password')
 cookies = genshin_py.Client.login_with_password('{username}', '{password}')
 client = genshin_py.Client(cookies, lang="zh-cn")
 
-@genshin_module.handle('uid <number> {[I18N:genshin.help.uid]}')
+@genshin_module.handle('uid <number> {{I18N:genshin.help.uid}}')
 async def _(msg: Bot.MessageSession):
     data = await client.get_genshin_user(msg.parsed_msg['<number>'])
     player_level = {data.player.level}

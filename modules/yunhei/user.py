@@ -38,7 +38,7 @@ async def get_qqname(msg: Bot.MessageSession, qqnum: str):
 async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
     detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
-        await msg.finish('{[I18N:yunhei.message.needbotadmin]}')
+        await msg.finish('{{I18N:yunhei.message.needbotadmin}}')
     else:
         admins = load_admins()
         registration = str(msg.target.sender_id).split('|')[1]
