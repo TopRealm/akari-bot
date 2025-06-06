@@ -4,7 +4,6 @@ import os
 import platform
 import re
 import sys
-import traceback
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, UTC
@@ -30,7 +29,7 @@ sys.path.append(os.getcwd())
 
 from bots.web.info import *  # noqa: E402
 from bots.web.message import MessageSession  # noqa: E402
-from bots.web.utils import find_available_port, generate_webui_config  # noqa: E402
+from bots.web.utils import find_available_port, generate_webui_config, get_local_ip  # noqa: E402
 from core.bot_init import init_async  # noqa: E402
 from core.builtins import PrivateAssets, Temp  # noqa: E402
 from core.config import Config  # noqa: E402
@@ -54,20 +53,17 @@ PrivateAssets.set(os.path.join(assets_path, "private", "web"))
 
 default_locale = Config("default_locale", cfg_type=str)
 enable_https = Config("enable_https", default=False, table_name="bot_web")
+protocol = "https" if enable_https else "http"
 
 WEB_HOST = Config("web_host", "127.0.0.1", table_name="bot_web")
-WEB_PORT = Config("web_port", 8081, table_name="bot_web")
+WEB_PORT = Config("web_port", 6485, table_name="bot_web")
 
 ALLOW_ORIGINS = Config("allow_origins", default=[], secret=True, table_name="bot_web")
 JWT_SECRET = Config("jwt_secret", cfg_type=str, secret=True, table_name="bot_web")
 LOGIN_MAX_ATTEMPTS = Config("login_max_attempts", default=5, table_name="bot_web")
 PASSWORD_PATH = os.path.join(PrivateAssets.path, ".password")
 LOGIN_BLOCK_DURATION = 3600
-MAX_LOG_HISTORY = 1000
-
-web_port = find_available_port(WEB_PORT, host=WEB_HOST)
-protocol = "https" if enable_https else "http"
-ALLOW_ORIGINS.append(f"{protocol}://{WEB_HOST}:{web_port}")
+MAX_LOG_HISTORY = 1024
 
 
 @asynccontextmanager
@@ -78,7 +74,25 @@ async def lifespan(app: FastAPI):
     await JobQueue.secret_append_ip()
     await JobQueue.web_render_status()
     if os.path.exists(webui_path):
-        Logger.info(f"Visit AkariBot WebUI: {protocol}://{WEB_HOST}:{web_port}/webui")
+        if WEB_HOST == "0.0.0.0":
+            local_ip = get_local_ip()
+            network_line = f"Network: {protocol}://{local_ip}:{web_port}/webui\n" if local_ip else ""
+            message = (
+                f"\n---\n"
+                f"Visit AkariBot WebUI:\n"
+                f"Local:   {protocol}://127.0.0.1:{web_port}/webui\n"
+                f"{network_line}"
+                f"---\n"
+            )
+        else:
+            message = (
+                f"\n---\n"
+                f"Visit AkariBot WebUI:\n"
+                f"{protocol}://{WEB_HOST}:{web_port}/webui\n"
+                f"---\n"
+            )
+
+        Logger.info(message)
     yield
     await cleanup_sessions()
     sys.exit(0)
@@ -224,14 +238,14 @@ async def auth(request: Request, response: Response):
             httponly=True,
             secure=enable_https,
             samesite="strict",
-            expires=datetime.now(UTC) + timedelta(hours=24)
+            expires=datetime.now(UTC) + (timedelta(days=365) if remember else timedelta(hours=24))
         )
-        return {"message": "Success", "no_password": True}
+        return {"message": "Success", "no_password": False}
 
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -277,7 +291,7 @@ async def change_password(request: Request, response: Response):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -307,7 +321,7 @@ async def clear_password(request: Request, response: Response):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -366,7 +380,7 @@ async def get_analytics(request: Request, days: int = Query(1)):
         return {"count": count, "change_rate": change_rate, "data": data}
 
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -386,7 +400,7 @@ async def get_config_list(request: Request):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Not found")
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -409,7 +423,7 @@ async def get_config_file(request: Request, cfg_filename: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Not found")
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -436,7 +450,7 @@ async def edit_config_file(request: Request, cfg_filename: str):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -476,7 +490,7 @@ async def get_target_list(
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -492,7 +506,7 @@ async def get_target_info(request: Request, target_id: str):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -549,7 +563,7 @@ async def edit_target_info(request: Request, target_id: str):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -566,7 +580,7 @@ async def delete_target_info(request: Request, target_id: str):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -607,7 +621,7 @@ async def get_sender_list(request: Request,
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -623,7 +637,7 @@ async def get_sender_info(request: Request, sender_id: str):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -674,7 +688,7 @@ async def edit_sender_info(request: Request, sender_id: str):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -691,7 +705,7 @@ async def delete_sender_info(request: Request, sender_id: str):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -710,7 +724,7 @@ async def get_modules_list(request: Request):
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -729,7 +743,7 @@ async def get_modules_info(request: Request, locale: str = Query(default_locale)
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -750,7 +764,7 @@ async def get_module_info(request: Request, module: str, locale: str = Query(def
     except HTTPException as e:
         raise e
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
 
 
@@ -780,7 +794,7 @@ async def websocket_chat(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         await websocket.close()
     finally:
         if "web_chat_websocket" in Temp.data:
@@ -852,7 +866,7 @@ async def websocket_logs(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception:
-        Logger.error(traceback.format_exc())
+        Logger.exception()
         await websocket.close()
 
 
@@ -934,6 +948,6 @@ if Config("enable", True, table_name="bot_web"):
         Logger.warning("HTTPS is disabled. HTTP mode is insecure and should only be used in trusted environments.")
 
     if os.path.exists(webui_path):
-        generate_webui_config(web_port, WEB_HOST, enable_https, default_locale)
+        generate_webui_config(enable_https, default_locale)
 
     uvicorn.run(app, host=WEB_HOST, port=web_port, log_level="info")
