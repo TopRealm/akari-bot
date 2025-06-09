@@ -95,7 +95,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 severe_summary = []
                 detectnum = 0
                 light = moderate = severe = 0
-                member_sub_arrays = [group_members[i:i + 50] for i in range(0, len(group_members), 50)]
+                member_sub_arrays = [group_members[i:i + (len(group_members)//4)] for i in range(0, len(group_members), (len(group_members)//4))]
                 tasks = []
                 for arr in member_sub_arrays:
                     tasks.append(check_yunhei_api(arr))
