@@ -99,10 +99,13 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 severe_summary = []
                 detectnum = 0
                 light = moderate = severe = 0
-                member_sub_arrays = [group_members[i:i + (len(group_members)//4)] for i in range(0, len(group_members), (len(group_members)//4))]
                 tasks = []
-                for arr in member_sub_arrays:
-                    tasks.append(_check_yunhei_api(arr))
+                if (l := len(group_members)) <= 50:
+                    tasks.append(_check_yunhei_api(group_members))
+                else:
+                    member_sub_arrays = [group_members[i:i + (l//4)] for i in range(0, l, (l//4))]
+                    for arr in member_sub_arrays:
+                        tasks.append(_check_yunhei_api(arr))
                 done, pending = await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)
                 for task in done:
                     for user_info in task.result():
