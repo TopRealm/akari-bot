@@ -3,10 +3,10 @@ import os
 
 import orjson as json
 
-from core.builtins import Bot
-from core.utils.http import get_url, post_url
+from core.builtins import Bot, I18NContext
 from core.config import Config
-
+from core.utils.cooldown import CoolDown
+from core.utils.http import get_url, post_url
 
 api_key = Config('yunhei_api_key', cfg_type=str, secret=True)
 botnum = Config('qq_account', cfg_type=(str, int), table_name='bot_aiocqhttp')
@@ -85,12 +85,16 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
         if registration in admins:
             # 执行“群内大清理”的情况
             if qqnum == "all":
+                qc = CoolDown("yunhei", msg, 43200)
+                if (c := qc.check()) != 0:
+                    await msg.finish(I18NContext("message.cooldown", time=int(c)))
                 # 获取群员列表
                 group_data = await msg.call_api("get_group_member_list", group_id=int(str(msg.target.target_id).split('|')[-1]))
                 group_members = []
                 for i in group_data:
                     group_members.append(i['user_id'])
                 await msg.send_message("正在检查群内所有人员……")
+                qc.reset()
                 # 检测所有的成员
                 severe_summary = []
                 detectnum = 0
@@ -98,7 +102,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 member_sub_arrays = [group_members[i:i + (len(group_members)//4)] for i in range(0, len(group_members), (len(group_members)//4))]
                 tasks = []
                 for arr in member_sub_arrays:
-                    tasks.append(check_yunhei_api(arr))
+                    tasks.append(_check_yunhei_api(arr))
                 done, pending = await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)
                 for task in done:
                     for user_info in task.result():
@@ -145,13 +149,6 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
         else:
             await msg.finish('错误：您没有使用该命令的权限。')
 
-async def check_yunhei_api(members: list) :
-    result = []
-    for i in members:
-        r = await get_url(
-            f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
-        result.append(json.loads(r)['data'])
-    return result
 
 async def admin_add(msg: Bot.MessageSession, qqnum, name=None):
     detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
@@ -194,3 +191,12 @@ async def admin_list(msg: Bot.MessageSession):
         for i in admins:
             result.append(f"{admins[i]}（{i}）")
         await msg.finish('\n'.join(result))
+
+
+async def _check_yunhei_api(members: list) :
+    result = []
+    for i in members:
+        r = await get_url(
+            f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
+        result.append(json.loads(r)['data'])
+    return result
