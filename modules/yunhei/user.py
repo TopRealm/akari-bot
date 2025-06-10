@@ -96,19 +96,18 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                 await msg.send_message("正在检查群内所有人员……")
                 qc.reset()
                 # 检测所有的成员
-                severe_summary = []
-                detectnum = 0
-                light = moderate = severe = 0
-                tasks = []
                 if (l := len(group_members)) <= 50:
-                    tasks.append(asyncio.create_task(_check_yunhei_api(group_members)))
+                    results = await _check_yunhei_api(group_members)
                 else:
-                    member_sub_arrays = [group_members[i:i + (l//4)] for i in range(0, l, (l//4))]
-                    for arr in member_sub_arrays:
-                        tasks.append(asyncio.create_task(_check_yunhei_api(arr)))
-                done, pending = await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)
-                for task in done:
-                    for user_info in task.result():
+                    chunk_size = (l + 3) // 4
+                    member_sub_arrays = [group_members[i:i + chunk_size] for i in range(0, l, chunk_size)]
+                    tasks = [asyncio.create_task(_check_yunhei_api(arr)) for arr in member_sub_arrays]
+                    results = await asyncio.gather(*tasks)
+
+                severe_summary = []
+                detectnum = light = moderate = severe = 0
+                for task_result in results:
+                    for user_info in task_result:
                         if user_info != []:
                             detectnum += 1
                             if user_info['level'] == "轻微":
@@ -197,12 +196,9 @@ async def admin_list(msg: Bot.MessageSession):
 
 
 async def _check_yunhei_api(members: list):
-    tasks = [
-        get_url(
-            f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}"
-        )
-        for i in members
-    ]
-    responses = await asyncio.gather(*tasks)
-    result = [json.loads(r)['data'] for r in responses]
-    return result
+    tasks = [asyncio.create_task(get_url(
+        f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}"
+    )) for i in members]
+
+    results = await asyncio.gather(*tasks)
+    return [json.loads(r)['data'] for r in results]
