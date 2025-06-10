@@ -249,8 +249,8 @@ async def admin_list(msg: Bot.MessageSession):
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
-        list = load_admins()
+        admins = load_admins()
         result = ["拥有有兽云黑BOT运行权限的管理员列表（按添加顺序排列）："]
-        for i in list:
+        for i in admins:
             result.append(f"{list[i]}（{i}）")
         await msg.finish('\n'.join(result))
