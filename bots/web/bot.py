@@ -102,6 +102,7 @@ ph = PasswordHasher()
 
 login_failed_attempts = defaultdict(list)
 last_file_line_count = {}
+last_file_size = {}
 logs_history = []
 
 
@@ -828,21 +829,22 @@ async def websocket_logs(websocket: WebSocket):
                                     new_lines.append(line.rstrip())
                             current_line_count = i + 1
 
-                    last_file_line_count[log_file] = current_line_count
+                    if os.path.getsize(log_file) < last_file_size.get(log_file, 0):
+                        last_file_line_count[log_file] = 0
+                    else:
+                        last_file_line_count[log_file] = current_line_count
+                    last_file_size[log_file] = os.path.getsize(log_file)
 
                     if new_lines:
                         processed_lines = []
                         for line in new_lines:
                             if _log_line_valid(line):
                                 logs_history.append(line)
-                            else:
-                                if logs_history and isinstance(
-                                        logs_history[-1], str) and _log_line_valid(logs_history[-1]):
+                            elif logs_history:
+                                if isinstance(logs_history[-1], str) and _log_line_valid(logs_history[-1]):
                                     logs_history.append([logs_history.pop(), line])
-                                elif logs_history and isinstance(logs_history[-1], list):
+                                elif isinstance(logs_history[-1], list):
                                     logs_history[-1].append(line)
-                                else:
-                                    logs_history.append(line)
                             processed_lines.append(line)
 
                         new_lines_total.extend(processed_lines)
@@ -858,7 +860,8 @@ async def websocket_logs(websocket: WebSocket):
                 if len(logs_history) > prev_logs_len:
                     logs_history_diff = logs_history[prev_logs_len:]
                     expanded_logs = ["\n".join(item) if isinstance(item, list) else item for item in logs_history_diff]
-                await websocket.send_text("\n".join(expanded_logs))
+                if expanded_logs:
+                    await websocket.send_text("\n".join(expanded_logs))
                 prev_logs_len = len(logs_history)
 
                 while len(logs_history) > MAX_LOG_HISTORY:
