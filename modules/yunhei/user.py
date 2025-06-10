@@ -1,11 +1,12 @@
+import asyncio
 import os
 
 import orjson as json
 
-from core.builtins import Bot
-from core.utils.http import get_url, post_url
+from core.builtins import Bot, I18NContext
 from core.config import Config
-
+from core.utils.cooldown import CoolDown
+from core.utils.http import get_url, post_url
 
 api_key = Config('yunhei_api_key', cfg_type=str, secret=True)
 botnum = Config('qq_account', cfg_type=(str, int), table_name='bot_aiocqhttp')
@@ -84,40 +85,52 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
         if registration in admins:
             # 执行“群内大清理”的情况
             if qqnum == "all":
+                qc = CoolDown("yunhei", msg, 43200)
+                if (c := qc.check()) != 0:
+                    await msg.finish(I18NContext("message.cooldown", time=int(c)))
                 # 获取群员列表
                 group_data = await msg.call_api("get_group_member_list", group_id=int(str(msg.target.target_id).split('|')[-1]))
                 group_members = []
                 for i in group_data:
                     group_members.append(i['user_id'])
                 await msg.send_message("正在检查群内所有人员……")
+                qc.reset()
                 # 检测所有的成员
                 severe_summary = []
                 detectnum = 0
                 light = moderate = severe = 0
-                for i in group_members:
-                    r = await get_url(
-                        f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
-                    user_info = json.loads(r)['data']
-                    # 查到账号
-                    if user_info != []:
-                        detectnum += 1
-                        if user_info['level'] == "轻微":
-                            light += 1
-                        if user_info['level'] == "中等":
-                            moderate += 1
-                        # 严重的特殊反应
-                        if user_info['level'] == "严重":
-                            try:
-                                await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[-1], user_id=int(i), reject_add_request=True)
-                            except Exception as e:
-                                await msg.finish(f"踢出用户失败：{e}")
-                            name = await get_qqname(msg, i)
-                            severe_summary.append(
-                                f"{name}（{i}）\n违规原因：{
+                tasks = []
+                if (l := len(group_members)) <= 50:
+                    tasks.append(_check_yunhei_api(group_members))
+                else:
+                    member_sub_arrays = [group_members[i:i + (l//4)] for i in range(0, l, (l//4))]
+                    for arr in member_sub_arrays:
+                        tasks.append(_check_yunhei_api(arr))
+                done, pending = await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)
+                for task in done:
+                    for user_info in task.result():
+                        if user_info != []:
+                            detectnum += 1
+                            if user_info['level'] == "轻微":
+                                light += 1
+                            if user_info['level'] == "中等":
+                                moderate += 1
+                            # 严重的特殊反应
+                            if user_info['level'] == "严重":
+                                account = user_info['account_name']
+                                try:
+                                    await msg.call_api("set_group_kick",
+                                                       group_id=str(msg.target.target_id).split('|')[-1],
+                                                       user_id=int(account), reject_add_request=True)
+                                except Exception as e:
+                                    await msg.finish(f"踢出用户失败：{e}")
+                                name = await get_qqname(msg, account)
+                                severe_summary.append(
+                                    f"{name}（{account}）\n违规原因：{
                                     user_info['describe']}\n登记人：{
                                     user_info['registration']}\n上黑时间：{
                                     user_info['add_time']}\n")
-                            severe += 1
+                                severe += 1
                 if detectnum == 0:
                     report = "未检查出任何位于黑名单内的成员。"
                 else:
@@ -176,8 +189,17 @@ async def admin_list(msg: Bot.MessageSession):
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
-        list = load_admins()
+        admins = load_admins()
         result = ["拥有有兽云黑BOT运行权限的管理员列表（按添加顺序排列）："]
-        for i in list:
-            result.append(f"{list[i]}（{i}）")
+        for i in admins:
+            result.append(f"{admins[i]}（{i}）")
         await msg.finish('\n'.join(result))
+
+
+async def _check_yunhei_api(members: list) :
+    result = []
+    for i in members:
+        r = await get_url(
+            f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
+        result.append(json.loads(r)['data'])
+    return result
