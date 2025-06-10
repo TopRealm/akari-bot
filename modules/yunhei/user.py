@@ -196,10 +196,13 @@ async def admin_list(msg: Bot.MessageSession):
         await msg.finish('\n'.join(result))
 
 
-async def _check_yunhei_api(members: list) :
-    result = []
-    for i in members:
-        r = await get_url(
-            f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}")
-        result.append(json.loads(r)['data'])
+async def _check_yunhei_api(members: list):
+    tasks = [
+        get_url(
+            f"https://yunhei.youshou.wiki/get_platform_users?api_key={api_key}&mode=1&search_type=1&account_type=1&account={i}"
+        )
+        for i in members
+    ]
+    responses = await asyncio.gather(*tasks)
+    result = [json.loads(r)['data'] for r in responses]
     return result
