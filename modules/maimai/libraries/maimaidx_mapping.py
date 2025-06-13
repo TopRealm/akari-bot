@@ -166,6 +166,7 @@ goal_list = [
     "FC+",
     "AP",
     "AP+",
+    "SYNC",
     "FS",
     "FS+",
     "FDX",
@@ -374,7 +375,7 @@ grade_mapping = {
 def mai_plate_song_expect(version):
     match version:
         case "真":
-            song_expect = ["70", "146"]
+            song_expect = ["44", "70", "146"]
         case "超":
             song_expect = ["185", "189", "190"]
         case "檄":
@@ -395,6 +396,7 @@ def mai_plate_song_expect(version):
             song_expect = ["792"]
         case "覇" | "舞":
             song_expect = [
+                "44",
                 "146",
                 "185",
                 "189",

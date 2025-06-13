@@ -81,7 +81,7 @@ class DrawPlateList:
             case "祭" | "祝":
                 color = (184, 123, 191)
             case "双" | "宴":
-                color = (255, 172, 62)
+                color = (255, 186, 95)
             case "鏡":
                 color = (221, 255, 241)
             case _:
