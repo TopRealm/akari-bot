@@ -18,14 +18,16 @@ def get_diff(diff: str) -> int:
     diff = diff.lower()
     diff_list_lower = [label.lower() for label in diff_list]
 
-    if diff in diff_list_zhs:
+    if diff in diff_list_lower:
+        level = diff_list_lower.index(diff)
+    elif diff in diff_list_abbr:
+        level = diff_list_abbr.index(diff)
+    elif diff in diff_list_zh:
+        level = diff_list_zh.index(diff)
+    elif diff in diff_list_zhs:
         level = diff_list_zhs.index(diff)
     elif diff in diff_list_zht:
         level = diff_list_zht.index(diff)
-    elif diff in diff_list_abbr:
-        level = diff_list_abbr.index(diff)
-    elif diff in diff_list_lower:
-        level = diff_list_lower.index(diff)
     else:
         level = 0
     return level
@@ -472,59 +474,59 @@ async def get_plate_process(msg: Bot.MessageSession, payload: dict, plate: str, 
     if goal in ["将", "者"]:
         for song in verlist:  # 将剩余歌曲ID和难度加入目标列表
             if song["level_index"] == 0 and song["achievements"] < (100.0 if goal == "将" else 80.0):
-                song_remain_basic.append((song["id"], song["level_index"]))
+                song_remain_basic.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 1 and song["achievements"] < (100.0 if goal == "将" else 80.0):
-                song_remain_advanced.append((song["id"], song["level_index"]))
+                song_remain_advanced.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 2 and song["achievements"] < (100.0 if goal == "将" else 80.0):
-                song_remain_expert.append((song["id"], song["level_index"]))
+                song_remain_expert.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 3 and song["achievements"] < (100.0 if goal == "将" else 80.0):
-                song_remain_master.append((song["id"], song["level_index"]))
-            if version in ["舞", "覇"] and song["id"] in mai_plate_remaster_required and \
+                song_remain_master.append((str(song["id"]), song["level_index"]))
+            if version in ["舞", "覇"] and str(song["id"]) in mai_plate_remaster_required and \
                song["level_index"] == 4 and song["achievements"] < (100.0 if goal == "将" else 80.0):
-                song_remain_remaster.append((song["id"], song["level_index"]))  # 霸者和舞牌需要Re:MASTER难度
-            song_played.append((song["id"], song["level_index"]))
+                song_remain_remaster.append((str(song["id"]), song["level_index"]))  # 霸者和舞牌需要Re:MASTER难度
+            song_played.append((str(song["id"]), song["level_index"]))
     elif goal == "極":
         for song in verlist:  # 将剩余歌曲ID和难度加入目标列表
             if song["level_index"] == 0 and not song["fc"]:
-                song_remain_basic.append((song["id"], song["level_index"]))
+                song_remain_basic.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 1 and not song["fc"]:
-                song_remain_advanced.append((song["id"], song["level_index"]))
+                song_remain_advanced.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 2 and not song["fc"]:
-                song_remain_expert.append((song["id"], song["level_index"]))
+                song_remain_expert.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 3 and not song["fc"]:
-                song_remain_master.append((song["id"], song["level_index"]))
-            if version == "舞" and song["id"] in mai_plate_remaster_required and \
+                song_remain_master.append((str(song["id"]), song["level_index"]))
+            if version == "舞" and str(song["id"]) in mai_plate_remaster_required and \
                     song["level_index"] == 4 and not song["fc"]:
-                song_remain_remaster.append((song["id"], song["level_index"]))
-            song_played.append((song["id"], song["level_index"]))
+                song_remain_remaster.append((str(song["id"]), song["level_index"]))
+            song_played.append((str(song["id"]), song["level_index"]))
     elif goal == "舞舞":
         for song in verlist:  # 将剩余歌曲ID和难度加入目标列表
             if song["level_index"] == 0 and song["fs"] not in ["fsd", "fsdp"]:
-                song_remain_basic.append((song["id"], song["level_index"]))
+                song_remain_basic.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 1 and song["fs"] not in ["fsd", "fsdp"]:
-                song_remain_advanced.append((song["id"], song["level_index"]))
+                song_remain_advanced.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 2 and song["fs"] not in ["fsd", "fsdp"]:
-                song_remain_expert.append((song["id"], song["level_index"]))
+                song_remain_expert.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 3 and song["fs"] not in ["fsd", "fsdp"]:
-                song_remain_master.append((song["id"], song["level_index"]))
-            if version == "舞" and song["id"] in mai_plate_remaster_required and \
+                song_remain_master.append((str(song["id"]), song["level_index"]))
+            if version == "舞" and str(song["id"]) in mai_plate_remaster_required and \
                song["level_index"] == 4 and song["fs"] not in ["fsd", "fsdp"]:
-                song_remain_remaster.append((song["id"], song["level_index"]))
-            song_played.append((song["id"], song["level_index"]))
+                song_remain_remaster.append((str(song["id"]), song["level_index"]))
+            song_played.append((str(song["id"]), song["level_index"]))
     elif goal == "神":
         for song in verlist:  # 将剩余歌曲ID和难度加入目标列表
             if song["level_index"] == 0 and song["fc"] not in ["ap", "app"]:
-                song_remain_basic.append((song["id"], song["level_index"]))
+                song_remain_basic.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 1 and song["fc"] not in ["ap", "app"]:
-                song_remain_advanced.append((song["id"], song["level_index"]))
+                song_remain_advanced.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 2 and song["fc"] not in ["ap", "app"]:
-                song_remain_expert.append((song["id"], song["level_index"]))
+                song_remain_expert.append((str(song["id"]), song["level_index"]))
             if song["level_index"] == 3 and song["fc"] not in ["ap", "app"]:
-                song_remain_master.append((song["id"], song["level_index"]))
-            if version == "舞" and song["id"] in mai_plate_remaster_required and \
+                song_remain_master.append((str(song["id"]), song["level_index"]))
+            if version == "舞" and str(song["id"]) in mai_plate_remaster_required and \
                song["level_index"] == 4 and song["fc"] not in ["ap", "app"]:
-                song_remain_remaster.append((song["id"], song["level_index"]))
-            song_played.append((song["id"], song["level_index"]))
+                song_remain_remaster.append((str(song["id"]), song["level_index"]))
+            song_played.append((str(song["id"]), song["level_index"]))
     else:
         await msg.finish(I18NContext("maimai.message.plate.plate_not_found"))
 
@@ -561,7 +563,7 @@ async def get_plate_process(msg: Bot.MessageSession, payload: dict, plate: str, 
     song_remain_expert = [music for music in song_remain_expert if music[0] not in song_expect]
     song_remain_master = [music for music in song_remain_master if music[0] not in song_expect]
     song_remain_remaster = [music for music in song_remain_remaster if music[0] not in song_expect]
-    song_remain: list[list] = song_remain_basic + song_remain_advanced + \
+    song_remain = song_remain_basic + song_remain_advanced + \
         song_remain_expert + song_remain_master + song_remain_remaster
     song_remain_difficult = [music for music in song_remain_difficult if music[0] not in song_expect]
 
@@ -666,7 +668,7 @@ async def get_grade_info(msg: Bot.MessageSession, grade: str):
         charts = grade_data["charts"]
 
         for chart in charts:
-            music = (await total_list.get()).by_id(str(chart["song_id"]))
+            music = (await total_list.get()).by_id(str(chart["id"]))
             level = chart["level_index"]
             chart_info.append(
                 f"{
