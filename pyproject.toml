@@ -110,7 +110,7 @@ pycodestyle = "2.13.0"
 
 [[tool.poetry.source]]
 name = "mirrors"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple/"
 priority = "primary"
 
 [build-system]
