@@ -288,14 +288,14 @@ reference = "mirrors"
 
 [[package]]
 name = "akari-bot-webrender"
-version = "0.3.2"
+version = "0.3.4"
 description = ""
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "akari_bot_webrender-0.3.2-py3-none-any.whl", hash = "sha256:bc6815102fe9e189f34869f842bd2be022b80d4e6cda71e72018e11334aafd78"},
-    {file = "akari_bot_webrender-0.3.2.tar.gz", hash = "sha256:596c72a0927d9cfd07c2296489e9c87c5e7ddc9b3c12d78b938073ad0ef96823"},
+    {file = "akari_bot_webrender-0.3.4-py3-none-any.whl", hash = "sha256:b8e7673e6bae10c0690e05f6ecab104d2ea2f3280d3a4639da6d0f8cbaaaf1e7"},
+    {file = "akari_bot_webrender-0.3.4.tar.gz", hash = "sha256:f919107dbb2d9197b3802839a6b399b6e86ee3091c0db188febf4d4c2210d652"},
 ]
 
 [package.dependencies]
@@ -305,6 +305,7 @@ jinja2 = ">=3.1.6,<4.0.0"
 loguru = ">=0.7.3,<0.8.0"
 orjson = ">=3.10.18,<4.0.0"
 playwright = ">=1.52.0,<2.0.0"
+pre-commit = ">=4.2.0,<5.0.0"
 pydantic = ">=2.11.7,<3.0.0"
 tf-playwright-stealth = ">=1.2.0,<2.0.0"
 uvicorn = ">=0.34.3,<0.35.0"
@@ -6646,4 +6647,4 @@ reference = "mirrors"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12.0"
-content-hash = "fb9765d6f9986b776f614e127045c45d7dac0d16b7b14e4d22688c3248659a57"
+content-hash = "c9bc4ea900ad8e12bd0c52ababb1111bf16b44a0c9a166104b26c7fcce474a76"
