@@ -2,7 +2,7 @@ import os
 import asyncio
 import orjson as json
 
-from core.builtins import Bot
+from core.builtins.bot import Bot
 from core.utils.http import get_url, post_url
 from core.config import Config
 

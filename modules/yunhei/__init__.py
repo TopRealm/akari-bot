@@ -1,5 +1,5 @@
 from core.component import module
-from core.builtins import Bot
+from core.builtins.bot import Bot
 from modules.yunhei import user
 
 
