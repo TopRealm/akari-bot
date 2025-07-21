@@ -20,7 +20,7 @@ all = ["ujson"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -40,7 +40,7 @@ caio = ">=0.9.0,<0.10.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -57,7 +57,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -93,7 +93,7 @@ test = ["aresponses (>=2.1.6,<2.2.0)", "pycryptodomex (>=3.19.0,<3.20.0)", "pyte
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -110,7 +110,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -218,7 +218,7 @@ speedups = ["Brotli ; platform_python_implementation == \"CPython\"", "aiodns (>
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -239,7 +239,7 @@ python-socks = {version = ">=2.4.3,<3.0.0", extras = ["asyncio"]}
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -259,7 +259,7 @@ frozenlist = ">=1.1.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -283,7 +283,7 @@ docs = ["sphinx (==8.1.3)", "sphinx-mdinclude (==0.6.1)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -312,7 +312,7 @@ uvicorn = ">=0.34.3,<0.35.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -329,7 +329,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -356,7 +356,7 @@ trio = ["trio (>=0.26.1)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -389,7 +389,7 @@ zookeeper = ["kazoo"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -409,7 +409,7 @@ argon2-cffi-bindings = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -452,7 +452,7 @@ tests = ["pytest"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -475,7 +475,7 @@ test = ["black (>=20.8b1)", "flake8 (>=3.8.3)", "mypy (>=0.812)", "mypy-extensio
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -546,7 +546,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -571,7 +571,7 @@ tests-mypy = ["mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" a
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -591,7 +591,7 @@ pycodestyle = ">=2.12.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -608,7 +608,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -636,7 +636,7 @@ lxml = ["lxml"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -653,7 +653,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -704,7 +704,7 @@ virtualenv = ["virtualenv (>=20.0.35)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -731,7 +731,7 @@ redis = ["redis (>=2.10.5)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -765,7 +765,7 @@ develop = ["aiomisc-pytest", "coveralls", "pylama[toml]", "pytest", "pytest-cov"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -795,7 +795,7 @@ ujson = ["ujson (>=5.7.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -812,7 +812,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -897,7 +897,7 @@ pycparser = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -914,7 +914,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1021,7 +1021,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1042,7 +1042,7 @@ rapidfuzz = ">=3.0.0,<4.0.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1062,7 +1062,7 @@ colorama = {version = "*", markers = "platform_system == \"Windows\""}
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1080,7 +1080,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1162,7 +1162,7 @@ test-no-images = ["pytest", "pytest-cov", "pytest-rerunfailures", "pytest-xdist"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1247,7 +1247,7 @@ toml = ["tomli ; python_full_version <= \"3.11.0a6\""]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1264,7 +1264,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1329,7 +1329,7 @@ test-randomorder = ["pytest-randomly"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1350,7 +1350,7 @@ tests = ["pytest", "pytest-cov", "pytest-xdist"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1373,7 +1373,7 @@ dev = ["PyTest", "PyTest-Cov", "bump2version (<1)", "setuptools ; python_version
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1390,7 +1390,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1407,7 +1407,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1433,7 +1433,7 @@ wmi = ["wmi (>=1.5.1)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1505,7 +1505,7 @@ pgp = ["gpg"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1525,7 +1525,7 @@ dev = ["coverage", "pytest (>=7.4.4)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1541,7 +1541,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1567,7 +1567,7 @@ standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.5)", "htt
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1587,7 +1587,7 @@ devel = ["colorama", "json-spec", "jsonschema", "pylint", "pytest", "pytest-benc
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1607,7 +1607,7 @@ sgmllib3k = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1627,7 +1627,7 @@ pycryptodome = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1644,7 +1644,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1666,7 +1666,7 @@ typing = ["typing-extensions (>=4.12.2) ; python_version < \"3.11\""]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1683,7 +1683,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1703,7 +1703,7 @@ packaging = ">=20"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1732,7 +1732,7 @@ dotenv = ["python-dotenv"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1755,7 +1755,7 @@ test = ["pytest", "pytest-cov", "pytest-mpl", "pytest-subtests"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1778,7 +1778,7 @@ test = ["pytest", "pytest-cov", "pytest-mpl", "pytest-subtests"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1849,7 +1849,7 @@ woff = ["brotli (>=1.0.1) ; platform_python_implementation == \"CPython\"", "bro
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1968,7 +1968,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -1985,7 +1985,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2019,7 +2019,7 @@ websockets = ["websockets (>=10,<12)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2036,7 +2036,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2109,7 +2109,7 @@ test = ["objgraph", "psutil"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2126,7 +2126,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2147,7 +2147,7 @@ hyperframe = ">=6.1,<7"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2164,7 +2164,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2191,7 +2191,7 @@ trio = ["trio (>=0.22.0,<1.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2252,7 +2252,7 @@ test = ["Cython (>=0.29.24)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2282,7 +2282,7 @@ zstd = ["zstandard (>=0.18.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2311,7 +2311,7 @@ uvloop = ["uvloop (>=0.18) ; platform_system != \"Windows\""]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2328,7 +2328,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2348,7 +2348,7 @@ license = ["ukkonen"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2368,7 +2368,7 @@ all = ["flake8 (>=7.1.1)", "mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2384,7 +2384,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2401,7 +2401,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2418,7 +2418,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2435,7 +2435,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2452,7 +2452,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2472,7 +2472,7 @@ kanjize = ">=1.6.1"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2496,7 +2496,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-ena
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2517,7 +2517,7 @@ test = ["portend", "pytest (>=6,!=8.1.*)", "pytest-checkdocs (>=2.4)", "pytest-c
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2545,7 +2545,7 @@ type = ["pytest-mypy"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2567,7 +2567,7 @@ trio = ["trio"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2590,7 +2590,7 @@ i18n = ["Babel (>=2.7)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2681,7 +2681,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2708,7 +2708,7 @@ format-nongpl = ["fqdn", "idna", "isoduration", "jsonpointer (>1.13)", "rfc3339-
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2728,7 +2728,7 @@ referencing = ">=0.31.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2745,7 +2745,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2779,7 +2779,7 @@ type = ["pygobject-stubs", "pytest-mypy", "shtab", "types-pywin32"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2801,7 +2801,7 @@ pycryptodomex = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2896,7 +2896,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2950,7 +2950,7 @@ valkey = ["valkey (>=6)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2974,7 +2974,7 @@ dev = ["Sphinx (==8.1.3) ; python_version >= \"3.11\"", "build (==1.2.2) ; pytho
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -2994,7 +2994,7 @@ dev = ["black (>=22.8.0,<22.9.0)", "flake8 (>=5.0.4,<5.1.0)", "isort (>=5.11.5,<
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3070,7 +3070,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3133,7 +3133,7 @@ dev = ["meson-python (>=0.13.1,<0.17.0)", "pybind11 (>=2.13.2,!=2.13.3)", "setup
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3165,7 +3165,7 @@ e2e = ["atomicwrites (>=1.4,<2.0)", "cachetools (>=5.3,<6.0)", "peewee (>=3.14,<
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3186,7 +3186,7 @@ dnspython = ">=2.4.2"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3203,7 +3203,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3282,7 +3282,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3401,7 +3401,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3418,7 +3418,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3488,7 +3488,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3520,7 +3520,7 @@ voice-helpers = ["numpy (>=2.0.2)", "sounddevice (>=0.5.1)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3607,7 +3607,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3624,7 +3624,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3712,7 +3712,7 @@ xml = ["lxml (>=4.9.2)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3738,7 +3738,7 @@ install = ["zstandard (>=0.21.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3868,7 +3868,7 @@ xmp = ["defusedxml"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3903,7 +3903,7 @@ xarray = ["xarray"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3923,7 +3923,7 @@ testing = ["pytest", "pytest-cov", "wheel"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3945,7 +3945,7 @@ type = ["mypy (>=1.14.1)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -3972,7 +3972,7 @@ pyee = ">=13,<14"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4012,7 +4012,7 @@ xattr = {version = ">=1.0.0,<2.0.0", markers = "sys_platform == \"darwin\""}
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4029,7 +4029,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4050,7 +4050,7 @@ poetry-core = ">=1.7.0,<3.0.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4074,7 +4074,7 @@ virtualenv = ">=20.10.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4091,7 +4091,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4111,7 +4111,7 @@ wcwidth = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4224,7 +4224,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4253,7 +4253,7 @@ test = ["pytest", "pytest-xdist", "setuptools"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4295,7 +4295,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4312,7 +4312,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4329,7 +4329,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4385,7 +4385,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4441,7 +4441,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4468,7 +4468,7 @@ timezone = ["tzdata ; python_version >= \"3.9\" and platform_system == \"Windows
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4585,7 +4585,7 @@ typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4608,7 +4608,7 @@ dev = ["black", "build", "flake8", "flake8-black", "isort", "jupyter-console", "
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4634,7 +4634,7 @@ tests = ["coverage[toml] (==5.0.4)", "pytest (>=6.0.0,<7.0.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4654,7 +4654,7 @@ diagrams = ["jinja2", "railroad-diagrams"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4671,7 +4671,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4688,7 +4688,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4708,7 +4708,7 @@ six = ">=1.5"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4728,7 +4728,7 @@ cli = ["click (>=5.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4751,7 +4751,7 @@ trio = ["trio (>=0.24)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4771,7 +4771,7 @@ python-dateutil = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4788,7 +4788,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4822,7 +4822,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4840,7 +4840,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4908,7 +4908,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4930,7 +4930,7 @@ PyYAML = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -4961,7 +4961,7 @@ dotenv = ["python-dotenv"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5073,7 +5073,7 @@ all = ["numpy"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5117,7 +5117,7 @@ Pillow = "*"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5139,7 +5139,7 @@ typing-extensions = {version = ">=4.4.0", markers = "python_version < \"3.13\""}
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5166,7 +5166,7 @@ use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5186,7 +5186,7 @@ requests = ">=2.0.1,<3.0.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5315,7 +5315,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5337,7 +5337,7 @@ jeepney = ">=0.6"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5363,7 +5363,7 @@ type = ["importlib_metadata (>=7.0.2) ; python_version < \"3.10\"", "jaraco.deve
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5379,7 +5379,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5396,7 +5396,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5413,7 +5413,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5430,7 +5430,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5453,7 +5453,7 @@ redis = ["redis (>=3.4.1,<4.0.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5470,7 +5470,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5487,7 +5487,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5510,7 +5510,7 @@ full = ["httpx (>=0.27.0,<0.29.0)", "itsdangerous", "jinja2", "python-multipart 
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5530,7 +5530,7 @@ widechars = ["wcwidth"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5551,7 +5551,7 @@ test = ["pytest", "tornado (>=4.5)", "typeguard"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5572,7 +5572,7 @@ playwright = ">=1,<2"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5589,7 +5589,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5621,7 +5621,7 @@ psycopg = ["psycopg[binary,pool] (>=3.0.12,<4.0.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5648,7 +5648,7 @@ telegram = ["requests"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5665,7 +5665,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5682,7 +5682,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5702,7 +5702,7 @@ typing-extensions = ">=4.12.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5719,7 +5719,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5742,7 +5742,7 @@ devenv = ["check-manifest", "pytest (>=4.3)", "pytest-cov", "pytest-mock (>=3.3)
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5759,7 +5759,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5782,7 +5782,7 @@ zstd = ["zstandard (>=0.18.0)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5813,7 +5813,7 @@ standard = ["colorama (>=0.4) ; sys_platform == \"win32\"", "httptools (>=0.6.3)
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5871,7 +5871,7 @@ test = ["aiohttp (>=3.10.5)", "flake8 (>=5.0,<6.0)", "mypy (>=0.800)", "psutil",
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5897,7 +5897,7 @@ test = ["covdefaults (>=2.3)", "coverage (>=7.2.7)", "coverage-enable-subprocess
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -5986,7 +5986,7 @@ anyio = ">=3.0.0"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6003,7 +6003,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6020,7 +6020,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6104,7 +6104,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6127,7 +6127,7 @@ watchdog = ["watchdog (>=2.3)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6148,7 +6148,7 @@ dev = ["black (>=19.3b0) ; python_version >= \"3.6\"", "pytest (>=4.6.2)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6176,7 +6176,7 @@ test = ["keyring", "pmxbot", "pytest (>=6,!=8.1.*)", "pytest-checkdocs (>=2.4)",
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6270,7 +6270,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6290,7 +6290,7 @@ h11 = ">=0.9.0,<1"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6382,7 +6382,7 @@ test = ["pytest"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6399,7 +6399,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6523,7 +6523,7 @@ propcache = ">=0.2.1"
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [[package]]
@@ -6641,10 +6641,10 @@ cffi = ["cffi (>=1.11)"]
 
 [package.source]
 type = "legacy"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
 reference = "mirrors"
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12.0"
-content-hash = "c9bc4ea900ad8e12bd0c52ababb1111bf16b44a0c9a166104b26c7fcce474a76"
+content-hash = "a389679684ddbfb627f39e60a76735e4ce3cb78ad5c33a27af6a6d459e4b2cd4"
