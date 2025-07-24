@@ -26,7 +26,7 @@ def save_admins(admins):
 
 async def get_qqname(msg: Bot.MessageSession, qqnum: str):
     try:
-        name = await msg.call_api("get_stranger_info", user_id=int(qqnum))
+        name = await msg.qq_call_api("get_stranger_info", user_id=int(qqnum))
         return name['nickname']
     except Exception:
         return "QQ用户"
@@ -34,7 +34,7 @@ async def get_qqname(msg: Bot.MessageSession, qqnum: str):
 # 添加部分
 
 async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
+    detect = await msg.qq_call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('{{I18N:yunhei.message.needbotadmin}}')
     else:
@@ -62,7 +62,7 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
                                 measure = '永久' + measure
                             elif level in ["严重", "重度", "3"]:
                                 try:
-                                    await msg.call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[-1], user_id=int(qqnum), reject_add_request=True)
+                                    await msg.qq_call_api("set_group_kick", group_id=str(msg.target.target_id).split('|')[-1], user_id=int(qqnum), reject_add_request=True)
                                     measure = '踢出群并永久' + measure
                                 except Exception as e:
                                     await msg.finish(f"踢出用户失败：{e}")
@@ -84,7 +84,7 @@ async def add(msg: Bot.MessageSession, qqnum: str, desc: str, level: str):
             await msg.finish('错误：您没有使用该命令的权限。')
 
 async def check(msg: Bot.MessageSession, qqnum: str = "all"):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
+    detect = await msg.qq_call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
@@ -95,7 +95,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
             if qqnum == "all":
                 group_id = int(str(msg.target.target_id).split('|')[-1])
                 # 获取群员列表并构建昵称映射
-                group_data = await msg.call_api("get_group_member_list", group_id=group_id)
+                group_data = await msg.qq_call_api("get_group_member_list", group_id=group_id)
                 member_info_map = {}
                 for m in group_data:
                     user_id = m['user_id']
@@ -122,7 +122,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
                         # 严重用户处理
                         if level == "严重":
                             try:
-                                await msg.call_api(
+                                await msg.qq_call_api(
                                     "set_group_kick", 
                                     group_id=group_id,
                                     user_id=member_id,
@@ -216,7 +216,7 @@ async def check(msg: Bot.MessageSession, qqnum: str = "all"):
             await msg.finish('错误：您没有使用该命令的权限。')
 
 async def admin_add(msg: Bot.MessageSession, qqnum, name=None):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
+    detect = await msg.qq_call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
 
@@ -231,7 +231,7 @@ async def admin_add(msg: Bot.MessageSession, qqnum, name=None):
         await msg.finish(f'已添加管理员：{name}（{qqnum}）')
 
 async def admin_del(msg: Bot.MessageSession, qqnum):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
+    detect = await msg.qq_call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
 
@@ -245,7 +245,7 @@ async def admin_del(msg: Bot.MessageSession, qqnum):
         await msg.finish(f'已删除管理员：{name}（{qqnum}）')
 
 async def admin_list(msg: Bot.MessageSession):
-    detect = await msg.call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
+    detect = await msg.qq_call_api("get_group_member_info", group_id=int(str(msg.target.target_id).split('|')[-1]), user_id=botnum)
     if detect['role'] == 'member':
         await msg.finish('错误：本功能需要机器人为群组管理员，请联系群主设置。')
     else:
