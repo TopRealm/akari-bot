@@ -27,7 +27,6 @@ qq_typing_emoji = str(Config("qq_typing_emoji", 181, (str, int), table_name="bot
 qq_limited_emoji = str(Config("qq_limited_emoji", 10060, (str, int), table_name="bot_aiocqhttp"))
 qq_initiative_msg_cooldown = Config("qq_initiative_msg_cooldown", 10, int, table_name="bot_aiocqhttp")
 last_send_typing_time = {}
-qq_account = Temp.data.get("qq_account")
 
 
 async def fake_forward_msg(session_info: SessionInfo, nodelist):
@@ -389,6 +388,7 @@ class AIOCQContextManager(ContextManager):
         # 这里可以添加错误处理逻辑
 
         if session_info.target_from == target_group_prefix:
+            qq_account = Temp.data.get("qq_account")
             obi = await get_onebot_implementation()
             if obi in ["llonebot", "napcat"]:
                 await aiocqhttp_bot.call_action("set_msg_emoji_like",
@@ -421,6 +421,16 @@ class AIOCQContextManager(ContextManager):
             await aiocqhttp_bot.call_action("set_group_leave", group_id=session_info.get_common_target_id())
         else:
             raise ValueError("Session is not a group session")
+
+    @classmethod
+    async def call_api(cls, api_name: str, **kwargs) -> Optional[dict]:
+        """
+        调用 OneBot API。
+        :param api_name: API 名称
+        :param kwargs: API 参数
+        :return: API 返回结果
+        """
+        return await aiocqhttp_bot.call_action(api_name, **kwargs)
 
 
 _tasks_high_priority = []
