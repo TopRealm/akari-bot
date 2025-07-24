@@ -252,5 +252,5 @@ async def admin_list(msg: Bot.MessageSession):
         admins = load_admins()
         result = ["拥有有兽云黑BOT运行权限的管理员列表（按添加顺序排列）："]
         for i in admins:
-            result.append(f"{list[i]}（{i}）")
+            result.append(f"{admins[i]}（{i}）")
         await msg.finish('\n'.join(result))
