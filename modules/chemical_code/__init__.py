@@ -271,7 +271,6 @@ async def chemical_code(
     drawer.SetDrawOptions(options)
     drawer.DrawMolecule(mol)
     drawer.FinishDrawing()
-
     image_bytes = drawer.GetDrawingText()
     image = PImage.open(io.BytesIO(image_bytes))
     newpath = f"{random_cache_path()}.png"
