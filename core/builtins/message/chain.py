@@ -171,7 +171,7 @@ class MessageChain:
             support_embed = session_info.support_embed
         for x in self.values:
             if isinstance(x, EmbedElement) and not support_embed:
-                value += x.to_message_chain()
+                value += x.to_message_chain(session_info)
             elif isinstance(x, PlainElement):
                 if session_info:
                     if x.text != "":
@@ -215,18 +215,21 @@ class MessageChain:
 
         return value
 
-    def to_str(self, safe=True) -> str:
+    def to_str(self, text_only=True, element_filter: tuple[MessageElement] = None) -> str:
         """
         将消息链转换为字符串。
 
-        :param safe: 是否安全模式，默认开启，开启后图片等路径将不会转换。
+        :param text_only: 是否仅转换文本元素为字符串，默认为True。
+        :param element_filter: 可选的元素过滤器，指定哪些元素类型需要被转换为字符串。
         """
         result = ""
         for x in self.values:
+            if element_filter and not isinstance(x, element_filter):
+                continue
             if isinstance(x, PlainElement):
                 result += x.text
             else:
-                if safe:
+                if not text_only:
                     result += str(x)
 
         return result
