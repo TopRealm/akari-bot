@@ -21,19 +21,6 @@ rickroll_msg = "<Replace me with str value>" # テキスト フィルタ リン�
 enable_rickroll = true # テキスト フィルタの検出に失敗したときに、ユーザーをリックロールするかどうか。
 enable_joke = true # ジョークを有効にするかどうか。有効にすると、サーバー時間の 4 月 1 日（エイプリルフール）に実行されます。
 shuffle_rate = 0.1 # ジョークのランダム発生率。範囲は 0 から 1 です。
-<<<<<<< HEAD
-report_targets = [] # レポート セッション リスト。ここに入力された値がレポートセッションとして認識されます。（例：コマンド エラーを実行すると、ボットは対応するセッションにエラー情報を送信します）
-tos_warning_counts = 5 # 利用規約違反に対する警告の最大数。
-enable_analytics = false # 組み込みの統計機能を有効にするかどうか。
-bug_report_url = "https://s.wd-ljt.com/botreportbug" # エラーを報告するための URL。
-tos_temp_ban_time = 300 # 利用規約違反時の一時的な禁止時間。
-timezone_offset = "+8" # ボットのデフォルトのタイムゾーン オフセット。
-no_confirm = false # 送信者がメッセージを確認せずにコマンドを実行するかどうか。
-confirm_command = ["是", "对", "對", "yes", "Yes", "YES", "y", "Y"] # コマンド確認用のキーワード。ここに入力された値はコマンド確認用の単語として認識されます。
-command_prefix = ["~", "～"] # コマンドのプレフィックス。ここに入力された値はコマンドのプレフィックスとして認識されます。
-allow_request_private_ip = false # ボットがローカル プライベート IP アドレスをリクエストすることを許可するかどうか。（情報漏洩を防ぐため）
-=======
->>>>>>> origin/conventional-msg
 use_font_mirror = false # ウェブページのをレンダリングするときにフォントのミラーリングを使用するかどうか。
 enable_get_petal = false # ペタルの取得を許可するかどうか。
 petal_gained_limit = 0 # 1日に獲得できるペタルの最大数。
