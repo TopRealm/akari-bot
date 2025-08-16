@@ -318,7 +318,7 @@ class ImageElement(BaseElement):
         if mime:
             mime_type, _ = mimetypes.guess_type(file)
             if not mime_type:
-                mime_type = 'application/octet-stream'
+                mime_type = "application/octet-stream"
             self.cached_b64 = f"data:{mime_type};base64,{img_b64}"
             return self.cached_b64
         return img_b64
@@ -377,6 +377,9 @@ class VoiceElement(BaseElement):
     def kecode(self):
         return f"[KE:voice,path={self.path}]"
 
+    def __str__(self):
+        return f"Voice(path={self.path})"
+
 
 @define
 class MentionElement(BaseElement):
@@ -428,7 +431,7 @@ class EmbedFieldElement(BaseElement):
         return deepcopy(cls(name=name, value=value, inline=inline))
 
     def __str__(self):
-        return f'[EmbedField:{self.name},{self.value},{self.inline}]'
+        return f"[EmbedField:{self.name},{self.value},{self.inline}]"
 
 
 @define

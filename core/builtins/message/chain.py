@@ -22,8 +22,9 @@ from core.builtins.message.elements import (
     VoiceElement,
     MentionElement,
 )
-from core.constants import Secret
+from core.constants import Secret, default_locale
 from core.exports import add_export
+from core.i18n import Locale
 
 if TYPE_CHECKING:
     from core.builtins.session.info import SessionInfo
@@ -188,10 +189,14 @@ class MessageChain:
                 else:
                     value.append(PlainElement.assign(x))
             elif isinstance(x, I18NContextElement):
+                if not session_info:
+                    locale = Locale(default_locale)
+                else:
+                    locale = session_info.locale
                 for k, v in x.kwargs.items():
                     if isinstance(v, str):
-                        x.kwargs[k] = session_info.locale.t_str(v)
-                t_value = session_info.locale.t(x.key, **x.kwargs)
+                        x.kwargs[k] = locale.t_str(v)
+                t_value = locale.t(x.key, **x.kwargs)
                 if isinstance(t_value, str):
                     value.append(PlainElement.assign(t_value, disable_joke=x.disable_joke))
                 else:
@@ -322,12 +327,12 @@ class I18NMessageChain:
     @classmethod
     def assign(cls, values: dict[str, MessageChain]) -> I18NMessageChain:
         """
-        :param values: 多语言消息链元素，键为语言代码，值为消息链。必须包含 'default' 键用于回滚处理。
+        :param values: 多语言消息链元素，键为语言代码，值为消息链。必须包含 `default` 键用于回滚处理。
         """
         if not isinstance(values, dict):
             raise TypeError("I18NMessageChain values must be a dictionary.")
-        if 'default' not in values:
-            raise ValueError("I18NMessageChain values must have 'default' key.")
+        if "default" not in values:
+            raise ValueError("I18NMessageChain values must have \"default\" key.")
         return cls(values=deepcopy(values))
 
 
@@ -342,7 +347,7 @@ class PlatformMessageChain:
     @classmethod
     def assign(cls, values: dict[str, Union[MessageChain, I18NMessageChain]]) -> PlatformMessageChain:
         """
-        :param values: 平台消息链元素，键为平台名称，值为消息链。必须包含 'default' 键用于回滚处理。
+        :param values: 平台消息链元素，键为平台名称，值为消息链。必须包含 `default` 键用于回滚处理。
         """
         if not isinstance(values, dict):
             raise TypeError("PlatformMessageChain values must be a dictionary.")
@@ -357,7 +362,7 @@ class MessageNodes:
     """
 
     values: List[MessageChain]
-    name: str = ''
+    name: str = ""
 
     @classmethod
     def assign(cls, values: List[MessageChain], name: Optional[str] = None):
@@ -366,7 +371,7 @@ class MessageNodes:
         :param name: 节点名称，默认为随机生成的字符串。
         """
         if not name:
-            name = "Message" + random.sample('abcdefghijklmnopqrstuvwxyz', 5)
+            name = "Message " + "".join(random.sample("abcdefghijklmnopqrstuvwxyz", 5))
 
         return cls(values=values, name=name)
 
