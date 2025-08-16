@@ -101,7 +101,7 @@ def parse_game_record(rd_path):
                         "full_combo": (full_combo & digit) == digit,
                     }
                     n = name.lower()
-                    if n in rating:
+                    if n in rating and name_ in rating[n]:
                         record[name_]["base_rks"] = float(rating[n][name_])
                         if record[name_]["score"] == 1000000:
                             record[name_]["rks"] = float(rating[n][name_])

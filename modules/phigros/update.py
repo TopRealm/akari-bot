@@ -61,10 +61,10 @@ async def update_assets():
             song_name = remove_punctuations(update[song]["song"])
             if song_name not in illustration_list:
                 try:
-                    download_file = await download(update[song]["illustration_big"])
+                    download_file = await download(update[song]["illustration_big"], f"{song_name}.png")
                     if download_file:
                         shutil.move(
-                            download_file, os.path.join(illustration_path, song_name)
+                            download_file, os.path.join(illustration_path, f"{song_name}.png")
                         )
                 except Exception:
                     pass
