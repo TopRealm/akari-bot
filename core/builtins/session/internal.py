@@ -226,7 +226,10 @@ class MessageSession:
         else:
             message_chain = MessageChain.assign(I18NContext("core.message.confirm"))
         if append_instruction:
-            message_chain.append(I18NContext("message.wait.prompt.confirm"))
+            if self.session_info.client_name == "QQ":
+                message_chain.append(I18NContext("message.wait.confirm.prompt.qq"))
+            else:
+                message_chain.append(I18NContext("message.wait.confirm.prompt"))
         send = await self.send_message(message_chain, quote)
         await asyncio.sleep(0.1)
         flag = asyncio.Event()
@@ -270,7 +273,7 @@ class MessageSession:
         if message_chain:
             message_chain = get_message_chain(self.session_info, message_chain)
             if append_instruction:
-                message_chain.append(I18NContext("message.wait.prompt.next_message"))
+                message_chain.append(I18NContext("message.wait.next_message.prompt"))
             send = await self.send_message(message_chain, quote)
         await asyncio.sleep(0.1)
         flag = asyncio.Event()

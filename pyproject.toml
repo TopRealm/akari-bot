@@ -18,9 +18,9 @@ package-mode = false
 [tool.poetry.dependencies]
 python = "^3.12.0"
 
-# akari-bot-services
-akari-bot-webrender = "0.4.2"
-akari-bot-webui = "0.1.5"
+# akari-bot-service
+akari-bot-webrender = "0.4.4"
+akari-bot-webui = "0.1.7"
 
 # lib
 coverage = "^7.9.1"
@@ -90,7 +90,7 @@ google-play-scraper = "^1.2.2"
 gql = "^4.0.0"
 langconv = {git = "https://github.com/Teahouse-Studios/langconv.py.git"}
 mcstatus = "^12.0.0"
-numpy = "<2.3.3"
+numpy = "<2.3.4"
 openai = "^1.6.1"
 pandas = "^2.2.0"
 pint = "^0.24.0"
