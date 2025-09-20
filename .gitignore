@@ -33,3 +33,4 @@ version*
 matrix_store
 output/*
 modules/yunhei/admins.json
+.bot.lock

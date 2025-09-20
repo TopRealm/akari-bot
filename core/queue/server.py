@@ -35,12 +35,28 @@ class JobQueueServer(JobQueueBase):
         return value
 
     @classmethod
-    async def client_delete_message(cls, session_info: SessionInfo, message_id: Union[str, list]):
+    async def client_delete_message(cls, session_info: SessionInfo, message_id: Union[str, list[str]]):
         if isinstance(message_id, str):
             message_id = [message_id]
         value = await cls.add_job(session_info.client_name, "delete_message",
                                   {"session_info": converter.unstructure(session_info),
                                    "message_id": message_id}, wait=False)
+        return value
+
+    @classmethod
+    async def client_add_reaction(cls, session_info: SessionInfo, message_id: Union[str, list[str]], emoji: str):
+        value = await cls.add_job(session_info.client_name, "add_reaction",
+                                  {"session_info": converter.unstructure(session_info),
+                                   "message_id": message_id,
+                                   "emoji": emoji})
+        return value
+
+    @classmethod
+    async def client_remove_reaction(cls, session_info: SessionInfo, message_id: Union[str, list[str]], emoji: str):
+        value = await cls.add_job(session_info.client_name, "add_reaction",
+                                  {"session_info": converter.unstructure(session_info),
+                                   "message_id": message_id,
+                                   "emoji": emoji})
         return value
 
     @classmethod
@@ -147,23 +163,42 @@ async def get_web_render_status(tsk: JobQueuesTable, args: dict):
 
 @JobQueueServer.action("get_modules_list")
 async def get_module_list(tsk: JobQueuesTable, args: dict):
-    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list().items()}
+    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list().items(use_cache=False)}
     modules = {k: v for k, v in modules.items() if v.get("load", True) and not v.get("base", False)}
     module_list = []
     for module in modules.values():
-        module_list.append(module["bind_prefix"])
+        module_list.append(module["module_name"])
     return {"modules_list": module_list}
 
 
 @JobQueueServer.action("get_modules_info")
 async def get_modules_info(tsk: JobQueuesTable, args: dict):
-    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list().items()}
-    modules = {k: v for k, v in modules.items() if v.get("load", True) and not v.get("base", False)}
+    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list(use_cache=False).items()}
+    modules = {k: v for k, v in modules.items() if v.get("load", True)}
 
     for module in modules.values():
         if "desc" in module and module.get("desc"):
             module["desc"] = Locale(args["locale"]).t_str(module["desc"])
+
     return {"modules": modules}
 
+
+@JobQueueServer.action("get_module_related")
+async def get_module_related(tsk: JobQueuesTable, args: dict):
+    return {"modules_list": ModulesManager.search_related_module(args["module"], include_self=False)}
+
+
+@JobQueueServer.action("post_module_action")
+async def post_module_action(tsk: JobQueuesTable, args: dict):
+    match args["action"]:
+        case "reload":
+            status, _ = await ModulesManager.reload_module(args["module"])
+        case "load":
+            status = await ModulesManager.load_module(args["module"])
+        case "unload":
+            status = await ModulesManager.unload_module(args["module"])
+        case _:
+            status = False
+    return {"success": status}
 
 add_export(JobQueueServer)

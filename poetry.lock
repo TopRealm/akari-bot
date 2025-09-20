@@ -324,14 +324,14 @@ reference = "mirrors"
 
 [[package]]
 name = "akari-bot-webui"
-version = "0.1.7"
+version = "0.1.9"
 description = ""
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "akari_bot_webui-0.1.7-py3-none-any.whl", hash = "sha256:0c4a020056a5155d2e6f6ce6df29712c41474079f4ea7754742074da17aa156b"},
-    {file = "akari_bot_webui-0.1.7.tar.gz", hash = "sha256:d668a383af65d5e03f491b026877ee03d8ce42f0de3401a3a3f19317eaa69098"},
+    {file = "akari_bot_webui-0.1.9-py3-none-any.whl", hash = "sha256:26be7de988d9a5ef2d034048f50a9a19b8a2a71e017ace8e3352255135b2b208"},
+    {file = "akari_bot_webui-0.1.9.tar.gz", hash = "sha256:d8a89ea3122583a436853af8076dcdad9d6d7556164581692a6ad0bdf1072478"},
 ]
 
 [package.source]
@@ -6663,4 +6663,4 @@ reference = "mirrors"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12.0"
-content-hash = "d4a61b3d110dbb2f7763cca973582db7bb02343b168677165faba585be4d4888"
+content-hash = "4319b032b079f3b11f17c1e56665117fa095664bf8b0c2efa60a8733ff9cb56b"
