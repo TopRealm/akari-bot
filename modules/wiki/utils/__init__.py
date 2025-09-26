@@ -168,8 +168,19 @@ async def _(msg: Bot.MessageSession):
 usr = module("user", developers=["OasisAkari"], recommend_modules="wiki", doc=True)
 
 
+import re
+
 @usr.command("<username> {{I18N:wiki.help.user}}")
 async def _(msg: Bot.MessageSession, username: str):
+    if not username or not username.strip():
+        card = getattr(msg.session_info, "sender_card", None) or ""
+        match = re.match(r"(?i)^user:([^#]+)", card.strip())
+        if match:
+            username = match.group(1).strip()
+        if not username:
+            await msg.finish(I18NContext("wiki.message.user.no_username"))
+            return
+
     target = await WikiTargetInfo.get_by_target_id(msg.session_info.target_id)
     start_wiki = target.api_link
     headers = target.headers
