@@ -1,5 +1,5 @@
 import mimetypes
-import os
+from pathlib import Path
 from typing import Optional, Union, List, Tuple
 
 import nio
@@ -86,7 +86,7 @@ class MatrixContextManager(ContextManager):
             room, event = ctx
         if isinstance(message, MessageNodes):
             message = MessageChain.assign(await msgnode2image(message))
-        for x in message.as_sendable(session_info):
+        for x in message.as_sendable(session_info, parse_message=enable_parse_message):
             async def _send_msg(content):
                 reply_to = None
                 reply_to_user = None
@@ -158,7 +158,8 @@ class MatrixContextManager(ContextManager):
                 # reply_to_user = None
 
             if isinstance(x, PlainElement):
-                x.text = match_atcode(x.text, client_name, "{uid}")
+                if enable_parse_message:
+                    x.text = match_atcode(x.text, client_name, "{uid}")
                 content = {"msgtype": "m.notice", "body": x.text}
                 Logger.info(f"[Bot] -> [{session_info.target_id}]: {x.text}")
                 await _send_msg(content)
@@ -170,8 +171,8 @@ class MatrixContextManager(ContextManager):
                 for xs in split:
                     path = await xs.get()
                     with open(path, "rb") as image:
-                        filename = os.path.basename(path)
-                        filesize = os.path.getsize(path)
+                        filename = Path(path).name
+                        filesize = Path(path).stat().st_size
                         (content_type, content_encoding) = mimetypes.guess_type(path)
                         if not content_type or not content_encoding:
                             content_type = "image"
@@ -215,8 +216,8 @@ class MatrixContextManager(ContextManager):
                         await _send_msg(content)
             elif isinstance(x, VoiceElement):
                 path = x.path
-                filename = os.path.basename(path)
-                filesize = os.path.getsize(path)
+                filename = Path(path).name
+                filesize = Path(path).stat().st_size
                 (content_type, content_encoding) = mimetypes.guess_type(path)
                 if not content_type or not content_encoding:
                     content_type = "audio"

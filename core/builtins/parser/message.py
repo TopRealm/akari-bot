@@ -24,6 +24,7 @@ from core.tos import _abuse_warn_target
 from core.types import Module, Param
 from core.types.module.component_meta import CommandMeta
 from core.utils.message import remove_duplicate_space
+from core.utils.temp import TempCounter
 
 if TYPE_CHECKING:
     from core.builtins.bot import Bot
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
 ignored_sender = Config("ignored_sender", ignored_sender_default)
 
 enable_tos = Config("enable_tos", True)
-enable_analytics = Config("enable_analytics", False)
+enable_analytics = Config("enable_analytics", True)
 report_targets = Config("report_targets", [])
 enable_module_invalid_prompt = Config("enable_module_invalid_prompt", False)
 TOS_TEMPBAN_TIME = Config("tos_temp_ban_time", 300) if Config("tos_temp_ban_time", 300) > 0 else 300
@@ -131,6 +132,7 @@ async def parser(msg: "Bot.MessageSession"):
     finally:
         await msg.end_typing()
         ExecutionLockList.remove(msg)
+        TempCounter.add()
 
 
 def _transform_alias(msg, command: str):
@@ -659,18 +661,29 @@ async def _process_exception(msg: "Bot.MessageSession", e: Exception):
     err_msg = msg.session_info.locale.t_str(str(e))
     err_msg_chain += match_kecode(err_msg)
     await msg.handle_error_signal()
+
+    external = False
     if "timeout" in err_msg.lower().replace(" ", ""):
-        timeout = True
-        err_msg_chain.append(I18NContext("error.message.prompt.timeout"))
+        external = True
     else:
-        timeout = False
+        try:
+            status_code = int(str(e).strip().split("[")[0])
+            expected_msg = f"{status_code}[KE:Image,path=https://http.cat/{status_code}.jpg]"
+            if err_msg == expected_msg and 500 <= status_code < 600:
+                external = True
+        except Exception:
+            pass
+
+    if external:
+        err_msg_chain.append(I18NContext("error.message.prompt.external"))
+    else:
         err_msg_chain.append(I18NContext("error.message.prompt.report"))
 
     if bug_report_url:
         err_msg_chain.append(I18NContext("error.message.prompt.address", url=bug_report_url))
     await msg.send_message(err_msg_chain)
 
-    if not timeout and report_targets:
+    if not external and report_targets:
         for target in report_targets:
             if f := await bot.fetch_target(target):
                 await bot.send_direct_message(f, [I18NContext("error.message.report", command=msg.trigger_msg),

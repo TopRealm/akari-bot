@@ -1,5 +1,4 @@
 import asyncio
-import os
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 from core.builtins.message.chain import *
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
     from core.queue.client import JobQueueClient
     from core.queue.server import JobQueueServer
 
-enable_analytics = Config("enable_analytics", False)
+enable_analytics = Config("enable_analytics", True)
 
 
 class Bot:
@@ -76,7 +75,7 @@ class Bot:
 
     @staticmethod
     async def post_global_message(
-        message: str,
+        message: Chainable,
         session_list: Optional[List[FetchedSessionInfo]] = None,
         **kwargs: Dict[str, Any],
     ):
@@ -186,7 +185,7 @@ class Bot:
 
     @classmethod
     def register_bot(cls, client_name: str = None,
-                     private_assets_path: str = None, ):
+                     private_assets_path: str = None):
         """
         :param client_name: Client name
         :param private_assets_path: Private assets path
@@ -195,7 +194,7 @@ class Bot:
         if private_assets_path:
             PrivateAssets.set(private_assets_path)
         else:
-            PrivateAssets.set(os.path.join(assets_path, "private", client_name))
+            PrivateAssets.set(assets_path / "private" / client_name)
         Info.client_name = client_name
 
     @classmethod

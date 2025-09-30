@@ -5,6 +5,7 @@ from akari_bot_webrender.functions.options import ElementScreenshotOptions, Page
     SectionScreenshotOptions, LegacyScreenshotOptions
 
 from core.config import Config
+from core.constants.path import logs_path
 from core.logger import Logger
 
 
@@ -13,7 +14,10 @@ remote_web_render_url = Config("remote_web_render_url", cfg_type=str, table_name
 web_render_browser = Config("browser_type", "chrome", table_name="webrender")
 browser_executable_path = Config("browser_executable_path", cfg_type=str, table_name="webrender")
 
-web_render = WebRender(debug=False, remote_webrender_url=remote_web_render_url)
+web_render = WebRender(debug=False, 
+                       remote_webrender_url=remote_web_render_url,
+                       export_logs=True,
+                       logs_path=str(logs_path))
 
 
 async def init_web_render():

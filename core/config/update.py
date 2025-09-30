@@ -1,4 +1,3 @@
-import os
 import shutil
 from time import sleep
 
@@ -13,8 +12,8 @@ from core.constants.version import config_version
 from core.i18n import Locale
 from core.utils.message import isint, isfloat
 
-cfg_file_path = os.path.join(config_path, config_filename)
-old_cfg_file_path = os.path.join(config_path, "config.cfg")
+cfg_file_path = config_path / config_filename
+old_cfg_file_path = config_path / "config.cfg"
 
 
 def convert_cfg_to_toml():
@@ -39,14 +38,14 @@ def convert_cfg_to_toml():
 
     with open(cfg_file_path, "w") as f:
         f.write(toml_dumps(config_dict))
-    os.remove(old_cfg_file_path)
+    old_cfg_file_path.unlink()
 
 
 # If the config file does not exist, try to convert the old config file to the new format, or raise an error.
 
 
-if not os.path.exists(cfg_file_path):
-    if os.path.exists(old_cfg_file_path):
+if not cfg_file_path.exists():
+    if old_cfg_file_path.exists():
         convert_cfg_to_toml()
     else:
         raise ConfigFileNotFound(cfg_file_path) from None
@@ -150,7 +149,7 @@ with open(cfg_file_path, "r", encoding="utf-8") as cfg_file:
 if "config_version" not in config:
     old_config = config
     logger.info("Config version not found, regenerating the config file...")
-    shutil.copy(cfg_file_path, cfg_file_path + ".bak")
+    shutil.copy(cfg_file_path, str(cfg_file_path) + ".bak")
     configs = {"config": toml_document()}
     if "cfg" in old_config:
         get_old_locale = old_config["cfg"].get("locale", "zh_cn")
@@ -178,16 +177,19 @@ if "config_version" not in config:
 
     reorganizer.set_table("aiocqhttp")
     reorganizer.add_enable_flag()
-    reorganizer.reorganize_key("qq_access_token", True)
+    reorganizer.reorganize_key("qq_host")
+    reorganizer.reorganize_key("qq_enable_listening_self_message")
+    reorganizer.reorganize_key("qq_disable_temp_session")
     reorganizer.reorganize_key("qq_allow_approve_friend")
     reorganizer.reorganize_key("qq_allow_approve_group_invite")
-    reorganizer.reorganize_key("qq_enable_listening_self_message")
-    reorganizer.reorganize_key("qq_host")
     reorganizer.reorganize_key("qq_limited_emoji")
     reorganizer.reorganize_key("qq_typing_emoji")
+    reorganizer.reorganize_key("qq_initiative_msg_cooldown")
+    reorganizer.reorganize_key("qq_access_token", True)
 
     reorganizer.set_table("aiogram")
     reorganizer.add_enable_flag()
+    reorganizer.reorganize_key("telegram_api_url")
     reorganizer.reorganize_key("telegram_token", True)
 
     reorganizer.set_table("discord")
@@ -202,20 +204,28 @@ if "config_version" not in config:
     reorganizer.add_enable_flag()
     reorganizer.reorganize_key("matrix_homeserver")
     reorganizer.reorganize_key("matrix_user")
-    reorganizer.reorganize_key("matrix_device_id", True)
     reorganizer.reorganize_key("matrix_device_name")
+    reorganizer.reorganize_key("matrix_device_id", True)
     reorganizer.reorganize_key("matrix_token", True)
+    reorganizer.reorganize_key("matrix_megolm_backup_passphrase", True)
 
     reorganizer.set_table("qqbot")
     reorganizer.add_enable_flag()
     reorganizer.reorganize_key("qq_bot_appid")
-    reorganizer.reorganize_key("qq_bot_secret", True)
     reorganizer.reorganize_key("qq_private_bot")
     reorganizer.reorganize_key("qq_bot_enable_send_url")
+    reorganizer.reorganize_key("qq_typing_emoji")
+    reorganizer.reorganize_key("qq_bot_secret", True)
 
     reorganizer.set_table("web")
     reorganizer.add_enable_flag()
+    reorganizer.reorganize_key("enable_https")
+    reorganizer.reorganize_key("web_host")
     reorganizer.reorganize_key("web_port")
+    reorganizer.reorganize_key("login_max_attempt")
+    reorganizer.reorganize_key("heartbeat_attempt")
+    reorganizer.reorganize_key("heartbeat_interval")
+    reorganizer.reorganize_key("heartbeat_timeout")
     reorganizer.reorganize_key("jwt_secret", True)
 
     configs["config"].add("config", toml_document())
@@ -248,7 +258,7 @@ if "config_version" not in config:
         filename = c
         if not c.endswith(".toml"):
             filename += ".toml"
-        with open(os.path.join(config_path, filename), "w", encoding="utf-8") as f:
+        with open(config_path / filename, "w", encoding="utf-8") as f:
             f.write(toml_dumps(configs[c]))
     logger.success("Config file regenerated successfully.")
     sleep(3)
@@ -264,12 +274,12 @@ if config["config_version"] < config_version:
 
         reorganizer = ConfigReorganizer(config, configs, locale, table_prefix="module_")
         reorganizer.set_table("ai")
-        reorganizer.reorganize_key("ai_default_llm")
-        reorganizer.reorganize_key("llm_frequency_penalty")
         reorganizer.reorganize_key("llm_max_tokens")
-        reorganizer.reorganize_key("llm_presence_penalty")
         reorganizer.reorganize_key("llm_temperature")
         reorganizer.reorganize_key("llm_top_p")
+        reorganizer.reorganize_key("llm_frequency_penalty")
+        reorganizer.reorganize_key("llm_presence_penalty")
+        reorganizer.reorganize_key("ai_default_llm")
 
         reorganizer.set_table("coin")
         reorganizer.reorganize_key("coin_limit")
@@ -299,8 +309,8 @@ if config["config_version"] < config_version:
         reorganizer.reorganize_key("curseforge_api_key", True)
 
         reorganizer.set_table("ncmusic")
-        reorganizer.reorganize_key("ncmusic_api", True)
         reorganizer.reorganize_key("ncmusic_enable_card")
+        reorganizer.reorganize_key("ncmusic_api", True)
 
         reorganizer.set_table("osu")
         reorganizer.reorganize_key("osu_api_key", True)
@@ -319,7 +329,7 @@ if config["config_version"] < config_version:
             filename = c
             if not c.endswith(".toml"):
                 filename += ".toml"
-            with open(os.path.join(config_path, filename), "w", encoding="utf-8") as f:
+            with open(config_path / filename, "w", encoding="utf-8") as f:
                 f.write(toml_dumps(configs[c]))
         with open(cfg_file_path, "w", encoding="utf-8") as f:
             f.write(toml_dumps(config))
@@ -334,15 +344,16 @@ if config["config_version"] < config_version:
 
         reorganizer = ConfigReorganizer(config, configs, locale, table_prefix="webrender")
         reorganizer.reorganize_key("enable_web_render")
+        reorganizer.reorganize_key("browser_type")
+        reorganizer.reorganize_key("browser_executable_path")
         reorganizer.reorganize_key("remote_web_render_url")
-        reorganizer.reorganize_key("web_render_browser")
 
         config["config_version"] = 2
         for c in configs:
             filename = c
             if not c.endswith(".toml"):
                 filename += ".toml"
-            with open(os.path.join(config_path, filename), "w", encoding="utf-8") as f:
+            with open(config_path / filename, "w", encoding="utf-8") as f:
                 f.write(toml_dumps(configs[c]))
         with open(cfg_file_path, "w", encoding="utf-8") as f:
             f.write(toml_dumps(config))
