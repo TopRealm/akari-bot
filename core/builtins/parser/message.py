@@ -124,8 +124,7 @@ async def parser(msg: "Bot.MessageSession"):
                         if msg.session_info.sender_info.sender_data.get("typing_prompt", True):
                             await msg.start_typing()
                         await _execute_module(new_msg, modules, new_command_first_word, identify_str)
-                        if msg.session_info.sender_info.sender_data.get("typing_prompt", True):
-                            await msg.end_typing()
+                        await msg.end_typing()
                     else:
                         await msg.send_message(I18NContext("parser.module.unloaded", module=new_command_first_word))
                 elif enable_module_invalid_prompt and not confirmed:
@@ -335,8 +334,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                     if msg.session_info.sender_info.sender_data.get("typing_prompt", True):
                         await msg.start_typing()
                     await _execute_module(new_msg, modules, new_command_first_word, identify_str)
-                    if msg.session_info.sender_info.sender_data.get("typing_prompt", True):
-                        await msg.end_typing()
+                    await msg.end_typing()
                 else:
                     await msg.send_message(I18NContext("parser.module.unloaded", module=new_command_first_word))
             elif not confirmed:
@@ -459,7 +457,7 @@ async def _execute_regex(msg: "Bot.MessageSession", modules, identify_str):
                             else:
                                 return await msg.send_message(I18NContext("parser.command.running.prompt"))
 
-                            if rfunc.show_typing and not msg.session_info.sender_info.sender_data.get(
+                            if rfunc.show_typing and msg.session_info.sender_info.sender_data.get(
                                     "typing_prompt", True):
                                 await msg.start_typing()
                                 _typing = True
@@ -645,7 +643,7 @@ async def _execute_module_command(msg: "Bot.MessageSession", module, command_fir
             else:
                 kwargs[func_params[list(func_params.keys())[0]].name] = msg
 
-            if not msg.session_info.target_info.target_data.get("sender_data", True):
+            if msg.session_info.target_info.target_data.get("typing_prompt", True):
                 await msg.start_typing()
             await parsed_msg[0].function(**kwargs)  # 将msg传入下游模块
 
