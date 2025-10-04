@@ -1,29 +1,38 @@
 import re
 import shutil
 from datetime import datetime
+from tabulate import tabulate
 
+from tortoise import Tortoise
 import orjson as json
 
 from core.builtins.bot import Bot
 from core.builtins.converter import converter
-from core.builtins.message.chain import MessageChain, match_kecode
-from core.builtins.message.internal import I18NContext, Plain
+from core.builtins.message.chain import MessageChain, convert_senderid_to_atcode, match_kecode
+from core.builtins.message.internal import I18NContext, Plain, Image
 from core.builtins.parser.message import check_temp_ban, remove_temp_ban
 from core.component import module
 from core.config import Config, CFGManager
 from core.constants.exceptions import NoReportException, TestException
 from core.constants.path import cache_path
+from core.database import fetch_module_db, get_table_names
 from core.database.models import SenderInfo, TargetInfo, JobQueuesTable
 from core.loader import ModulesManager
 from core.logger import Logger
+from core.scheduler import CronTrigger
 from core.server.terminate import restart
 from core.tos import WARNING_COUNTS
 from core.types import Param
 from core.utils.alive import Alive
 from core.utils.bash import run_sys_command
 from core.utils.decrypt import decrypt_string
+from core.utils.image_table import image_table_render, ImageTable
 from core.utils.message import isfloat, isint
 from core.utils.storedata import get_stored_list, update_stored_list
+
+auto_purge_crontab = Config("auto_purge_crontab", "0 0 * * *")
+DBDATA_PER_PAGE = 10
+
 
 su = module("superuser", alias="su", required_superuser=True, base=True, doc=True)
 
@@ -72,6 +81,13 @@ async def _(msg: Bot.MessageSession):
     else:
         cache_path.mkdir(parents=True, exist_ok=True)
         await msg.finish(I18NContext("core.message.purge.empty"))
+
+
+@purge.schedule(CronTrigger.from_crontab(auto_purge_crontab))
+async def _():
+    if cache_path.exists():
+        shutil.rmtree(cache_path)
+    cache_path.mkdir(parents=True, exist_ok=True)
 
 
 set_ = module("set", required_superuser=True, base=True, doc=True)
@@ -140,17 +156,18 @@ async def _(msg: Bot.MessageSession, target: str):
     elif "edit" in msg.parsed_msg:
         k = msg.parsed_msg.get("<k>")
         v = msg.parsed_msg.get("<v>")
-        if re.match(r"\[.*\]|\{.*\}", v):
-            try:
-                v = v.replace("\'", "\"")
-                v = json.loads(v)
-            except json.JSONDecodeError as e:
-                Logger.error(str(e))
-                await msg.finish(I18NContext("message.failed"))
-        elif v.lower() == "true":
-            v = True
-        elif v.lower() == "false":
-            v = False
+        if isinstance(v, str):
+            if re.match(r"\[.*\]|\{.*\}", v):
+                try:
+                    v = v.replace("\'", "\"")
+                    v = json.loads(v)
+                except json.JSONDecodeError as e:
+                    Logger.error(str(e))
+                    await msg.finish(I18NContext("message.failed"))
+            elif v.lower() == "true":
+                v = True
+            elif v.lower() == "false":
+                v = False
         await target_info.edit_target_data(k, v)
         await msg.finish(I18NContext("core.message.set.option.edit.success", k=k, v=v))
     elif "delete" in msg.parsed_msg:
@@ -180,17 +197,18 @@ async def _(msg: Bot.MessageSession, user: str):
     elif "edit" in msg.parsed_msg:
         k = msg.parsed_msg.get("<k>")
         v = msg.parsed_msg.get("<v>")
-        if re.match(r"\[.*\]|\{.*\}", v):
-            try:
-                v = v.replace("\'", "\"")
-                v = json.loads(v)
-            except json.JSONDecodeError as e:
-                Logger.error(str(e))
-                await msg.finish(I18NContext("message.failed"))
-        elif v.lower() == "true":
-            v = True
-        elif v.lower() == "false":
-            v = False
+        if isinstance(v, str):
+            if re.match(r"\[.*\]|\{.*\}", v):
+                try:
+                    v = v.replace("\'", "\"")
+                    v = json.loads(v)
+                except json.JSONDecodeError as e:
+                    Logger.error(str(e))
+                    await msg.finish(I18NContext("message.failed"))
+            elif v.lower() == "true":
+                v = True
+            elif v.lower() == "false":
+                v = False
         await sender_info.edit_sender_data(k, v)
         await msg.finish(I18NContext("core.message.set.option.edit.success", k=k, v=v))
     elif "delete" in msg.parsed_msg:
@@ -481,6 +499,65 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(I18NContext("core.message.update.binary_mode"))
 
 
+db = module("database", alias="db", required_superuser=True, base=True, doc=True)
+
+
+@db.command("list")
+async def _(msg: Bot.MessageSession):
+    models_path = ["core.database.models"] + fetch_module_db()
+    table_lst = sorted(get_table_names(models_path))
+    await msg.finish([I18NContext("core.message.database.list")] + table_lst)
+
+
+@db.command("exec <sql> [-p <page>] [--legacy]")
+async def _(msg: Bot.MessageSession, sql: str):
+    try:
+        conn = Tortoise.get_connection("default")
+        result = await conn.execute_query_dict(sql)
+
+        if "select" in sql.lower():
+            if not result:
+                await msg.finish(I18NContext("core.message.database.no_result"))
+
+            headers = list(result[0].keys())
+            data = [[str(v) for v in r.values()] for r in result]
+
+            total_pages = (len(data) + DBDATA_PER_PAGE - 1) // DBDATA_PER_PAGE
+            get_page = msg.parsed_msg.get("-p", False)
+
+            page = (
+                max(min(int(get_page["<page>"]), total_pages), 1)
+                if get_page and isint(get_page["<page>"])
+                else 1
+            )
+            start_index = (page - 1) * DBDATA_PER_PAGE
+            end_index = page * DBDATA_PER_PAGE
+            page_data = data[start_index:end_index]
+
+            footer = I18NContext(
+                "core.message.database.pages",
+                page=page,
+                total_pages=total_pages,
+                data_count=len(data))
+
+            if not msg.parsed_msg.get("--legacy", False) and msg.session_info.support_image:
+                table = ImageTable(data=page_data, headers=headers, session_info=msg.session_info)
+                imgs = await image_table_render(table)
+            else:
+                imgs = None
+
+            if imgs:
+                img_list = [Image(ii) for ii in imgs]
+                await msg.finish(img_list + [footer])
+            else:
+                table_str = tabulate(page_data, headers=headers, tablefmt="grid")
+                await msg.finish([Plain(table_str), footer])
+
+        await msg.finish(I18NContext("message.success"))
+    except Exception as e:
+        raise NoReportException(str(e))
+
+
 git = module("git", required_superuser=True, base=True, doc=True, load=bool(Bot.Info.version))
 
 
@@ -587,6 +664,7 @@ say = module("say", required_superuser=True, base=True, doc=True)
 @say.command("<display_msg>")
 async def _(msg: Bot.MessageSession, display_msg: str):
     try:
+        display_msg = convert_senderid_to_atcode(display_msg, msg.session_info.sender_from)
         await msg.finish(display_msg, quote=False)
     except Exception as e:
         raise NoReportException(str(e))
@@ -605,10 +683,10 @@ async def _(msg: Bot.MessageSession, args: str = None):
 _eval = module("eval", required_superuser=True, base=True, doc=True, load=Config("enable_eval", False))
 
 
-@_eval.command("<display_msg>")
-async def _(msg: Bot.MessageSession, display_msg: str):
+@_eval.command("<expr>")
+async def _(msg: Bot.MessageSession, expr: str):
     try:
-        await msg.finish(str(eval(display_msg, {"msg": msg, "Bot": Bot})), disable_secret_check=True)  # skipcq
+        await msg.finish(str(eval(expr, {"msg": msg, "Bot": Bot})), disable_secret_check=True)  # skipcq
     except Exception as e:
         raise NoReportException(str(e))
 
@@ -620,7 +698,7 @@ post_ = module("post", required_superuser=True, base=True, doc=True)
 async def _(msg: Bot.MessageSession, target: str, post_msg: str):
     if not target.startswith(f"{msg.session_info.client_name}|"):
         await msg.finish(I18NContext("message.id.invalid.target", target=msg.session_info.target_from))
-    session = await Bot.fetch_target(target)
+    session = await Bot.fetch_target(target, create=True)
     msg_chain = MessageChain.assign([I18NContext("core.message.post.prefix")] + match_kecode(post_msg))
     preview = msg_chain.copy()
     preview.insert(0, I18NContext("core.message.post.confirm", target=target))

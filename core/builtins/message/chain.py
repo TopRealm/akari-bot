@@ -74,9 +74,9 @@ class MessageChain:
                 elements = converter.structure(elements[key], MessageElement)
         if isinstance(elements, (list, tuple)):
             for e in elements:
-                if isinstance(e, str):
+                if isinstance(e, str) and e:
                     values.append(PlainElement.assign(e))
-                if isinstance(e, dict):
+                elif isinstance(e, dict):
                     for key in e:
                         tmp_e = converter.structure(e[key], MessageElement)
                         values.append(tmp_e)
@@ -164,7 +164,7 @@ class MessageChain:
                     if x.text != "":
                         if parse_message:
                             x.text = session_info.locale.t_str(x.text)
-                            element_chain = match_kecode(x.text)
+                            element_chain = match_kecode(x.text, x.disable_joke)
                             for elem in element_chain.values:
                                 elem = MessageChain.assign(elem).as_sendable(session_info, parse_message=False)
                                 if isinstance(elem, PlainElement):
@@ -278,6 +278,9 @@ class MessageChain:
 
     def __iter__(self):
         return iter(self.values)
+
+    def __len__(self):
+        return len(self.values)
 
     def __add__(self, other):
         if isinstance(other, MessageChain):
@@ -547,6 +550,12 @@ def match_atcode(text: str, client: str, pattern: str) -> str:
         return match.group(0)
 
     return re.sub(r"<(?:AT|@):([^\|]+)\|(?:.*?\|)?([^\|>]+)>", _replacer, text)
+
+
+def convert_senderid_to_atcode(text: str, sender_prefix: str) -> str:
+    sender_prefix = sender_prefix.replace("|", "\\|")
+
+    return re.sub(rf"(?<!<AT:)(?<!<@:){sender_prefix}\|\w+", r"<AT:\g<0>>", text).replace("\\", "")
 
 
 add_export(MessageChain)
