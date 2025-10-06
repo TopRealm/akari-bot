@@ -1,37 +1,43 @@
 import asyncio
-import glob
+import mimetypes
 import os
 import platform
 import re
+import shutil
+import tempfile
+import zipfile
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, UTC
+from pathlib import Path
 
 import jwt
 import orjson as json
 import psutil
 from cpuinfo import get_cpu_info
-from fastapi import Query, WebSocket, WebSocketDisconnect
-from fastapi import Request, Response, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import HTTPException, Request, File, Form, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response, FileResponse, PlainTextResponse
 from jwt.exceptions import ExpiredSignatureError
+from tortoise import Tortoise
+from tortoise.exceptions import OperationalError
 from tortoise.expressions import Q
 
 from bots.web.client import app, limiter, ph, enable_https, jwt_secret
-from core.config import Config, CFGManager
+from core.builtins.utils import command_prefix
+from core.config import Config
 from core.constants import config_filename
-from core.constants.path import PrivateAssets, assets_path, config_path, logs_path, webui_path
-from core.database.local import CSRF_TOKEN_EXPIRY, CSRFTokenRecords
+from core.constants.path import assets_path, config_path, logs_path
+from core.database import fetch_module_db, get_model_fields, get_model_names
 from core.database.models import AnalyticsData, SenderInfo, TargetInfo, MaliciousLoginRecords
-from core.loader import ModulesManager
 from core.logger import Logger
 from core.queue.client import JobQueueClient
 
 started_time = datetime.now()
 
-PASSWORD_PATH = os.path.join(PrivateAssets.path, ".password")
+PASSWORD_PATH = assets_path / "private" / "web" / ".password"
+ROOT_DIR = Path(__file__).parent.parent.parent
 
 default_locale = Config("default_locale", cfg_type=str)
-login_max_attempts = Config("login_max_attempts", default=5, table_name="bot_web")
+login_max_attempt = Config("login_max_attempt", default=5, table_name="bot_web")
 login_failed_attempts = defaultdict(list)
 
 LOGIN_BLOCK_DURATION = 3600
@@ -42,38 +48,22 @@ LOG_HEAD_PATTERN = re.compile(
 LOG_TIME_PATTERN = re.compile(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]")
 
 
-async def verify_csrf_token(request: Request):
-    auth_token = request.cookies.get("deviceToken")
-    csrf_token = request.headers.get("X-XSRF-TOKEN")
-    if not csrf_token:
-        raise HTTPException(status_code=403, detail="Missing CSRF token")
-
-    token_entry = await CSRFTokenRecords.get_or_none(csrf_token=csrf_token, device_token=auth_token)
-    if not token_entry:
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
-
-    if (datetime.now(UTC) - token_entry.timestamp).total_seconds() > CSRF_TOKEN_EXPIRY:
-        await token_entry.delete()
-        raise HTTPException(status_code=403, detail="CSRF token expired")
-
-    return {"message": "Success"}
-
-
 def verify_jwt(request: Request):
-    auth_token = request.cookies.get("deviceToken")
-    if not auth_token:
-        raise HTTPException(status_code=401, detail="Invalid request")
+    auth = request.headers.get('authorization')
+    if not auth or not auth[:7] == "Bearer ":
+        raise HTTPException(status_code=401)
+    auth_token = auth[7:]
 
     try:
         payload = jwt.decode(auth_token, jwt_secret, algorithms=["HS256"])
-        if os.path.exists(PASSWORD_PATH):
+        if PASSWORD_PATH.exists():
             with open(PASSWORD_PATH, "rb") as f:
                 last_updated = json.loads(f.read()).get("last_updated")
 
             if last_updated and payload["iat"] < last_updated:
                 raise ExpiredSignatureError
 
-        return {"message": "Success", "payload": payload}
+        return {"payload": payload}
 
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
@@ -87,58 +77,32 @@ async def api_root(request: Request):
     return {"message": "Hello, AkariBot!"}
 
 
-@app.get("/api/verify-token")
+@app.get("/api/init")
+@limiter.limit("2/second")
+async def get_config(request: Request):
+    return {"enable_https": enable_https,
+            "command_prefix": command_prefix[0],
+            "locale": Config("default_locale", cfg_type=str),
+            "heartbeat_interval": Config("heartbeat_interval", 30, table_name="bot_web"),
+            "heartbeat_timeout": Config("heartbeat_timeout", 5, table_name="bot_web"),
+            "heartbeat_attempt": Config("heartbeat_attempt", 3, table_name="bot_web")
+            }
+
+
+@app.get("/api/verify")
 @limiter.limit("2/second")
 async def verify_token(request: Request):
     return verify_jwt(request)
 
 
-@app.get("/api/get-csrf-token")
-@limiter.limit("2/second")
-async def set_csrf_token(request: Request):
-    verify_jwt(request)
-    auth_token = request.cookies.get("deviceToken")
-    csrf_token = await CSRFTokenRecords.generate_csrf_token(device_token=auth_token)
-
-    return {"message": "Success", "csrf_token": csrf_token}
-
-
-@app.get("/api/check-password")
-@limiter.limit("2/second")
-async def set_csrf_token(request: Request, response: Response):
+@app.post("/api/login")
+async def auth(request: Request):
     ip = request.client.host
     if await MaliciousLoginRecords.check_blocked(ip):
-        raise HTTPException(status_code=403, detail="This IP has been blocked")
-
-    if not os.path.exists(PASSWORD_PATH):
-        payload = {
-            "exp": datetime.now(UTC) + timedelta(hours=24),  # 过期时间
-            "iat": datetime.now(UTC),  # 签发时间
-            "iss": "auth-api"  # 签发者
-        }
-        jwt_token = jwt.encode(payload, jwt_secret, algorithm="HS256")
-
-        response.set_cookie(
-            key="deviceToken",
-            value=jwt_token,
-            httponly=True,
-            secure=enable_https,
-            samesite="strict",
-            expires=datetime.now(UTC) + timedelta(hours=24)
-        )
-        return {"message": "Success"}
-    raise HTTPException(status_code=401, detail="Need login")
-
-
-@app.post("/api/auth")
-@limiter.limit("10/minute")
-async def auth(request: Request, response: Response):
-    ip = request.client.host
-    if await MaliciousLoginRecords.check_blocked(ip):
-        raise HTTPException(status_code=403, detail="This IP has been blocked")
+        raise HTTPException(status_code=429, detail="This IP has been blocked")
 
     try:
-        if not os.path.exists(PASSWORD_PATH):
+        if not PASSWORD_PATH.exists():
             payload = {
                 "exp": datetime.now(UTC) + timedelta(hours=24),  # 过期时间
                 "iat": datetime.now(UTC),  # 签发时间
@@ -146,19 +110,13 @@ async def auth(request: Request, response: Response):
             }
             jwt_token = jwt.encode(payload, jwt_secret, algorithm="HS256")
 
-            response.set_cookie(
-                key="deviceToken",
-                value=jwt_token,
-                httponly=True,
-                secure=enable_https,
-                samesite="strict",
-                expires=datetime.now(UTC) + timedelta(hours=24)
-            )
-            return {"message": "Success"}
+            return {"data": jwt_token}
 
         body = await request.json()
         password = body.get("password", "")
-        remember = body.get("remember", False)
+
+        if len(password) == 0:
+            raise HTTPException(status_code=401, detail="Require password")
 
         with open(PASSWORD_PATH, "rb") as file:
             password_data = json.loads(file.read())
@@ -170,32 +128,24 @@ async def auth(request: Request, response: Response):
             login_failed_attempts[ip] = [t for t in login_failed_attempts[ip] if (now - t).total_seconds() < 600]
             login_failed_attempts[ip].append(now)
 
-            if len(login_failed_attempts[ip]) >= login_max_attempts:
+            if len(login_failed_attempts[ip]) > login_max_attempt:
                 await MaliciousLoginRecords.create(ip_address=ip,
                                                    blocked_until=now + timedelta(seconds=LOGIN_BLOCK_DURATION))
                 login_failed_attempts[ip].clear()
-                raise HTTPException(status_code=403, detail="This IP has been blocked")
+                raise HTTPException(status_code=429, detail="This IP has been blocked")
 
-            raise HTTPException(status_code=401, detail="Invalid password")
+            raise HTTPException(status_code=403, detail="Invalid password")
 
         login_failed_attempts.pop(ip, None)
 
         payload = {
-            "exp": datetime.now(UTC) + (timedelta(days=365) if remember else timedelta(hours=24)),
+            "exp": datetime.now(UTC) + timedelta(hours=24),
             "iat": datetime.now(UTC),
             "iss": "auth-api"
         }
         jwt_token = jwt.encode(payload, jwt_secret, algorithm="HS256")
 
-        response.set_cookie(
-            key="deviceToken",
-            value=jwt_token,
-            httponly=True,
-            secure=enable_https,
-            samesite="strict",
-            expires=datetime.now(UTC) + (timedelta(days=365) if remember else timedelta(hours=24))
-        )
-        return {"message": "Success"}
+        return {"data": jwt_token}
 
     except HTTPException as e:
         raise e
@@ -204,17 +154,16 @@ async def auth(request: Request, response: Response):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/change-password")
-@limiter.limit("10/minute")
+@app.put("/api/password")
 async def change_password(request: Request, response: Response):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
+
         body = await request.json()
         new_password = body.get("new_password", "")
         password = body.get("password", "")
 
-        if not os.path.exists(PASSWORD_PATH):
+        if not PASSWORD_PATH.exists():
             if new_password == "":
                 raise HTTPException(status_code=400, detail="New password required")
 
@@ -225,7 +174,7 @@ async def change_password(request: Request, response: Response):
             with open(PASSWORD_PATH, "wb") as file:
                 file.write(json.dumps(password_data))
             response.delete_cookie("deviceToken")
-            return {"message": "Success"}
+            return Response(status_code=205)
 
         with open(PASSWORD_PATH, "rb") as file:
             password_data = json.loads(file.read())
@@ -241,8 +190,8 @@ async def change_password(request: Request, response: Response):
         with open(PASSWORD_PATH, "wb") as file:
             file.write(json.dumps(password_data))
 
-        response.delete_cookie("deviceToken")
-        return {"message": "Success"}
+        # TODO 签的jwt存db, 改密码时删掉
+        return Response(status_code=205)
     except HTTPException as e:
         raise e
     except Exception:
@@ -250,16 +199,15 @@ async def change_password(request: Request, response: Response):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/clear-password")
-@limiter.limit("10/minute")
-async def clear_password(request: Request, response: Response):
+@app.delete("/api/password")
+async def clear_password(request: Request):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
+
         body = await request.json()
         password = body.get("password", "")
 
-        if not os.path.exists(PASSWORD_PATH):
+        if not PASSWORD_PATH.exists():
             raise HTTPException(status_code=404, detail="Password not set")
 
         with open(PASSWORD_PATH, "rb") as file:
@@ -270,9 +218,8 @@ async def clear_password(request: Request, response: Response):
         except Exception:
             raise HTTPException(status_code=401, detail="Invalid password")
 
-        os.remove(PASSWORD_PATH)
-        response.delete_cookie("deviceToken")
-        return {"message": "Success"}
+        PASSWORD_PATH.unlink()
+        return Response(status_code=205)
     except HTTPException as e:
         raise e
     except Exception:
@@ -280,12 +227,16 @@ async def clear_password(request: Request, response: Response):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.get("/api/server-info")
+@app.get("/api/password")
 @limiter.limit("10/minute")
+async def has_password(request: Request):
+    return {"have_password": PASSWORD_PATH.exists()}
+
+
+@app.get("/api/server-info")
 async def server_info(request: Request):
     verify_jwt(request)
     return {
-        "message": "Success",
         "os": {
             "system": platform.system(),
             "version": platform.version(),
@@ -316,7 +267,6 @@ async def server_info(request: Request):
 
 
 @app.get("/api/analytics")
-@limiter.limit("2/second")
 async def get_analytics(request: Request, days: int = Query(1)):
     verify_jwt(request)
     try:
@@ -339,18 +289,17 @@ async def get_analytics(request: Request, days: int = Query(1)):
 
 
 @app.get("/api/config")
-@limiter.limit("2/second")
 async def get_config_list(request: Request):
     verify_jwt(request)
     try:
-        files = os.listdir(config_path)
+        files = [c.name for c in config_path.iterdir()]
         cfg_files = [f for f in files if f.endswith(".toml")]
 
         if config_filename in cfg_files:
             cfg_files.remove(config_filename)
             cfg_files.insert(0, config_filename)
 
-        return {"message": "Success", "cfg_files": cfg_files}
+        return {"cfg_files": cfg_files}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Not found")
     except Exception:
@@ -359,21 +308,20 @@ async def get_config_list(request: Request):
 
 
 @app.get("/api/config/{cfg_filename}")
-@limiter.limit("2/second")
 async def get_config_file(request: Request, cfg_filename: str):
     verify_jwt(request)
-    if not os.path.exists(config_path):
+    if not config_path.exists():
         raise HTTPException(status_code=404, detail="Not found")
-    cfg_file_path = os.path.normpath(os.path.join(config_path, cfg_filename))
+    cfg_file_path = config_path / cfg_filename
     if not cfg_filename.endswith(".toml"):
         raise HTTPException(status_code=400, detail="Bad request")
-    if not cfg_file_path.startswith(config_path):
+    if not str(cfg_file_path).startswith(str(config_path)):
         raise HTTPException(status_code=400, detail="Bad request")
 
     try:
         with open(cfg_file_path, "r", encoding="UTF-8") as f:
             content = f.read()
-        return {"message": "Success", "content": content}
+        return {"content": content}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Not found")
     except Exception:
@@ -381,25 +329,24 @@ async def get_config_file(request: Request, cfg_filename: str):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/config/{cfg_filename}/edit")
-@limiter.limit("10/minute")
+@app.put("/api/config/{cfg_filename}")
 async def edit_config_file(request: Request, cfg_filename: str):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
-        if not os.path.exists(config_path):
+
+        if not config_path.exists():
             raise HTTPException(status_code=404, detail="Not found")
-        cfg_file_path = os.path.normpath(os.path.join(config_path, cfg_filename))
+        cfg_file_path = config_path / cfg_filename
         if not cfg_filename.endswith(".toml"):
             raise HTTPException(status_code=400, detail="Bad request")
-        if not cfg_file_path.startswith(config_path):
+        if not str(cfg_file_path).startswith(str(config_path)):
             raise HTTPException(status_code=400, detail="Bad request")
 
         body = await request.json()
         content = body["content"]
         with open(cfg_file_path, "w", encoding="UTF-8") as f:
             f.write(content)
-        return {"message": "Success"}
+        return Response(status_code=204)
 
     except HTTPException as e:
         raise e
@@ -409,7 +356,6 @@ async def edit_config_file(request: Request, cfg_filename: str):
 
 
 @app.get("/api/target")
-@limiter.limit("2/second")
 async def get_target_list(
     request: Request,
     prefix: str = Query(None),
@@ -437,7 +383,6 @@ async def get_target_list(
         results = await query.offset((page - 1) * size).limit(size)
 
         return {
-            "message": "Success",
             "target_list": results,
             "total": total
         }
@@ -449,14 +394,13 @@ async def get_target_list(
 
 
 @app.get("/api/target/{target_id}")
-@limiter.limit("2/second")
 async def get_target_info(request: Request, target_id: str):
     try:
         verify_jwt(request)
         target_info = await TargetInfo.get_by_target_id(target_id, create=False)
         if not target_info:
             raise HTTPException(status_code=404, detail="Not found")
-        return {"message": "Success", "target_info": target_info}
+        return {"target_info": target_info}
     except HTTPException as e:
         raise e
     except Exception:
@@ -464,12 +408,10 @@ async def get_target_info(request: Request, target_id: str):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/target/{target_id}/edit")
-@limiter.limit("10/minute")
+@app.patch("/api/target/{target_id}")
 async def edit_target_info(request: Request, target_id: str):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
 
         target_info = await TargetInfo.get_by_target_id(target_id)
         body = await request.json()
@@ -513,7 +455,7 @@ async def edit_target_info(request: Request, target_id: str):
             target_info.target_data = target_data
         await target_info.save()
 
-        return {"message": "Success"}
+        return Response(status_code=204)
     except HTTPException as e:
         raise e
     except Exception:
@@ -521,16 +463,16 @@ async def edit_target_info(request: Request, target_id: str):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/target/{target_id}/delete")
-@limiter.limit("10/minute")
+@app.delete("/api/target/{target_id}")
 async def delete_target_info(request: Request, target_id: str):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
+
         target_info = await TargetInfo.get_by_target_id(target_id, create=False)
         if target_info:
             await target_info.delete()
-        return {"message": "Success"}
+
+        return Response(status_code=204)
     except HTTPException as e:
         raise e
     except Exception:
@@ -539,7 +481,6 @@ async def delete_target_info(request: Request, target_id: str):
 
 
 @app.get("/api/sender")
-@limiter.limit("2/second")
 async def get_sender_list(request: Request,
                           prefix: str = Query(None),
                           status: str = Query(None, pattern=r"^(superuser|trusted|blocked)?$"),
@@ -568,7 +509,6 @@ async def get_sender_list(request: Request,
         results = await query.offset((page - 1) * size).limit(size)
 
         return {
-            "message": "Success",
             "sender_list": results,
             "total": total
         }
@@ -580,14 +520,13 @@ async def get_sender_list(request: Request,
 
 
 @app.get("/api/sender/{sender_id}")
-@limiter.limit("2/second")
 async def get_sender_info(request: Request, sender_id: str):
     try:
         verify_jwt(request)
         sender_info = await SenderInfo.get_by_sender_id(sender_id, create=False)
         if not sender_info:
             raise HTTPException(status_code=404, detail="Not found")
-        return {"message": "Success", "sender_info": sender_info}
+        return {"sender_info": sender_info}
     except HTTPException as e:
         raise e
     except Exception:
@@ -595,12 +534,10 @@ async def get_sender_info(request: Request, sender_id: str):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/sender/{sender_id}/edit")
-@limiter.limit("10/minute")
+@app.patch("/api/sender/{sender_id}")
 async def edit_sender_info(request: Request, sender_id: str):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
 
         sender_info = await SenderInfo.get_by_sender_id(sender_id)
         body = await request.json()
@@ -638,7 +575,7 @@ async def edit_sender_info(request: Request, sender_id: str):
             sender_info.sender_data = sender_data
         await sender_info.save()
 
-        return {"message": "Success"}
+        return Response(status_code=204)
     except HTTPException as e:
         raise e
     except Exception:
@@ -646,16 +583,15 @@ async def edit_sender_info(request: Request, sender_id: str):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/sender/{sender_id}/delete")
-@limiter.limit("10/minute")
+@app.delete("/api/sender/{sender_id}")
 async def delete_sender_info(request: Request, sender_id: str):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
+
         sender_info = await SenderInfo.get_by_sender_id(sender_id, create=False)
         if sender_info:
             await sender_info.delete()
-        return {"message": "Success"}
+        return Response(status_code=204)
     except HTTPException as e:
         raise e
     except Exception:
@@ -664,12 +600,11 @@ async def delete_sender_info(request: Request, sender_id: str):
 
 
 @app.get("/api/modules_list")
-@limiter.limit("2/second")
 async def get_modules_list(request: Request):
     try:
         verify_jwt(request)
         modules_list = await JobQueueClient.get_modules_list()
-        return {"message": "Success", "modules": modules_list}
+        return {"modules": modules_list}
     except HTTPException as e:
         raise e
     except Exception:
@@ -678,12 +613,12 @@ async def get_modules_list(request: Request):
 
 
 @app.get("/api/modules")
-@limiter.limit("2/second")
 async def get_modules_info(request: Request, locale: str = Query(default_locale)):
     try:
         verify_jwt(request)
         modules = await JobQueueClient.get_modules_info(locale=locale)
-        return {"message": "Success", "modules": modules}
+
+        return {"modules": modules}
     except HTTPException as e:
         raise e
     except Exception:
@@ -691,21 +626,58 @@ async def get_modules_info(request: Request, locale: str = Query(default_locale)
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/modules/{module_name}/load")
-@limiter.limit("10/minute")
+@app.get("/api/module/{module_name}/related")
+async def search_related_module(request: Request, module_name: str):
+    try:
+        verify_jwt(request)
+        modules = await JobQueueClient.get_module_related(module=module_name)
+        return {"modules": modules}
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.get("/api/module/{module_name}/helpdoc")
+async def get_module_helpdoc(request: Request, module_name: str, locale: str = Query(default_locale)):
+    try:
+        verify_jwt(request)
+        help_doc = await JobQueueClient.get_module_helpdoc(module=module_name, locale=locale)
+        if not help_doc:
+            raise HTTPException(status_code=404, detail="Not found")
+        return help_doc
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.post("/api/module/{module_name}/reload")
+async def reload_module(request: Request, module_name: str):
+    try:
+        verify_jwt(request)
+        status = await JobQueueClient.post_module_action(module=module_name, action="reload")
+        if not status:
+            raise HTTPException(status_code=422, detail="Reload modules failed")
+        return Response(status_code=204)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.post("/api/module/{module_name}/load")
 async def load_module(request: Request, module_name: str):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
+        status = await JobQueueClient.post_module_action(module=module_name, action="load")
+        if not status:
+            raise HTTPException(status_code=422, detail="Load modules failed")
 
-        if ModulesManager.load_module(module_name):
-            unloaded_list = CFGManager.get("unloaded_modules", [])
-            if unloaded_list and module_name in unloaded_list:
-                unloaded_list.remove(module_name)
-                CFGManager.write("unloaded_modules", unloaded_list)
-
-            return {"message": "Success"}
-        return {"message": "Failed"}
+        return Response(status_code=204)
 
     except HTTPException as e:
         raise e
@@ -714,21 +686,15 @@ async def load_module(request: Request, module_name: str):
         raise HTTPException(status_code=400, detail="Bad request")
 
 
-@app.post("/api/modules/{module_name}/unload")
-@limiter.limit("10/minute")
+@app.post("/api/module/{module_name}/unload")
 async def unload_module(request: Request, module_name: str):
     try:
         verify_jwt(request)
-        await verify_csrf_token(request)
+        status = await JobQueueClient.post_module_action(module=module_name, action="unload")
+        if not status:
+            raise HTTPException(status_code=422, detail="Unload modules failed")
 
-        if ModulesManager.unload_module(module_name):
-            unloaded_list = CFGManager.get("unloaded_modules", [])
-            if not unloaded_list:
-                unloaded_list = []
-            unloaded_list.append(module_name)
-            CFGManager.write("unloaded_modules", unloaded_list)
-
-            return {"message": "Success"}
+        return Response(status_code=204)
     except HTTPException as e:
         raise e
     except Exception:
@@ -739,68 +705,76 @@ async def unload_module(request: Request, module_name: str):
 @app.websocket("/ws/logs")
 async def websocket_logs(websocket: WebSocket):
     await websocket.accept()
-
     current_date = datetime.today().strftime("%Y-%m-%d")
-    last_file_pos = defaultdict(int)  # 日志文件当前位置
+
+    last_file_pos = defaultdict(int)   # 日志文件当前位置
     last_file_size = defaultdict(int)  # 日志文件大小
     logs_history = deque(maxlen=MAX_LOG_HISTORY)  # 日志缓存历史
+    today_logs = list((logs_path).glob(f"*_{current_date}.log"))  # 缓存日志文件列表
+
     try:
         while True:
             new_date = datetime.today().strftime("%Y-%m-%d")
-
             if new_date != current_date:  # 处理跨日期
                 last_file_pos.clear()
                 last_file_size.clear()
                 current_date = new_date
+                today_logs = list((logs_path).glob(f"*_{current_date}.log"))
 
-            today_logs = glob.glob(f"{logs_path}/*_{current_date}.log")
-
-            new_loglines = []  # 打包后的日志行
+            new_loglines = []
             for log_file in today_logs:
                 try:
-                    # 比较文件大小，当相同时跳过
                     current_size = os.path.getsize(log_file)
                     if log_file in last_file_size and current_size == last_file_size[log_file]:
                         continue
-                    last_file_size[log_file] = current_size
 
-                    if log_file not in last_file_pos:  # 初始化
+                    last_file_size[log_file] = current_size
+                    if log_file not in last_file_pos:
                         last_file_pos[log_file] = 0
 
                     with open(log_file, "r", encoding="utf-8") as f:
                         f.seek(last_file_pos[log_file])
-                        new_data = f.read()  # 读取新数据
+                        new_data = f.read()
                         last_file_pos[log_file] = f.tell()
 
-                    new_loglines_raw = [line.rstrip() for line in new_data.splitlines() if line.strip()]  # 未打包的新日志行
+                    if not new_data:
+                        continue
+
+                    new_loglines_raw = [line.rstrip() for line in new_data.splitlines() if line.strip()]
+
                 except Exception:
                     Logger.exception()
                     continue
 
+                current_entry = None
                 for line in new_loglines_raw:
-                    if _log_line_valid(line):  # 日志头
-                        new_loglines.append(line)
-                    elif new_loglines:
-                        last = new_loglines.pop()
-                        if isinstance(last, list):  # 添加到多行日志中
-                            last.append(line)
-                            new_loglines.append(last)
-                        elif isinstance(last, str) and _log_line_valid(last):  # 与日志头拼接为多行日志
-                            new_loglines.append([last, line])
+                    if _log_line_valid(line):
+                        if current_entry:
+                            new_loglines.append(current_entry)
+                        current_entry = line
+                    else:
+                        if isinstance(current_entry, list):
+                            current_entry.append(line)
+                        elif isinstance(current_entry, str):
+                            current_entry = [current_entry, line]
+                if current_entry:
+                    new_loglines.append(current_entry)
 
             if new_loglines:
-                new_loglines.sort(
-                    key=lambda item: _extract_timestamp(item[0]) if isinstance(item, list) else _extract_timestamp(item)
-                )  # 按时间排序
+                if len(today_logs) > 1:
+                    new_loglines.sort(
+                        key=lambda item: _extract_timestamp(
+                            item[0]) if isinstance(
+                            item, list) else _extract_timestamp(item))
 
                 payload = "\n".join(
                     "\n".join(item) if isinstance(item, list) else item
                     for item in new_loglines
                 )
-                await websocket.send_text(payload)  # 发送
-                logs_history.extend(new_loglines)  # 添加到历史
+                await websocket.send_text(payload)
+                logs_history.extend(new_loglines)
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.2 if new_loglines else 1.0)
 
     except WebSocketDisconnect:
         pass
@@ -820,24 +794,246 @@ def _extract_timestamp(line: str):
     return None
 
 
+@app.get("/api/database/list")
+async def get_db_model_list(request: Request):
+    try:
+        verify_jwt(request)
+
+        models_path = ["core.database.models"] + fetch_module_db()
+        table_lst = sorted(get_model_names(models_path))
+        return {"model_list": table_lst}
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.get("/api/database/field/{model}")
+async def get_db_model_fields(request: Request, model: str):
+    try:
+        verify_jwt(request)
+
+        models_path = ["core.database.models"] + fetch_module_db()
+        result = get_model_fields(models_path, model)
+        return {"model_fields": result}
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.post("/api/database/exec")
+async def exec_sql(request: Request):
+    try:
+        verify_jwt(request)
+
+        body = await request.json()
+        sql = body.get("sql", "")
+
+        conn = Tortoise.get_connection("default")
+
+        if sql.upper().startswith("SELECT"):
+            rows = await conn.execute_query_dict(sql)
+            return {"success": True, "data": rows}
+        else:
+            rows, _ = await conn.execute_query(sql)
+            return {"success": True, "affected_rows": rows}
+    except OperationalError as e:
+        return {"success": False, "error": str(e)}
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+def _secure_path(path: str) -> Path:
+    full_path = (ROOT_DIR / path).resolve()
+    try:
+        full_path.relative_to(ROOT_DIR)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return full_path
+
+
+def _format_file_info(p: Path):
+    return {
+        "name": p.name,
+        "is_dir": p.is_dir(),
+        "size": p.stat().st_size,
+        "modified": datetime.fromtimestamp(p.stat().st_mtime).isoformat()
+    }
+
+
+@app.get("/api/files/list")
+def list_files(request: Request, path: str = ""):
+    try:
+        verify_jwt(request)
+
+        target = _secure_path(path)
+        if not target.exists() or not target.is_dir():
+            raise HTTPException(status_code=404, detail="Not found")
+        files = [_format_file_info(f) for f in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))]
+        return {"path": str(target.relative_to(ROOT_DIR)), "files": files}
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.get("/api/files/download")
+def download_file(request: Request, path: str):
+    try:
+        verify_jwt(request)
+
+        target = _secure_path(path)
+        if not target.exists():
+            raise HTTPException(status_code=404, detail="Not found")
+
+        if target.is_file():
+            return FileResponse(target, filename=target.name)
+
+        temp_dir = tempfile.mkdtemp()
+        zip_name = f"{target.name}.zip"
+        zip_path = Path(temp_dir) / zip_name
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file in target.rglob("*"):
+                zipf.write(file, file.relative_to(target))
+        return FileResponse(zip_path, filename=zip_name)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.delete("/api/files/delete")
+def delete_file(request: Request, path: str):
+    try:
+        verify_jwt(request)
+
+        target = _secure_path(path)
+        if target.is_file():
+            target.unlink()
+        elif target.is_dir():
+            shutil.rmtree(target)
+        else:
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(status_code=204)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.post("/api/files/rename")
+async def rename_file(request: Request):
+    try:
+        verify_jwt(request)
+
+        body = await request.json()
+        old_path = body.get("old_path", "")
+        new_name = body.get("new_name", "")
+
+        old_target = _secure_path(old_path)
+        new_target = old_target.parent / new_name
+        if new_target.exists():
+            raise HTTPException(
+                status_code=409,
+                detail=f"File '{new_name}' already exists"
+            )
+
+        old_target.rename(new_target)
+        return Response(status_code=204)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.post("/api/files/upload")
+def upload_file(request: Request, path: str = Form(""), file: UploadFile = File(...)):
+    try:
+        verify_jwt(request)
+
+        target_dir = _secure_path(path)
+        if not target_dir.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+        target_file = target_dir / Path(file.filename).name
+
+        with target_file.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+        return Response(status_code=204)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.post("/api/files/create")
+def create_file_or_dir(request: Request, path: str = "", name: str = "", filetype: str = ""):
+    try:
+        verify_jwt(request)
+
+        target = _secure_path((Path(path) / name).as_posix())
+        if filetype == "dir":
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch(exist_ok=True)
+        return Response(status_code=204)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.get("/api/files/preview")
+def preview_file(request: Request, path: str):
+    try:
+        verify_jwt(request)
+
+        target = _secure_path(path)
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+
+        mime_type, _ = mimetypes.guess_type(target)
+
+        if mime_type and mime_type.startswith("image"):
+            return FileResponse(target, media_type=mime_type)
+
+        if target.stat().st_size > 1024 * 1024:
+            raise HTTPException(status_code=408, detail="File is too large")
+
+        try:
+            content = target.read_text(encoding="utf-8")
+            return PlainTextResponse(content)
+        except UnicodeDecodeError:
+            return {"detail": "Unable to preview"}
+
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
 async def restart():
     await asyncio.sleep(1)
     os._exit(233)
 
 
-@app.get("/{full_path:path}")
-async def route_handler(full_path: str):
-    if os.path.exists(webui_path):
-        if full_path == "webui":
-            return RedirectResponse(url="/webui/")
+@app.post("/api/restart")
+async def restart_bot(request: Request):
+    verify_jwt(request)
 
-        static_file = os.path.normpath(os.path.join(webui_path, full_path))
-        if os.path.commonpath([webui_path, static_file]) != webui_path:
-            raise HTTPException(status_code=403, detail="Forbidden")
-        if os.path.exists(static_file):
-            return FileResponse(static_file)
-    else:
-        favicon_file = os.path.join(assets_path, "favicon.ico")
-        if full_path == "favicon.ico" and os.path.exists(favicon_file):
-            return FileResponse(favicon_file)
-    raise HTTPException(status_code=404, detail="Not found")
+    asyncio.create_task(restart())
+    return Response(status_code=202)

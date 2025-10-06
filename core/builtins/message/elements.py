@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import base64
 import mimetypes
-import os
 import random
 import re
 from copy import deepcopy
 from datetime import datetime, UTC
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Dict, Any, Union, List
 from urllib import parse
 
@@ -262,7 +262,7 @@ class ImageElement(BaseElement):
 
     @classmethod
     def assign(
-        cls, path: Union[str, PILImage.Image], headers: Optional[Dict[str, Any]] = None
+        cls, path: Union[str, Path, PILImage.Image], headers: Optional[Dict[str, Any]] = None
     ):
         """
         :param path: 图片路径。
@@ -270,31 +270,34 @@ class ImageElement(BaseElement):
         """
         need_get = False
         if isinstance(path, PILImage.Image):
-            save = f"{random_cache_path()}.png"
+            save = random_cache_path("png")
             path.convert("RGBA").save(save)
-            path = save
-        elif re.match("^https?://.*", path):
+            path = str(save)
+        elif isinstance(path, Path):
+            path = str(path)
+
+        if re.match("^https?://.*", path):
             need_get = True
         elif "base64" in path:
             _, encoded_img = path.split(",", 1)
             img_data = base64.b64decode(encoded_img)
 
-            save = f"{random_cache_path()}.png"
+            save = random_cache_path("png")
             with open(save, "wb") as img_file:
                 img_file.write(img_data)
             path = save
-        return deepcopy(cls(path, need_get, headers))
+        return deepcopy(cls(str(path), need_get, headers))
 
-    async def get(self):
+    async def get(self) -> str:
         """
         获取图片。
         """
         if self.need_get:
-            return os.path.abspath(await self.get_image())
-        return os.path.abspath(self.path)
+            return str(await self.get_image())
+        return self.path
 
     @retry(stop=stop_after_attempt(3))
-    async def get_image(self):
+    async def get_image(self) -> Path:
         """
         从网络下载图片。
         """
@@ -303,12 +306,12 @@ class ImageElement(BaseElement):
             resp = await client.get(url, timeout=20.0, headers=self.headers)
             raw = resp.content
             ft = filetype.match(raw).extension
-            img_path = f"{random_cache_path()}.{ft}"
+            img_path = random_cache_path(ft)
             with open(img_path, "wb+") as image_cache:
                 image_cache.write(raw)
             return img_path
 
-    async def get_base64(self, mime: bool = False):
+    async def get_base64(self, mime: bool = False) -> str:
         file = await self.get()
 
         with open(file, "rb") as f:
@@ -318,7 +321,7 @@ class ImageElement(BaseElement):
         if mime:
             mime_type, _ = mimetypes.guess_type(file)
             if not mime_type:
-                mime_type = 'application/octet-stream'
+                mime_type = "application/octet-stream"
             self.cached_b64 = f"data:{mime_type};base64,{img_b64}"
             return self.cached_b64
         return img_b64
@@ -368,14 +371,17 @@ class VoiceElement(BaseElement):
     path: str
 
     @classmethod
-    def assign(cls, path: str):
+    def assign(cls, path: str | Path):
         """
         :param path: 语音路径。
         """
-        return deepcopy(cls(path))
+        return deepcopy(cls(str(path)))
 
     def kecode(self):
         return f"[KE:voice,path={self.path}]"
+
+    def __str__(self):
+        return f"Voice(path={self.path})"
 
 
 @define
@@ -427,8 +433,11 @@ class EmbedFieldElement(BaseElement):
         """
         return deepcopy(cls(name=name, value=value, inline=inline))
 
+    def kecode(self):
+        pass
+
     def __str__(self):
-        return f'[EmbedField:{self.name},{self.value},{self.inline}]'
+        return f"[EmbedField:{self.name},{self.value},{self.inline}]"
 
 
 @define
@@ -498,7 +507,7 @@ class EmbedElement(BaseElement):
         if self.url:
             text_lst.append(self.url)
         if self.fields:
-            for f in self.fields:
+            for f in (self.fields if isinstance(self.fields, list) else [self.fields] if self.fields else []):
                 if session_info:
                     text_lst.append(f"{session_info.locale.t_str(f.name)}{session_info.locale.t(
                         "message.colon")}{session_info.locale.t_str(f.value)}")
@@ -522,6 +531,9 @@ class EmbedElement(BaseElement):
             message_chain.append(self.image)
         return message_chain
 
+    def kecode(self):
+        pass
+
     def __str__(self):
         return str(self.to_message_chain())
 
@@ -543,8 +555,11 @@ class RawElement(BaseElement):
         """
         return deepcopy(cls(value=value))
 
+    def kecode(self):
+        pass
+
     def __str__(self):
-        return f"Raw({self.value})"
+        return self.value
 
 
 __all__ = [

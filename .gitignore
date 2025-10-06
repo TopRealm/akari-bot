@@ -1,7 +1,7 @@
 *.env
 __pycache__/
-config/*.cfg*
-config/*.toml*
+config*/*.cfg*
+config*/*.toml*
 .idea
 .DS_Store
 .vscode
@@ -23,7 +23,7 @@ assets/modules/maimai*
 assets/modules/phigros*
 assets/private*
 bots/**/assets
-webui/config.json
+webui/*
 version*
 !version.py
 .pid_last
@@ -33,3 +33,4 @@ version*
 matrix_store
 output/*
 modules/yunhei/admins.json
+.bot.lock

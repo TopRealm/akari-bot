@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 
 import orjson as json
 from apscheduler.schedulers import SchedulerAlreadyRunningError
@@ -21,7 +20,7 @@ from .background_tasks import init_background_task
 
 
 async def init_async(start_scheduler=True) -> None:
-    Info.client_name = 'Server'
+    Info.client_name = "Server"
     Logger.rename(Info.client_name)
     returncode, commit_hash, _ = await run_sys_command(["git", "rev-parse", "HEAD"])
     if returncode == 0:
@@ -33,7 +32,7 @@ async def init_async(start_scheduler=True) -> None:
     if await init_db():
         Logger.success("Database initialized successfully.")
 
-    load_modules()
+    await load_modules()
     gather_list = []
     modules = ModulesManager.return_modules_list()
     for x in modules:
@@ -72,9 +71,9 @@ async def load_secret():
 
 
 async def load_prompt() -> None:
-    author_cache = os.path.join(PrivateAssets.path, ".cache_restart_author")
-    loader_cache = os.path.join(PrivateAssets.path, ".cache_loader")
-    if os.path.exists(author_cache):
+    author_cache = PrivateAssets.path / ".cache_restart_author"
+    loader_cache = PrivateAssets.path / ".cache_loader"
+    if author_cache.exists():
         with open(author_cache, "r", encoding="utf-8") as open_author_cache:
             author_session = converter.structure(json.loads(open_author_cache.read()), SessionInfo)
             await author_session.refresh_info()
@@ -85,7 +84,7 @@ async def load_prompt() -> None:
                     message = I18NContext("loader.load.success")
                 message = MessageChain.assign(message)
                 await Bot.send_direct_message(author_session, message)
-        os.remove(author_cache)
+        author_cache.unlink()
 
 
 __all__ = ["init_async", "load_prompt"]

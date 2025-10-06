@@ -1,6 +1,6 @@
 import mimetypes
-import os
-from typing import Optional, Tuple
+from pathlib import Path
+from typing import Optional, Union, List, Tuple
 
 import nio
 
@@ -34,6 +34,7 @@ class MatrixContextManager(ContextManager):
             sender = session_info.get_common_sender_id()
         if room_id.startswith("@") or sender.startswith("!"):
             return True
+        sender_mxid = f"@{sender}"
 
         # check room creator for room v12
         create_event_id = "$" + str(room_id)[1:]
@@ -47,7 +48,7 @@ class MatrixContextManager(ContextManager):
                 if "additional_creators" in event_content:
                     creators = creators + event_content["additional_creators"]
                 Logger.debug(f"Matrix room v12 creators: {creators}")
-                if sender in creators:
+                if sender_mxid in creators:
                     return True
         else:
             # When the room does not follow MSC4291, ignore it silently
@@ -60,8 +61,8 @@ class MatrixContextManager(ContextManager):
             await matrix_bot.room_get_state_event(room_id, "m.room.power_levels")
         ).content
         level = (
-            power_levels["users"][sender]
-            if sender in power_levels["users"]
+            power_levels["users"][sender_mxid]
+            if sender_mxid in power_levels["users"]
             else power_levels["users_default"]
         )
         if level and int(level) >= 50:
@@ -86,13 +87,13 @@ class MatrixContextManager(ContextManager):
             room, event = ctx
         if isinstance(message, MessageNodes):
             message = MessageChain.assign(await msgnode2image(message))
-        for x in message.as_sendable(session_info):
+        for x in message.as_sendable(session_info, parse_message=enable_parse_message):
             async def _send_msg(content):
                 reply_to = None
                 reply_to_user = None
                 if quote and not msg_ids:
                     reply_to = session_info.message_id
-                    reply_to_user = session_info.get_common_sender_id()
+                    reply_to_user = f"@{session_info.get_common_sender_id()}"
 
                 if reply_to:
                     # rich reply
@@ -158,7 +159,8 @@ class MatrixContextManager(ContextManager):
                 # reply_to_user = None
 
             if isinstance(x, PlainElement):
-                x.text = match_atcode(x.text, client_name, "{uid}")
+                if enable_parse_message:
+                    x.text = match_atcode(x.text, client_name, "{uid}")
                 content = {"msgtype": "m.notice", "body": x.text}
                 Logger.info(f"[Bot] -> [{session_info.target_id}]: {x.text}")
                 await _send_msg(content)
@@ -170,8 +172,8 @@ class MatrixContextManager(ContextManager):
                 for xs in split:
                     path = await xs.get()
                     with open(path, "rb") as image:
-                        filename = os.path.basename(path)
-                        filesize = os.path.getsize(path)
+                        filename = Path(path).name
+                        filesize = Path(path).stat().st_size
                         (content_type, content_encoding) = mimetypes.guess_type(path)
                         if not content_type or not content_encoding:
                             content_type = "image"
@@ -215,8 +217,8 @@ class MatrixContextManager(ContextManager):
                         await _send_msg(content)
             elif isinstance(x, VoiceElement):
                 path = x.path
-                filename = os.path.basename(path)
-                filesize = os.path.getsize(path)
+                filename = Path(path).name
+                filesize = Path(path).stat().st_size
                 (content_type, content_encoding) = mimetypes.guess_type(path)
                 if not content_type or not content_encoding:
                     content_type = "audio"
@@ -267,7 +269,7 @@ class MatrixContextManager(ContextManager):
         return msg_ids
 
     @classmethod
-    async def delete_message(cls, session_info: SessionInfo, message_id: list[str]) -> None:
+    async def delete_message(cls, session_info: SessionInfo, message_id: Union[str, List[str]]) -> None:
         if isinstance(message_id, str):
             message_id = [message_id]
         if not isinstance(message_id, list):
@@ -278,8 +280,37 @@ class MatrixContextManager(ContextManager):
         for m in message_id:
             try:
                 await matrix_bot.room_redact(session_info.get_common_target_id(), m)
+                Logger.info(f"Deleted message {m} in session {session_info.session_id}")
             except Exception:
-                Logger.exception()
+                Logger.exception(f"Failed to delete message {m} in session {session_info.session_id}: ")
+
+    @classmethod
+    async def add_reaction(cls, session_info: SessionInfo, message_id: Union[str, List[str]], emoji: str) -> None:
+        if isinstance(message_id, str):
+            message_id = [message_id]
+        if not isinstance(message_id, list):
+            raise TypeError("Message ID must be a list or str")
+
+        if session_info.session_id not in cls.context:
+            raise ValueError("Session not found in context")
+
+        content = {
+            "m.relates_to": {
+                "rel_type": "m.annotation",
+                "event_id": message_id[-1],
+                "key": emoji
+            }
+        }
+        try:
+            await matrix_bot.room_send(
+                session_info.get_common_target_id(),
+                message_type="m.reaction",
+                content=content
+            )
+            Logger.info(f"Added reaction \"{emoji}\" to message {message_id} in session {session_info.session_id}")
+        except Exception:
+            Logger.exception(f"Failed to add reaction \"{emoji}\" to message {
+                             message_id} in session {session_info.session_id}: ")
 
     @classmethod
     async def start_typing(cls, session_info: SessionInfo) -> None:

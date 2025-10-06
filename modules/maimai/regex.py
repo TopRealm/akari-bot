@@ -99,7 +99,15 @@ async def _(msg: Bot.MessageSession):
     level = msg.matched_msg.groups()[0]
     goal = msg.matched_msg.groups()[1]
     username = msg.matched_msg.groups()[2]
-    await query_process(msg, level, goal, username)
+    await query_process(msg, level, goal, username, get_list=False)
+
+
+@mai_regex.regex(r"(\d+\+?)\s?([a-zA-Z]+\+?)\s?完成表\s?(.+)?", desc="{I18N:maimai.help.maimai_regex.process.list}")
+async def _(msg: Bot.MessageSession):
+    level = msg.matched_msg.groups()[0]
+    goal = msg.matched_msg.groups()[1]
+    username = msg.matched_msg.groups()[2]
+    await query_process(msg, level, goal, username, get_list=True)
 
 
 @mai_regex.regex(r"(.?)([極极将將舞神者]舞?)[进進]度\s?(.+)?", desc="{I18N:maimai.help.maimai_regex.plate}")
@@ -139,11 +147,8 @@ async def _(msg: Bot.MessageSession):
                 await msg.finish(I18NContext("maimai.message.music_not_found"))
             else:
                 music = music_data.random()
-                await msg.finish(
-                    await get_info(
-                        music, Plain(f"\n{"/".join(str(ds) for ds in music.ds)}")
-                    )
-                )
+                diffs = MessageChain.assign(Plain(f"{"/".join(str(ds) for ds in music.ds)}"))
+                await msg.finish(await get_info(music, diffs))
         except ValueError:
             await msg.finish(I18NContext("maimai.message.random.failed"))
 

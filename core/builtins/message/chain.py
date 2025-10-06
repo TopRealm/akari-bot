@@ -22,8 +22,9 @@ from core.builtins.message.elements import (
     VoiceElement,
     MentionElement,
 )
-from core.constants import Secret
+from core.constants import Secret, default_locale
 from core.exports import add_export
+from core.i18n import Locale
 
 if TYPE_CHECKING:
     from core.builtins.session.info import SessionInfo
@@ -65,34 +66,20 @@ class MessageChain:
             return elements
         values = []
         if isinstance(elements, str):
-            elements = match_kecode(elements)
+            elements = PlainElement.assign(elements)
         if isinstance(elements, BaseElement):
-            if isinstance(elements, PlainElement):
-                if elements.text != "":
-                    elements = match_kecode(elements.text, elements.disable_joke)
-            else:
-                elements = [elements]
+            elements = [elements]
         if isinstance(elements, dict):
             for key in elements:
                 elements = converter.structure(elements[key], MessageElement)
         if isinstance(elements, (list, tuple)):
             for e in elements:
-                if isinstance(e, str):
-                    if e != "":
-                        values += match_kecode(e)
+                if isinstance(e, str) and e:
+                    values.append(PlainElement.assign(e))
                 elif isinstance(e, dict):
                     for key in e:
                         tmp_e = converter.structure(e[key], MessageElement)
-                        if isinstance(tmp_e, PlainElement):
-                            if tmp_e.text != "":
-                                values += match_kecode(tmp_e.text, tmp_e.disable_joke)
-                        else:
-                            values.append(tmp_e)
-
-                elif isinstance(e, PlainElement):
-                    if isinstance(e, PlainElement):
-                        if e.text != "":
-                            values += match_kecode(e.text, e.disable_joke)
+                        values.append(tmp_e)
 
                 elif isinstance(e, BaseElement):
                     values.append(e)
@@ -161,7 +148,7 @@ class MessageChain:
                             return False
         return True
 
-    def as_sendable(self, session_info: SessionInfo = None) -> list:
+    def as_sendable(self, session_info: SessionInfo = None, parse_message: bool = True) -> list:
         """
         将消息链转换为可发送的格式。
         """
@@ -175,7 +162,15 @@ class MessageChain:
             elif isinstance(x, PlainElement):
                 if session_info:
                     if x.text != "":
-                        x.text = session_info.locale.t_str(x.text)
+                        if parse_message:
+                            x.text = session_info.locale.t_str(x.text)
+                            element_chain = match_kecode(x.text, x.disable_joke)
+                            for elem in element_chain.values:
+                                elem = MessageChain.assign(elem).as_sendable(session_info, parse_message=False)
+                                if isinstance(elem, PlainElement):
+                                    elem.text = session_info.locale.t_str(elem.text)
+                                value += elem
+                            continue
                     else:
                         x = PlainElement.assign(session_info.locale.t("error.message.chain.empty"))
                 value.append(x)
@@ -188,17 +183,20 @@ class MessageChain:
                 else:
                     value.append(PlainElement.assign(x))
             elif isinstance(x, I18NContextElement):
+                if not session_info:
+                    locale = Locale(default_locale)
+                else:
+                    locale = session_info.locale
                 for k, v in x.kwargs.items():
                     if isinstance(v, str):
-                        x.kwargs[k] = session_info.locale.t_str(v)
-                t_value = session_info.locale.t(x.key, **x.kwargs)
+                        x.kwargs[k] = locale.t_str(v)
+                t_value = locale.t(x.key, **x.kwargs)
                 if isinstance(t_value, str):
                     value.append(PlainElement.assign(t_value, disable_joke=x.disable_joke))
                 else:
                     value += MessageChain.assign(t_value).as_sendable(session_info)
             elif isinstance(x, URLElement):
-                if session_info and ((session_info.use_url_manager and x.applied_mm is None)
-                                     or (session_info.force_use_url_manager and not x.applied_mm)):
+                if session_info and (session_info.use_url_manager and x.applied_mm is None):
                     x = URLElement.assign(x.url, use_mm=True, md_format_name=x.md_format_name)
                 if session_info and session_info.use_url_md_format and not x.applied_md_format:
                     x = URLElement.assign(x.url, md_format=True, md_format_name=x.md_format_name)
@@ -281,6 +279,9 @@ class MessageChain:
     def __iter__(self):
         return iter(self.values)
 
+    def __len__(self):
+        return len(self.values)
+
     def __add__(self, other):
         if isinstance(other, MessageChain):
             return MessageChain.assign(self.values + other.values)
@@ -322,12 +323,12 @@ class I18NMessageChain:
     @classmethod
     def assign(cls, values: dict[str, MessageChain]) -> I18NMessageChain:
         """
-        :param values: 多语言消息链元素，键为语言代码，值为消息链。必须包含 'default' 键用于回滚处理。
+        :param values: 多语言消息链元素，键为语言代码，值为消息链。必须包含 `default` 键用于回滚处理。
         """
         if not isinstance(values, dict):
             raise TypeError("I18NMessageChain values must be a dictionary.")
-        if 'default' not in values:
-            raise ValueError("I18NMessageChain values must have 'default' key.")
+        if "default" not in values:
+            raise ValueError("I18NMessageChain values must have \"default\" key.")
         return cls(values=deepcopy(values))
 
 
@@ -342,7 +343,7 @@ class PlatformMessageChain:
     @classmethod
     def assign(cls, values: dict[str, Union[MessageChain, I18NMessageChain]]) -> PlatformMessageChain:
         """
-        :param values: 平台消息链元素，键为平台名称，值为消息链。必须包含 'default' 键用于回滚处理。
+        :param values: 平台消息链元素，键为平台名称，值为消息链。必须包含 `default` 键用于回滚处理。
         """
         if not isinstance(values, dict):
             raise TypeError("PlatformMessageChain values must be a dictionary.")
@@ -357,7 +358,7 @@ class MessageNodes:
     """
 
     values: List[MessageChain]
-    name: str = ''
+    name: str = ""
 
     @classmethod
     def assign(cls, values: List[MessageChain], name: Optional[str] = None):
@@ -366,7 +367,7 @@ class MessageNodes:
         :param name: 节点名称，默认为随机生成的字符串。
         """
         if not name:
-            name = "Message" + random.sample('abcdefghijklmnopqrstuvwxyz', 5)
+            name = "Message " + "".join(random.sample("abcdefghijklmnopqrstuvwxyz", 5))
 
         return cls(values=values, name=name)
 
@@ -430,12 +431,10 @@ def _extract_kecode_blocks(text):
 
 
 def match_kecode(text: str,
-                 disable_joke: bool = False) -> List[Union[
-                     PlainElement, ImageElement, VoiceElement,
-                     I18NContextElement, MentionElement]]:
+                 disable_joke: bool = False) -> MessageChain:
     split_all = _extract_kecode_blocks(text)
     split_all = [x for x in split_all if x]
-    elements = []
+    elements = MessageChain.assign()
 
     for e in split_all:
         match = re.match(r"\[KE:([^\s,\]]+)(?:,(.*))?\]$", e, re.DOTALL)
@@ -551,6 +550,12 @@ def match_atcode(text: str, client: str, pattern: str) -> str:
         return match.group(0)
 
     return re.sub(r"<(?:AT|@):([^\|]+)\|(?:.*?\|)?([^\|>]+)>", _replacer, text)
+
+
+def convert_senderid_to_atcode(text: str, sender_prefix: str) -> str:
+    sender_prefix = sender_prefix.replace("|", "\\|")
+
+    return re.sub(rf"(?<!<AT:)(?<!<@:){sender_prefix}\|\w+", r"<AT:\g<0>>", text).replace("\\", "")
 
 
 add_export(MessageChain)

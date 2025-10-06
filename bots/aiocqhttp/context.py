@@ -3,7 +3,7 @@ import datetime
 import random
 import re
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, Union, List
 
 import aiocqhttp
 from aiocqhttp import Event, MessageSegment
@@ -11,7 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 
 from bots.aiocqhttp.client import aiocqhttp_bot
 from bots.aiocqhttp.info import target_private_prefix, target_group_prefix, client_name
-from bots.aiocqhttp.utils import CQCodeHandler, get_onebot_implementation
+from bots.aiocqhttp.utils import CQCodeHandler
 from core.builtins.message.chain import MessageChain, MessageNodes, match_atcode
 from core.builtins.message.elements import PlainElement, ImageElement, VoiceElement, MentionElement
 from core.builtins.message.internal import I18NContext
@@ -51,8 +51,8 @@ def convert_msg_nodes(
     node_list = []
     for message in msg_node.values:
         content = ""
-        msgchain = message.as_sendable(session_info=session_info)
-        for x in msgchain:
+        msg_chain = message.as_sendable(session_info=session_info)
+        for x in msg_chain:
             if isinstance(x, PlainElement):
                 content += x.text + "\n"
             elif isinstance(x, ImageElement):
@@ -163,9 +163,10 @@ class AIOCQContextManager(ContextManager):
                 convert_msg_segments = MessageSegment.reply(int(session_info.message_id))
 
             count = 0
-            for x in message.as_sendable(session_info):
+            for x in message.as_sendable(session_info, parse_message=enable_parse_message):
                 if isinstance(x, PlainElement):
-                    x.text = match_atcode(x.text, client_name, "[CQ:at,qq={uid}]")
+                    if enable_parse_message:
+                        x.text = match_atcode(x.text, client_name, "[CQ:at,qq={uid}]")
                     if enable_parse_message:
                         parts = re.split(r"(\[CQ:[^\]]+\])", x.text)
                         parts = [part for part in parts if part]
@@ -290,18 +291,82 @@ class AIOCQContextManager(ContextManager):
         return []
 
     @classmethod
-    async def delete_message(cls, session_info: SessionInfo, message_id: list[str]) -> None:
+    async def delete_message(cls, session_info: SessionInfo, message_id: Union[str, List[str]]) -> None:
         if isinstance(message_id, str):
             message_id = [message_id]
         if not isinstance(message_id, list):
             raise TypeError("Message ID must be a list or str")
 
         if session_info.target_from in [target_private_prefix, target_group_prefix]:
-            try:
-                for x in message_id:
+            for x in message_id:
+                try:
                     await aiocqhttp_bot.call_action("delete_msg", message_id=x)
+                    Logger.info(f"Deleted message {x} in session {session_info.session_id}")
+                except Exception:
+                    Logger.exception(f"Failed to delete message {x} in session {session_info.session_id}: ")
+
+    @classmethod
+    async def add_reaction(cls, session_info: SessionInfo, message_id: Union[str, list[str]], emoji: str) -> None:
+        if isinstance(message_id, str):
+            message_id = [message_id]
+        if not isinstance(message_id, list):
+            raise TypeError("Message ID must be a list or str")
+
+        if session_info.session_id not in cls.context:
+            raise ValueError("Session not found in context")
+
+        if session_info.target_from == target_group_prefix:
+            try:
+                obi = Temp.data.get("onebot_impl")
+                if obi in ["llonebot", "napcat"]:
+                    await aiocqhttp_bot.call_action("set_msg_emoji_like",
+                                                    message_id=message_id[-1],
+                                                    emoji_id=emoji,
+                                                    set=True)
+                elif obi == "lagrange":
+                    await aiocqhttp_bot.call_action("set_group_reaction",
+                                                    group_id=int(session_info.get_common_target_id()),
+                                                    message_id=message_id[-1],
+                                                    code=emoji,
+                                                    is_add=True)
+                else:
+                    pass
+                Logger.info(f"Added reaction \"{emoji}\" to message {message_id} in session {session_info.session_id}")
             except Exception:
-                Logger.exception()
+                Logger.exception(f"Failed to add reaction \"{emoji}\" to message {
+                                 message_id} in session {session_info.session_id}: ")
+
+    @classmethod
+    async def remove_reaction(cls, session_info: SessionInfo, message_id: Union[str, list[str]], emoji: str) -> None:
+        if isinstance(message_id, str):
+            message_id = [message_id]
+        if not isinstance(message_id, list):
+            raise TypeError("Message ID must be a list or str")
+
+        if session_info.session_id not in cls.context:
+            raise ValueError("Session not found in context")
+
+        if session_info.target_from == target_group_prefix:
+            try:
+                obi = Temp.data.get("onebot_impl")
+                if obi in ["llonebot", "napcat"]:
+                    await aiocqhttp_bot.call_action("set_msg_emoji_like",
+                                                    message_id=message_id[-1],
+                                                    emoji_id=emoji,
+                                                    set=False)
+                elif obi == "lagrange":
+                    await aiocqhttp_bot.call_action("set_group_reaction",
+                                                    group_id=int(session_info.get_common_target_id()),
+                                                    message_id=message_id[-1],
+                                                    code=emoji,
+                                                    is_add=False)
+                else:
+                    pass
+                Logger.info(f"Removed reaction \"{emoji}\" to message {
+                            message_id} in session {session_info.session_id}")
+            except Exception:
+                Logger.exception(f"Failed to remove reaction \"{emoji}\" to message {
+                                 message_id} in session {session_info.session_id}: ")
 
     @classmethod
     async def start_typing(cls, session_info: SessionInfo) -> None:
@@ -312,12 +377,13 @@ class AIOCQContextManager(ContextManager):
             Logger.debug(f"Start typing in session: {session_info.session_id}")
 
             if session_info.target_from == target_group_prefix:  # wtf onebot 11
-                obi = await get_onebot_implementation()
+                obi = Temp.data.get("onebot_impl")
                 if obi in ["llonebot", "napcat"]:
                     await aiocqhttp_bot.call_action(
                         "set_msg_emoji_like",
                         message_id=session_info.message_id,
-                        emoji_id=qq_typing_emoji)
+                        emoji_id=qq_typing_emoji,
+                        set=True)
                 elif obi == "lagrange":
                     await aiocqhttp_bot.call_action(
                         "set_group_reaction",
@@ -364,11 +430,12 @@ class AIOCQContextManager(ContextManager):
 
         if session_info.target_from == target_group_prefix:
             qq_account = Temp.data.get("qq_account")
-            obi = await get_onebot_implementation()
+            obi = Temp.data.get("onebot_impl")
             if obi in ["llonebot", "napcat"]:
                 await aiocqhttp_bot.call_action("set_msg_emoji_like",
                                                 message_id=session_info.message_id,
-                                                emoji_id=qq_limited_emoji)
+                                                emoji_id=qq_limited_emoji,
+                                                set=True)
             elif obi == "lagrange":
                 await aiocqhttp_bot.call_action("set_group_reaction",
                                                 group_id=int(session_info.get_common_target_id()),
@@ -385,18 +452,6 @@ class AIOCQContextManager(ContextManager):
                                                 message=f"[CQ:poke,qq={qq_account}]")
             else:
                 pass
-
-    @classmethod
-    async def set_group_leave(cls, session_info: SessionInfo) -> None:
-        """
-        设置群组离开。
-
-        :param session_info: 会话信息
-        """
-        if session_info.target_from == target_group_prefix:
-            await aiocqhttp_bot.call_action("set_group_leave", group_id=int(session_info.get_common_target_id()))
-        else:
-            raise ValueError("Session is not a group session")
 
     @classmethod
     async def call_api(cls, api_name: str, **kwargs) -> Optional[dict]:

@@ -63,8 +63,7 @@ save_source = True
 
 
 async def msgnode2image(message_node: MessageNodes,
-                        session: Optional[Union[MessageSession, SessionInfo, FetchedSessionInfo]] = None,
-                        use_local: bool = True):
+                        session: Optional[Union[MessageSession, SessionInfo, FetchedSessionInfo]] = None):
     new_chain_list = []
     for m in message_node.values:
         for x in m.as_sendable(session):
@@ -95,7 +94,7 @@ async def msgchain2image(message_chain: Union[List, MessageChain],
         elif isinstance(m, EmbedElement):
             if m.image is not None:
                 await m.image.get_base64(mime=True)
-    title = 'Message List'
+    title = "Message List"
     if session:
         title = session.locale.t("message.list")
 
@@ -137,7 +136,7 @@ async def svg_render(file_path: str) -> Union[List[ImageElement], bool]:
         fi.write(html_content)
 
     pic_list = await web_render.element_screenshot(
-        ElementScreenshotOptions(content=html_content, element=[".botbox"], counttime=False, output_type='png'))
+        ElementScreenshotOptions(content=html_content, element=[".botbox"], counttime=False, output_type="png"))
     if not pic_list:
         Logger.exception("[WebRender] Generation Failed.")
         return False

@@ -8,7 +8,7 @@
 
 # 小可 · AkariBot
 
-_多功能、多语言、多平台支持的异步聊天机器人_
+_多功能、跨平台、可自由扩展的异步聊天机器人助手_
 
 [![GitHub issues](https://img.shields.io/github/issues/Teahouse-Studios/akari-bot)](https://github.com/Teahouse-Studios/akari-bot/issues)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/Teahouse-Studios/akari-bot)](https://github.com/Teahouse-Studios/akari-bot/pulls)
@@ -25,7 +25,7 @@ _多功能、多语言、多平台支持的异步聊天机器人_
 
 | 核心          | MediaWiki    | Minecraft      | 音乐游戏        | API 查询工具  | 实用工具         | 娱乐       | RSS               |
 | :-----------: | :----------: | :------------: | :------------: | :-----------: |  :------------: | :--------: | :---------------: |
-| 模块化功能管理  | Wiki 页面查询 | ~~漏洞追踪器~~     | ~~Arcaea~~     | Bilibili      | IP 地址查询     | Wordle     | ~~MC 版本更新推送~~     |
+| 模块化功能管理  | Wiki 页面查询 | 漏洞追踪器     | ~~Arcaea~~     | Bilibili      | IP 地址查询     | Wordle     | MC 版本更新推送     |
 | 用户权限管理    | Wiki 页面搜索 | 服务器 MOTD    | Cytoid         | 网易云音乐    | 网站 WHOIS 查询 | 24 点       | MC 新闻推送        |
 | 自定义命令别名  | Wiki 用户查询 | 玩家信息查询   | Maimai          | GitHub       | 汇率信息查询    | 化学式小游戏 | MCWiki 每周页面推送 |
 | 自定义命令前缀  | 滥用日志查询  | 版本更新查询   | Phigros         | X（Twitter）  |   色彩查看器    | 抛硬币      | 茶馆周报推送        |
@@ -89,7 +89,7 @@ _多功能、多语言、多平台支持的异步聊天机器人_
 
 ### 贡献
 
-如你想为我们编写新的模块，可以看看[这里](https://bot.teahouse.team/wiki/%E6%96%B0%E5%BB%BA%E6%A8%A1%E5%9D%97%E6%8C%87%E5%8D%97)。
+如你想为我们编写新的模块，可以看看[这里](https://bot.teahouse.team/wiki/%E6%A8%A1%E5%9D%97%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97)。
 
 ## 许可
 
@@ -97,6 +97,10 @@ _多功能、多语言、多平台支持的异步聊天机器人_
 
 ## Star 历史
 [![Star Chart](https://starchart.cc/Teahouse-Studios/akari-bot.svg?variant=adaptive)](https://starchart.cc/Teahouse-Studios/akari-bot)
+
+## 相关项目
+- [AkariBot WebRender](https://github.com/Teahouse-Studios/akari-bot-webrender)
+- [AkariBot WebUI](https://github.com/Teahouse-Studios/akari-bot-webui)
 
 ## 赞助者
 <p align="center">

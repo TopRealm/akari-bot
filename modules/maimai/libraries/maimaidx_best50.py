@@ -1,10 +1,9 @@
-import os
 from typing import Optional, Dict, List
 
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 
 from core.builtins.bot import Bot
-from core.constants.path import noto_sans_demilight_path, noto_sans_symbol_path
+from core.constants.path import noto_sans_bold_path, noto_sans_demilight_path, noto_sans_symbol_path
 from .maimaidx_apidata import get_record
 from .maimaidx_mapping import (
     mai_cover_path,
@@ -132,6 +131,41 @@ class DrawBest:
     def _resize_image(img: Image.Image, scale: float) -> Image.Image:
         return img.resize((int(img.width * scale), int(img.height * scale)))
 
+    @staticmethod
+    def _get_goal_color(goal: str):
+        match goal:
+            case "C" | "D":
+                color = (206, 196, 204)
+            case "B" | "BB" | "BBB":
+                color = (69, 174, 255)
+            case "A" | "AA" | "AAA":
+                color = (255, 129, 141)
+            case "S" | "S+" | "SS" | "SS+":
+                color = (239, 243, 13)
+            case "SSS":
+                color = [(239, 243, 13), (69, 174, 255), (255, 129, 141)]
+            case "SSS+":
+                color = [(239, 243, 13), (69, 174, 255), (255, 129, 141), (239, 243, 13)]
+            case "FC" | "FC+":
+                color = (129, 217, 85)
+            case "AP" | "AP+":
+                color = (249, 128, 4)
+            case "SYNC":
+                color = (49, 195, 246)
+            case "FS" | "FS+":
+                color = (69, 174, 255)
+            case "FDX" | "FDX+":
+                color = (249, 128, 4)
+            case "✦" | "✦✦":
+                color = (129, 217, 85)
+            case "✦✦✦" | "✦✦✦✦":
+                color = (249, 128, 4)
+            case "✦✦✦✦✦":
+                color = (239, 243, 13)
+            case _:
+                color = (255, 255, 255)
+        return color
+
     def _draw_best_list(self, img: Image.Image, sd_best: BestList, dx_best: BestList):
         item_weight = 150
         item_height = 100
@@ -149,20 +183,20 @@ class DrawBest:
             i = num // 5
             j = num % 5
             chart_info: ChartInfo = sd_best[num]
-            cover_path = os.path.join(mai_cover_path, f"{chart_info.song_id}.png")
-            if not os.path.exists(cover_path):
-                cover_path = os.path.join(mai_cover_path, "0.png")
+            cover_path = mai_cover_path / f"{chart_info.song_id}.png"
+            if not cover_path.exists():
+                cover_path = mai_cover_path / "0.png"
 
-            if os.path.exists(cover_path):
-                temp = Image.open(cover_path).convert("RGB")
+            if cover_path.exists():
+                temp = Image.open(cover_path).convert("RGBA")
                 temp = self._resize_image(temp, item_weight / temp.size[0])
                 temp = temp.crop(
                     (0, (temp.size[1] - item_height) / 2, item_weight, (temp.size[1] + item_height) / 2)
                 )
-                temp = temp.filter(ImageFilter.GaussianBlur(2))
-                temp = temp.point(lambda p: int(p * 0.72))
+                overlay = Image.new("RGBA", temp.size, (0, 0, 0, 100))
+                temp = Image.alpha_composite(temp, overlay)
             else:
-                temp = Image.new("RGB", (int(item_weight), int(item_height)), (111, 111, 111, 255))
+                temp = Image.new("RGBA", (item_weight, item_height), (111, 111, 111, 255))
 
             temp_draw = ImageDraw.Draw(temp)
             temp_draw.polygon(level_triagle, color[chart_info.diff])
@@ -175,13 +209,20 @@ class DrawBest:
             temp_draw.text((7, 29), f"ID: {chart_info.song_id}", "white", font)
             font = ImageFont.truetype(noto_sans_demilight_path, 16, encoding="utf-8")
             temp_draw.text((6, 42), f"{chart_info.achievement:.4f}%", "white", font)
-            font = ImageFont.truetype(noto_sans_demilight_path, 18, encoding="utf-8")
-            temp_draw.text((96, 42), chart_info.rate, "white", font)
-            font = ImageFont.truetype(noto_sans_demilight_path, 12, encoding="utf-8")
+            font = ImageFont.truetype(noto_sans_bold_path, 18, encoding="utf-8")
+            if chart_info.rate in ["SSS", "SSS+"]:
+                x_ = 96
+                for k, char in enumerate(chart_info.rate):
+                    temp_draw.text((x_, 42), char, self._get_goal_color(chart_info.rate)[k], font)
+                    char_width = font.getbbox(char)[2]
+                    x_ += char_width
+            else:
+                temp_draw.text((96, 42), chart_info.rate, self._get_goal_color(chart_info.rate), font)
+            font = ImageFont.truetype(noto_sans_bold_path, 12, encoding="utf-8")
             if chart_info.combo:
-                temp_draw.text((80, 27), chart_info.combo, "white", font)
+                temp_draw.text((80, 27), chart_info.combo, self._get_goal_color(chart_info.combo), font)
             if chart_info.sync:
-                temp_draw.text((110, 27), chart_info.sync, "white", font)
+                temp_draw.text((110, 27), chart_info.sync, self._get_goal_color(chart_info.sync), font)
             if chart_info.dx_score:
                 font = ImageFont.truetype(
                     noto_sans_demilight_path, 12, encoding="utf-8"
@@ -193,10 +234,11 @@ class DrawBest:
                     font,
                 )
                 font = ImageFont.truetype(noto_sans_symbol_path, 12, encoding="utf-8")
+                dx_star = calc_dxstar(chart_info.dx_score, chart_info.dx_score_max)
                 temp_draw.text(
                     (90, 61),
-                    calc_dxstar(chart_info.dx_score, chart_info.dx_score_max),
-                    "white",
+                    dx_star,
+                    self._get_goal_color(dx_star),
                     font,
                 )
             font = ImageFont.truetype(noto_sans_demilight_path, 12, encoding="utf-8")
@@ -217,20 +259,20 @@ class DrawBest:
             i = num // 5
             j = num % 5
             chart_info: ChartInfo = dx_best[num]
-            cover_path = os.path.join(mai_cover_path, f"{chart_info.song_id}.png")
-            if not os.path.exists(cover_path):
-                cover_path = os.path.join(mai_cover_path, "0.png")
+            cover_path = mai_cover_path / f"{chart_info.song_id}.png"
+            if not cover_path.exists():
+                cover_path = mai_cover_path / "0.png"
 
-            if os.path.exists(cover_path):
-                temp = Image.open(cover_path).convert("RGB")
+            if cover_path.exists():
+                temp = Image.open(cover_path).convert("RGBA")
                 temp = self._resize_image(temp, item_weight / temp.size[0])
                 temp = temp.crop(
                     (0, (temp.size[1] - item_height) / 2, item_weight, (temp.size[1] + item_height) / 2)
                 )
-                temp = temp.filter(ImageFilter.GaussianBlur(2))
-                temp = temp.point(lambda p: int(p * 0.72))
+                overlay = Image.new("RGBA", temp.size, (0, 0, 0, 100))
+                temp = Image.alpha_composite(temp, overlay)
             else:
-                temp = Image.new("RGB", (int(item_weight), int(item_height)), (111, 111, 111, 255))
+                temp = Image.new("RGBA", (item_weight, item_height), (111, 111, 111, 255))
 
             temp_draw = ImageDraw.Draw(temp)
             temp_draw.polygon(level_triagle, color[chart_info.diff])
@@ -243,13 +285,20 @@ class DrawBest:
             temp_draw.text((7, 29), f"ID: {chart_info.song_id}", "white", font)
             font = ImageFont.truetype(noto_sans_demilight_path, 16, encoding="utf-8")
             temp_draw.text((6, 42), f"{chart_info.achievement:.4f}%", "white", font)
-            font = ImageFont.truetype(noto_sans_demilight_path, 18, encoding="utf-8")
-            temp_draw.text((96, 42), chart_info.rate, "white", font)
-            font = ImageFont.truetype(noto_sans_demilight_path, 12, encoding="utf-8")
+            font = ImageFont.truetype(noto_sans_bold_path, 18, encoding="utf-8")
+            if chart_info.rate in ["SSS", "SSS+"]:
+                x_ = 96
+                for k, char in enumerate(chart_info.rate):
+                    temp_draw.text((x_, 42), char, self._get_goal_color(chart_info.rate)[k], font)
+                    char_width = font.getbbox(char)[2]
+                    x_ += char_width
+            else:
+                temp_draw.text((96, 42), chart_info.rate, self._get_goal_color(chart_info.rate), font)
+            font = ImageFont.truetype(noto_sans_bold_path, 12, encoding="utf-8")
             if chart_info.combo:
-                temp_draw.text((80, 27), chart_info.combo, "white", font)
+                temp_draw.text((80, 27), chart_info.combo, self._get_goal_color(chart_info.combo), font)
             if chart_info.sync:
-                temp_draw.text((110, 27), chart_info.sync, "white", font)
+                temp_draw.text((110, 27), chart_info.sync, self._get_goal_color(chart_info.sync), font)
             if chart_info.dx_score:
                 font = ImageFont.truetype(
                     noto_sans_demilight_path, 12, encoding="utf-8"
@@ -261,10 +310,11 @@ class DrawBest:
                     font,
                 )
                 font = ImageFont.truetype(noto_sans_symbol_path, 12, encoding="utf-8")
+                dx_star = calc_dxstar(chart_info.dx_score, chart_info.dx_score_max)
                 temp_draw.text(
                     (90, 61),
-                    calc_dxstar(chart_info.dx_score, chart_info.dx_score_max),
-                    "white",
+                    dx_star,
+                    self._get_goal_color(dx_star),
                     font,
                 )
             font = ImageFont.truetype(noto_sans_demilight_path, 12, encoding="utf-8")
@@ -324,7 +374,7 @@ class DrawBest:
             (34, 64), f"RATING    {self.player_rating}", fill="black", font=font
         )
         font = ImageFont.truetype(noto_sans_demilight_path, 20, encoding="utf-8")
-        img_draw.text((34, 114), f"STANDARD ({self.sd_rating})", fill="black", font=font)
+        img_draw.text((34, 114), f"PAST ({self.sd_rating})", fill="black", font=font)
         img_draw.text((34, 914), f"NEW ({self.dx_rating})", fill="black", font=font)
         self._draw_best_list(self.img, self.sd_best, self.dx_best)
 

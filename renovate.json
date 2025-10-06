@@ -3,6 +3,14 @@
     "extends": [
         "config:recommended"
     ],
+    "ignorePaths": [
+        "**/requirements*.txt"
+    ],
+    "pip_requirements": {
+        "managerFilePatterns": [
+            "/^$/"
+        ]
+    },
     "packageRules": [
         {
             "matchUpdateTypes": [
@@ -10,6 +18,9 @@
                 "patch",
                 "pin",
                 "digest"
+            ],
+            "enabledManagers": [
+                "poetry"
             ],
             "automerge": false
         }

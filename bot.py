@@ -6,13 +6,14 @@ import shutil
 import sys
 import traceback
 from datetime import datetime
+from pathlib import Path
 from time import sleep
 
 from loguru import logger
 from tortoise import Tortoise, run_async
 from tortoise.exceptions import ConfigurationError
 
-from core.constants import config_path, config_filename
+from core.constants import config_path, config_filename, logs_path
 
 # Capture the base import lists to avoid clearing essential modules when restarting
 base_import_lists = list(sys.modules)
@@ -26,15 +27,34 @@ except ValueError:
 
 Logger = logger.bind(name="BotDaemon")
 
+logger_format = (
+    "<cyan>[BotDaemon]</cyan>"
+    "<yellow>[{name}:{function}:{line}]</yellow>"
+    "<green>[{time:YYYY-MM-DD HH:mm:ss}]</green>"
+    "<level>[{level}]:{message}</level>"
+)
 Logger.add(
     sys.stderr,
-    format=(
-        "<cyan>[BotDaemon]</cyan>"
-        "<yellow>[{name}:{function}:{line}]</yellow>"
-        "<green>[{time:YYYY-MM-DD HH:mm:ss}]</green>"
-        "<level>[{level}]:{message}</level>"
-    ),
+    format=logger_format,
     colorize=True,
+    filter=lambda record: record["extra"].get("name") == "BotDaemon"
+)
+Logger.add(
+    sink=logs_path / "BotDaemon_debug_{time:YYYY-MM-DD}.log",
+    format=logger_format,
+    rotation="00:00",
+    retention="1 day",
+    level="DEBUG",
+    filter=lambda record: record["level"].name == "DEBUG" and record["extra"].get("name") == "BotDaemon",
+    encoding="utf8",
+)
+Logger.add(
+    sink=logs_path / "BotDaemon_{time:YYYY-MM-DD}.log",
+    format=logger_format,
+    rotation="00:00",
+    retention="10 days",
+    level="INFO",
+    encoding="utf8",
     filter=lambda record: record["extra"].get("name") == "BotDaemon"
 )
 
@@ -69,10 +89,11 @@ processes: list[multiprocessing.Process] = []
 
 
 def pre_init():
+
     from core.constants.path import cache_path  # noqa
-    if os.path.exists(cache_path):
+    if cache_path.exists():
         shutil.rmtree(cache_path)
-    os.makedirs(cache_path, exist_ok=True)
+    cache_path.mkdir(parents=True, exist_ok=True)
 
     from core.config import Config  # noqa
     from core.constants.default import base_superuser_default  # noqa
@@ -151,7 +172,6 @@ def go(bot_name: str, subprocess: bool = False, binary_mode: bool = False):
     Logger.info(f"[{bot_name}] Here we go!")
     Info.subprocess = subprocess
     Info.binary_mode = binary_mode
-    Logger.rename(bot_name)
 
     try:
         importlib.import_module(f"bots.{bot_name}.bot")
@@ -203,7 +223,7 @@ async def run_bot():
 
     envs = os.environ.copy()
     envs["PYTHONIOENCODING"] = "UTF-8"
-    envs["PYTHONPATH"] = os.path.abspath(".")
+    envs["PYTHONPATH"] = Path(".").resolve()
     lst = bots_and_required_configs.keys()
 
     for t in CFGManager.values:
@@ -211,6 +231,7 @@ async def run_bot():
             if "enable" in CFGManager.values[t][t]:
                 if not CFGManager.values[t][t]["enable"]:
                     disabled_bots.append(t[4:])
+                    Logger.warning(f"Bot {t[4:]} is disabled in config, skip to launch.")
             else:
                 Logger.warning(f"Bot {t} cannot found config \"enable\".")
                 disabled_bots.append(t[4:])
@@ -283,18 +304,14 @@ async def run_bot():
     sys.exit(1)
 
 
-def terminate_process(process: multiprocessing.Process, timeout=5):
+def terminate_process(process: multiprocessing.Process):
     process.kill()
-    # process.terminate()
-    # process.join(timeout=timeout)
-    # if process.is_alive():
-    #     process.kill()
     process.join()
     process.close()
 
 
 async def main_async():
-    if not os.path.exists(os.path.join(config_path, config_filename)):
+    if not (config_path / config_filename).exists():
         import core.scripts.config_generate  # noqa
     from core.config import Config  # noqa
 
@@ -340,4 +357,34 @@ def main():
 
 
 if __name__ == "__main__":
+    # Check Python version
+    required_version = (3, 12)
+    if sys.version_info < required_version:
+        Logger.critical(
+            f"Your Python version is {sys.version_info.major}.{sys.version_info.minor}, "
+            f"and you need Python {required_version[0]}.{required_version[1]} or higher."
+        )
+        sys.exit(1)
+
+    # Detect if the program is already running
+    lock_file_path = Path("./.bot.lock").resolve()
+    if sys.platform == "win32":
+        import msvcrt
+
+        lock_file = open(lock_file_path, "w")
+        try:
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            Logger.critical("Another instance is already running. Aborting.")
+            sys.exit(1)
+    else:
+        import fcntl
+
+        lock_file = open(lock_file_path, "w")
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            Logger.critical("Another instance is already running. Aborting.")
+            sys.exit(1)
+
     main()

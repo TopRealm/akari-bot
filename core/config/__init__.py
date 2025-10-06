@@ -1,7 +1,7 @@
 import datetime
-import os
 import re
 from time import sleep
+from pathlib import Path
 from typing import Optional, Union, Any
 
 import orjson as json
@@ -14,7 +14,7 @@ from tomlkit.items import Table
 import core.config.update  # noqa
 from core.constants.default import default_locale
 from core.constants.exceptions import ConfigValueError, ConfigOperationError
-from core.constants.path import config_path
+from core.constants.path import config_path as default_config_path
 from core.exports import add_export
 from core.i18n import Locale
 
@@ -22,8 +22,8 @@ ALLOWED_TYPES = (bool, datetime.datetime, datetime.date, float, int, list, str)
 
 
 class CFGManager:
-    config_path = config_path  # don't change this plzzzzz it will break switch_config_path
-    config_file_list = [cfg for cfg in os.listdir(config_path) if cfg.endswith(".toml")]
+    config_path = default_config_path  # don't change this plzzzzz it will break switch_config_path
+    config_file_list = [cfg.name for cfg in config_path.glob("*.toml")]
     values: dict[str, TOMLDocument] = {}
     _tss: dict[str, float] = {}
     _load_lock = False
@@ -44,14 +44,14 @@ class CFGManager:
         if not cls._load_lock:
             cls._load_lock = True
             try:
-                cls.config_file_list = [cfg for cfg in os.listdir(cls.config_path) if cfg.endswith(".toml")]
+                cls.config_file_list = [cfg.name for cfg in cls.config_path.glob("*.toml")]
                 for cfg in cls.config_file_list:
                     cfg_name = cfg
                     if cfg_name.endswith(".toml"):
                         cfg_name = cfg_name.removesuffix(".toml")
-                    with open(os.path.join(cls.config_path, cfg), "r", encoding="utf-8") as c:
+                    with open(cls.config_path / cfg, "r", encoding="utf-8") as c:
                         cls.values[cfg_name] = toml_parser(c.read())
-                    cls._tss[cfg_name] = os.path.getmtime(os.path.join(cls.config_path, cfg))
+                    cls._tss[cfg_name] = (cls.config_path / cfg).stat().st_mtime
             except Exception as e:
                 raise ConfigValueError(e)
             cls._load_lock = False
@@ -65,7 +65,7 @@ class CFGManager:
                     cfg_name = cfg
                     if not cfg_name.endswith(".toml"):
                         cfg_name += ".toml"
-                    with open(os.path.join(cls.config_path, cfg_name), "w", encoding="utf-8") as f:
+                    with open(cls.config_path / cfg_name, "w", encoding="utf-8") as f:
                         f.write(toml_dumps(cls.values[cfg], sort_keys=True))
             except Exception as e:
                 raise ConfigValueError(e)
@@ -82,9 +82,9 @@ class CFGManager:
                 cfg_file = cfg
                 if not cfg_file.endswith(".toml"):
                     cfg_file += ".toml"
-                file_path = os.path.join(cls.config_path, cfg_file)
-                if os.path.exists(file_path):
-                    if os.path.getmtime(file_path) != cls._tss[cfg]:
+                file_path = cls.config_path / cfg_file
+                if file_path.exists():
+                    if file_path.stat().st_mtime != cls._tss[cfg]:
                         logger.warning("[Config] Config file has been modified, reloading...")
                         cls.load()
                         break
@@ -188,7 +188,6 @@ class CFGManager:
                 else:
                     cfg_type = cfg_type if cfg_type else type(default)
 
-            logger.debug(f"[Config] Config {q} not found, filled with default value.")
             cls.write(q, default, cfg_type, secret, table_name, _generate)
             return default
 
@@ -239,6 +238,7 @@ class CFGManager:
         q = q.lower()
         if value is None:
             if _generate:  # if the value is None when generating the config file, fill with a placeholder
+                logger.debug(f"[Config] Config {q} not found, filled with default value.")
                 if cfg_type:
                     if isinstance(cfg_type, tuple):
                         cfg_type_str = "(" + ", ".join(map(lambda ty: ty.__name__, cfg_type)) + ")"
@@ -346,7 +346,7 @@ class CFGManager:
                     elif target.startswith("module_"):
                         prefix = "module"
                     else:
-                        prefix = target.split('_')[0]
+                        prefix = target.split("_")[0]
 
                     table_comment_key = f"config.table.{"secret" if is_secret else "config"}_{prefix}"
                 cls.values[cfg_name].add(nl())
@@ -402,10 +402,10 @@ class CFGManager:
         return True
 
     @classmethod
-    def switch_config_path(cls, path: str):
-        cls.config_path = os.path.abspath(path)
+    def switch_config_path(cls, path: "Path"):
+        cls.config_path = path.resolve()
         cls._tss = {}
-        cls.config_file_list = [cfg for cfg in os.listdir(cls.config_path) if cfg.endswith(".toml")]
+        cls.config_file_list = [cfg.name for cfg in cls.config_path.glob("*.toml")]
         cls.values = {}
         cls._load_lock = False
         cls._save_lock = False

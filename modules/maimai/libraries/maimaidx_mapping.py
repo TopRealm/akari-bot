@@ -1,5 +1,3 @@
-import os
-
 from core.config import Config
 from core.constants.path import assets_path
 
@@ -7,12 +5,12 @@ DEVELOPER_TOKEN = Config("diving_fish_developer_token", cfg_type=str, secret=Tru
 SONGS_PER_PAGE = 30
 SONGS_NEED_IMG = 10
 
-mai_assets_path = os.path.join(assets_path, "modules", "maimai")
-mai_cover_path = os.path.join(mai_assets_path, "static", "mai", "cover")
-mai_alias_path = os.path.join(mai_assets_path, "mai_song_alias.json")
-mai_grade_info_path = os.path.join(mai_assets_path, "mai_grade_info.json")
-mai_song_info_path = os.path.join(mai_assets_path, "mai_song_info.json")
-mai_utage_info_path = os.path.join(mai_assets_path, "mai_utage_info.json")
+mai_assets_path = assets_path / "modules" / "maimai"
+mai_cover_path = mai_assets_path / "static" / "mai" / "cover"
+mai_alias_path = mai_assets_path / "mai_song_alias.json"
+mai_grade_info_path = mai_assets_path / "mai_grade_info.json"
+mai_song_info_path = mai_assets_path / "mai_song_info.json"
+mai_utage_info_path = mai_assets_path / "mai_utage_info.json"
 
 achievement_list = [
     50.0,
@@ -104,7 +102,7 @@ combo_mapping = {
     "app": "AP+",
 }
 
-sync_list = ["SYNC", "FS", "FS+", "FSD", "FSD+"]
+sync_list = ["SYNC", "FS", "FS+", "FDX", "FDX+"]
 sync_list_raw = ["sync", "fs", "fsp", "fsd", "fsdp"]
 sync_mapping = {
     "sync": "SYNC",
@@ -283,7 +281,7 @@ sd_plate_mapping = {
     "菫": "maimai MURASAKi PLUS",
     "白": "maimai MiLK",
     "雪": "MiLK PLUS",
-    "輝": "maimai FiNALE",
+    "輝": "maimai FiNALE"
 }
 
 dx_plate_mapping = {
@@ -298,6 +296,7 @@ dx_plate_mapping = {
     "双": "maimai でらっくす BUDDiES",
     "宴": "maimai でらっくす BUDDiES",
     "鏡": "maimai でらっくす PRiSM",
+    "彩": "maimai でらっくす PRiSM",
 }
 
 plate_mapping = sd_plate_mapping | dx_plate_mapping

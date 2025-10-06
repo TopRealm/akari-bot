@@ -34,6 +34,7 @@ class SessionInfo:
     support_forward: bool = False
     support_delete: bool = False
     support_markdown: bool = False
+    support_reaction: bool = False
     support_quote: bool = False
     support_rss: bool = False
     support_typing: bool = False
@@ -42,6 +43,7 @@ class SessionInfo:
     session_id: Optional[str] = None
     target_info: Optional[TargetInfo] = None
     sender_info: Optional[SenderInfo] = None
+    banned_users: Optional[list] = None
     custom_admins: Optional[list] = None
     locale: Optional[Locale] = None
     _tz_offset: Optional[str] = None
@@ -57,7 +59,6 @@ class SessionInfo:
     require_check_dirty_words: bool = False
     use_url_manager: bool = False
     use_url_md_format: bool = False
-    force_use_url_manager: bool = False
     running_mention: bool = True
     tmp: Optional[dict[str, str]] = {}
 
@@ -79,7 +80,6 @@ class SessionInfo:
                      require_check_dirty_words: bool = False,
                      use_url_manager: bool = False,
                      use_url_md_format: bool = False,
-                     force_use_url_manager: bool = False,
                      running_mention: bool = True,
                      tmp: Optional[dict[str, str]] = None
                      ) -> SessionInfo:
@@ -121,6 +121,7 @@ class SessionInfo:
             message_id=message_id,
             reply_id=reply_id,
             messages=messages,
+            banned_users=target_info.banned_users if target_info else [],
             custom_admins=target_info.custom_admins if target_info else [],
             timestamp=timestamp,
             session_id=session_id,
@@ -140,7 +141,6 @@ class SessionInfo:
             require_check_dirty_words=require_check_dirty_words,
             use_url_manager=use_url_manager,
             use_url_md_format=use_url_md_format,
-            force_use_url_manager=force_use_url_manager,
             running_mention=running_mention,
             tmp=tmp,
 
@@ -170,7 +170,6 @@ class FetchedSessionInfo(SessionInfo):
     """
     主动获取的消息会话信息。
     """
-    pass
 
 
 @define

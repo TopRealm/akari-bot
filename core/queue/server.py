@@ -1,6 +1,10 @@
+import re
+
 from typing import Union, TYPE_CHECKING, Optional
 
+from core.builtins.parser.command import CommandParser
 from core.builtins.parser.message import parser
+from core.builtins.utils import command_prefix
 from core.utils.bash import run_sys_command
 from core.web_render import init_web_render
 from .base import JobQueueBase
@@ -28,19 +32,35 @@ class JobQueueServer(JobQueueBase):
         value = await cls.add_job(session_info.client_name, "send_message",
                                   {"session_info": converter.unstructure(session_info),
                                    "message": converter.unstructure(message, Union[MessageChain, MessageNodes]),
-                                   'quote': quote,
-                                   'enable_parse_message': enable_parse_message,
-                                   'enable_split_image': enable_split_image
+                                   "quote": quote,
+                                   "enable_parse_message": enable_parse_message,
+                                   "enable_split_image": enable_split_image
                                    }, wait=wait)
         return value
 
     @classmethod
-    async def client_delete_message(cls, session_info: SessionInfo, message_id: Union[str, list]):
+    async def client_delete_message(cls, session_info: SessionInfo, message_id: Union[str, list[str]]):
         if isinstance(message_id, str):
             message_id = [message_id]
         value = await cls.add_job(session_info.client_name, "delete_message",
                                   {"session_info": converter.unstructure(session_info),
                                    "message_id": message_id}, wait=False)
+        return value
+
+    @classmethod
+    async def client_add_reaction(cls, session_info: SessionInfo, message_id: Union[str, list[str]], emoji: str):
+        value = await cls.add_job(session_info.client_name, "add_reaction",
+                                  {"session_info": converter.unstructure(session_info),
+                                   "message_id": message_id,
+                                   "emoji": emoji})
+        return value
+
+    @classmethod
+    async def client_remove_reaction(cls, session_info: SessionInfo, message_id: Union[str, list[str]], emoji: str):
+        value = await cls.add_job(session_info.client_name, "add_reaction",
+                                  {"session_info": converter.unstructure(session_info),
+                                   "message_id": message_id,
+                                   "emoji": emoji})
         return value
 
     @classmethod
@@ -65,7 +85,7 @@ class JobQueueServer(JobQueueBase):
     async def client_check_native_permission(cls, session_info: SessionInfo):
         v = await cls.add_job(session_info.client_name, "check_session_native_permission",
                               {"session_info": converter.unstructure(session_info)})
-        return v['value']
+        return v["value"]
 
     @classmethod
     async def client_hold_context(cls, session_info: SessionInfo):
@@ -76,12 +96,6 @@ class JobQueueServer(JobQueueBase):
     @classmethod
     async def client_release_context(cls, session_info: SessionInfo):
         value = await cls.add_job(session_info.client_name, "release_context",
-                                  {"session_info": converter.unstructure(session_info)})
-        return value
-
-    @classmethod
-    async def qq_set_group_leave(cls, session_info: SessionInfo):
-        value = await cls.add_job(session_info.client_name, "qq_set_group_leave",
                                   {"session_info": converter.unstructure(session_info)})
         return value
 
@@ -97,7 +111,7 @@ class JobQueueServer(JobQueueBase):
 @JobQueueServer.action("receive_message_from_client")
 async def receive_message_from_client(tsk: JobQueuesTable, args: dict):
     await parser(await exports["Bot"].MessageSession.from_session_info(
-        converter.structure(args['session_info'], SessionInfo)))
+        converter.structure(args["session_info"], SessionInfo)))
     return {"success": True}
 
 
@@ -113,24 +127,24 @@ async def client_keepalive(tsk: JobQueuesTable, args: dict):
 async def _(tsk: JobQueuesTable, args: dict):
     bot: "Bot" = exports["Bot"]
     session_info: Optional[SessionInfo] = None
-    if args['session_info']:
-        session_info = converter.structure(args['session_info'], SessionInfo)
+    if args["session_info"]:
+        session_info = converter.structure(args["session_info"], SessionInfo)
         await session_info.refresh_info()
     _val = await bot.Hook.trigger(args["module_or_hook_name"], session_info=session_info, args=args["args"])
     Logger.trace(
         f"Trigger hook {
-            args['module_or_hook_name']} with args {
-            args['args']}, result: {_val}, type: {
+            args["module_or_hook_name"]} with args {
+            args["args"]}, result: {_val}, type: {
             type(_val)}")
-    await JobQueueServer.return_val(tsk, {'result': _val})
+    await JobQueueServer.return_val(tsk, {"result": _val})
 
 
 @JobQueueServer.action("client_direct_message")
 async def client_direct_message(tsk: JobQueuesTable, args: dict):
     bot: "Bot" = exports["Bot"]
-    session_info = converter.structure(args['session_info'], SessionInfo)
+    session_info = converter.structure(args["session_info"], SessionInfo)
     await session_info.refresh_info()
-    message = converter.structure(args['message'], Union[MessageChain, MessageNodes])
+    message = converter.structure(args["message"], Union[MessageChain, MessageNodes])
     await bot.send_direct_message(session_info, message, disable_secret_check=args["disable_secret_check"],
                                   enable_parse_message=args["enable_parse_message"])
     return {"success": True}
@@ -153,23 +167,80 @@ async def get_web_render_status(tsk: JobQueuesTable, args: dict):
 
 @JobQueueServer.action("get_modules_list")
 async def get_module_list(tsk: JobQueuesTable, args: dict):
-    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list().items()}
+    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list(use_cache=False).items()}
     modules = {k: v for k, v in modules.items() if v.get("load", True) and not v.get("base", False)}
     module_list = []
     for module in modules.values():
-        module_list.append(module["bind_prefix"])
+        module_list.append(module["module_name"])
     return {"modules_list": module_list}
 
 
 @JobQueueServer.action("get_modules_info")
 async def get_modules_info(tsk: JobQueuesTable, args: dict):
-    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list().items()}
-    modules = {k: v for k, v in modules.items() if v.get("load", True) and not v.get("base", False)}
+    modules = {k: v.to_dict() for k, v in ModulesManager.return_modules_list(use_cache=False).items()}
+    modules = {k: v for k, v in modules.items() if v.get("load", True)}
 
     for module in modules.values():
         if "desc" in module and module.get("desc"):
-            module["desc"] = Locale(args['locale']).t_str(module["desc"])
+            module["desc"] = Locale(args["locale"]).t_str(module["desc"])
+
     return {"modules": modules}
 
+
+@JobQueueServer.action("get_module_helpdoc")
+async def get_module_helpdoc(tsk: JobQueuesTable, args: dict):
+    module = ModulesManager.modules.get(args["module"], None)
+    help_doc = {}
+    if module:
+        help_doc["module_name"] = module.module_name
+        module_ = module.to_dict()
+        if "desc" in module_ and module_.get("desc"):
+            help_doc["desc"] = Locale(args["locale"]).t_str(module_["desc"])
+
+        help_ = CommandParser(module,
+                              module_name=module.module_name,
+                              command_prefixes=[command_prefix[0]],
+                              is_superuser=True)
+        help_doc["commands"] = help_.return_json_help_doc(args["locale"])
+
+        regex_ = []
+        regex_list = module.regex_list.get(show_required_superuser=True)
+        if regex_list:
+            for regex in regex_list:
+                pattern = None
+                if isinstance(regex.pattern, str):
+                    pattern = regex.pattern
+                elif isinstance(regex.pattern, re.Pattern):
+                    pattern = regex.pattern.pattern
+
+                if pattern:
+                    rdesc = regex.desc
+                    if rdesc:
+                        rdesc = Locale(args["locale"]).t_str(rdesc)
+
+                    regex_.append({"pattern": pattern,
+                                   "desc": rdesc})
+        help_doc["regexp"] = regex_
+
+    return {"help_doc": help_doc}
+
+
+@JobQueueServer.action("get_module_related")
+async def get_module_related(tsk: JobQueuesTable, args: dict):
+    return {"modules_list": ModulesManager.search_related_module(args["module"], include_self=False)}
+
+
+@JobQueueServer.action("post_module_action")
+async def post_module_action(tsk: JobQueuesTable, args: dict):
+    match args["action"]:
+        case "reload":
+            status, _ = await ModulesManager.reload_module(args["module"])
+        case "load":
+            status = await ModulesManager.load_module(args["module"])
+        case "unload":
+            status = await ModulesManager.unload_module(args["module"])
+        case _:
+            status = False
+    return {"success": status}
 
 add_export(JobQueueServer)

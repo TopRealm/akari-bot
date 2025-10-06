@@ -1,5 +1,6 @@
 import inspect
 import re
+from pathlib import Path
 from typing import Union, overload
 
 from apscheduler.triggers.combining import AndTrigger, OrTrigger
@@ -8,6 +9,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from core.builtins.parser.args import parse_template
+from core.config.decorator import _process_class
 from core.builtins.types import MessageElement
 from core.loader import ModulesManager
 from core.types import Module
@@ -16,8 +18,8 @@ from core.types.module.component_meta import *
 
 class Bind:
     class Module:
-        def __init__(self, bind_prefix: str):
-            self.bind_prefix = bind_prefix
+        def __init__(self, module_name: str):
+            self.module_name = module_name
 
         def command(
             self,
@@ -42,7 +44,7 @@ class Bind:
                     help_doc = []
 
                 ModulesManager.bind_to_module(
-                    self.bind_prefix,
+                    self.module_name,
                     CommandMeta(
                         function=function,
                         help_doc=parse_template(help_doc),
@@ -79,7 +81,7 @@ class Bind:
         ):
             def decorator(function):
                 ModulesManager.bind_to_module(
-                    self.bind_prefix,
+                    self.module_name,
                     RegexMeta(
                         function=function,
                         pattern=pattern,
@@ -110,7 +112,7 @@ class Bind:
         ):
             def decorator(function):
                 ModulesManager.bind_to_module(
-                    self.bind_prefix, ScheduleMeta(function=function, trigger=trigger)
+                    self.module_name, ScheduleMeta(function=function, trigger=trigger)
                 )
                 return function
 
@@ -119,7 +121,7 @@ class Bind:
         def hook(self, name: str = None):
             def decorator(function):
                 ModulesManager.bind_to_module(
-                    self.bind_prefix, HookMeta(function=function, name=name)
+                    self.module_name, HookMeta(function=function, name=name)
                 )
                 return function
 
@@ -189,9 +191,21 @@ class Bind:
                 return self.schedule(*args, **kwargs)
             return self.command(*args, **kwargs)
 
+        def config(self, cls=None, secret: bool = False):
+
+            def wrap(cls):
+                return _process_class(
+                    cls,
+                    "module_" +
+                    self.module_name, secret=secret)
+
+            if cls is None:
+                return wrap
+            return wrap(cls)
+
 
 def module(
-    bind_prefix: str,
+    module_name: str,
     alias: Union[str, list, tuple, dict, None] = None,
     desc: str | None = None,
     recommend_modules: Union[str, list, tuple, None] = None,
@@ -211,7 +225,7 @@ def module(
     """
     绑定一个模块。
 
-    :param bind_prefix: 绑定的命令前缀。
+    :param module_name: 绑定的命令前缀。
     :param alias: 此命令的别名。
     同时被用作命令解析，当此项不为空时将会尝试解析其中的语法并储存结果在 MessageSession.parsed_msg 中。
     :param desc: 此命令的简介。
@@ -229,9 +243,22 @@ def module(
     :param exclude_from: 此命令排除的平台列表。
     :param support_languages: 此命令支持的语言列表。
     """
+
+    frame = inspect.currentframe().f_back
+    caller_file = frame.f_globals.get("__file__", None)
+
+    py_module_name = ""
+    if caller_file:
+        path = Path(caller_file).resolve()
+        try:
+            modules_idx = path.parts.index("modules")
+            py_module_name = path.parts[modules_idx + 1]
+        except (ValueError, IndexError):
+            py_module_name = ""
+
     module = Module.assign(
+        module_name=module_name,
         alias=alias,
-        bind_prefix=bind_prefix,
         desc=desc,
         recommend_modules=recommend_modules,
         developers=developers,
@@ -246,7 +273,9 @@ def module(
         available_for=available_for,
         exclude_from=exclude_from,
         support_languages=support_languages,
+        _py_module_name=py_module_name,
+        _db_load=True
     )
     frame = inspect.currentframe()
     ModulesManager.add_module(module, frame.f_back.f_globals["__name__"])
-    return Bind.Module(bind_prefix)
+    return Bind.Module(module_name)
