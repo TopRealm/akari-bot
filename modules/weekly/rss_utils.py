@@ -9,13 +9,20 @@ class RSSFeedError(RuntimeError):
     """Raised when the RSS feed cannot be parsed or contains no entries."""
 
 
-async def fetch_latest_entry(feed_url: str, base_url: str, *, entry_index: int = -1) -> str:
+async def fetch_latest_entry(
+    feed_url: str,
+    base_url: str,
+    *,
+    entry_index: int = -1,
+    headers: dict[str, str] | None = None,
+) -> str:
     """Fetch the latest entry from an RSS feed.
 
     Args:
         feed_url: The URL of the RSS/Atom feed.
         base_url: The base URL used for resolving relative paths in summaries.
         entry_index: The index of the entry to fetch. Defaults to the latest (-1).
+        headers: Optional HTTP headers to include when requesting the feed.
 
     Returns:
         A string containing the formatted title and summary.
@@ -24,7 +31,7 @@ async def fetch_latest_entry(feed_url: str, base_url: str, *, entry_index: int =
         RSSFeedError: If the feed cannot be fetched or contains no entries.
     """
 
-    text = await get_url(feed_url, status_code=200, fmt="text")
+    text = await get_url(feed_url, status_code=200, fmt="text", headers=headers)
     parsed = feedparser.parse(text)
     if getattr(parsed, "bozo", 0):
         Logger.warning(
