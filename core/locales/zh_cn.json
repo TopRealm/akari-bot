@@ -92,6 +92,7 @@
     "config.comments.use_secrets_random": "是否使用基于 secrets 库的随机数生成器。",
     "config.comments.web_host": "Web 服务的主机地址，设为 0.0.0.0 则监听所有地址。",
     "config.comments.web_port": "Web 服务的端口号，设为 0 则禁用服务。",
+    "config.comments.ysarchives_user_agent": "请求有兽档案馆双周报 RSS 时使用的 User-Agent 字符串。留空则不覆盖默认值。",
     "config.header.line.1": "https://toml.io/cn/v1.0.0",
     "config.header.line.2": "注意：TOML 不是 Python。请不要在此处使用 Python 语法。",
     "config.header.line.3": "例如：TOML 中的布尔值必须是小写。",

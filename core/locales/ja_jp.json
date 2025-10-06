@@ -20,13 +20,6 @@
     "config.comments.default_locale": "デフォルトのセッション ロケール。",
     "config.comments.discord_token": "Discord ボットのトークン。",
     "config.comments.donate_url": "寄付の URL。",
-    "config.comments.typo_check_args_score": "引数のスペルチェックで類似度を許可します。範囲は 0 ～ 1 です。",
-
-"config.comments.typo_check_command_score": "コマンドのスペルチェックで類似度を許可します。範囲は 0 ～ 1 です。",
-
-"config.comments.typo_check_module_score": "モジュールのスペルチェックで類似度を許可します。範囲は 0 ～ 1 です。",
-
-"config.comments.typo_check_options_score": "オプションのスペルチェックで類似度を許可します。範囲は 0 ～ 1 です。",
     "config.comments.enable": "このプラットフォームを有効にするかどうか。",
     "config.comments.enable_analytics": "組み込みの統計機能を有効にするかどうか。",
     "config.comments.enable_commit_url": "バージョン情報を表示する時にコミット URL を表示するかどうか。",
@@ -99,6 +92,7 @@
     "config.comments.use_secrets_random": "secrets ライブラリに基づく乱数ジェネレータを使用するかどうか。",
     "config.comments.web_host": "Web サービスのホスト アドレス。0.0.0.0 に設定すると、すべてのアドレスをリッスンします。",
     "config.comments.web_port": "Web サービスのポート番号。0 に設定するとサービスが無効になります。",
+    "config.comments.ysarchives_user_agent": "YsArchives Biweekly の RSS を取得するときに使用する User-Agent 文字列です。空欄の場合は既定値を上書きしません。",
     "config.header.line.1": "https://toml.io/ja/v1.0.0",
     "config.header.line.2": "注：TOML は Python ではありませんので、ここでは Python の文法を使用しないでください。",
     "config.header.line.3": "例：TOML のブール値は小文字でなければならないです。",
