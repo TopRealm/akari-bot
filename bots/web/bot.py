@@ -11,10 +11,16 @@ from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
 from core.builtins.session.info import SessionInfo
 from core.builtins.temp import Temp
+from core.config import Config, CFGManager
+from core.utils.random import Random
 
 Bot.register_bot(client_name=client_name)
 
 ctx_id = Bot.register_context_manager(WebContextManager)
+
+
+if not Config("jwt_secret", cfg_type=str, secret=True, table_name="bot_web"):
+    CFGManager.write("jwt_secret", Random.randbytes(32).hex(), secret=True, table_name="bot_web")
 
 
 @app.websocket("/ws/chat")
@@ -60,7 +66,8 @@ async def websocket_chat(websocket: WebSocket):
                                                            client_name=client_name,
                                                            message_id=message["id"],
                                                            messages=msg_chain,
-                                                           ctx_slot=ctx_id
+                                                           ctx_slot=ctx_id,
+                                                           use_url_md_format=True
                                                            )
 
                         await Bot.process_message(session, message)
@@ -76,7 +83,7 @@ async def websocket_chat(websocket: WebSocket):
             del Temp.data["web_chat_websocket"]
 
 
-if Config("enable", True, table_name="bot_web") or __name__ == "__main__":
+if Config("enable", True, table_name="bot_web"):
     if avaliable_web_port == 0:
         Logger.error("API port is disabled.")
         sys.exit(0)
