@@ -198,9 +198,8 @@ async def check(text: Union[str,
                         "Action": "TextModerationPlus",
                         "Service": "chat_detection_pro",
                         "ServiceParameters": json.dumps(
-                            {"dataId": f"Nullcat {time.time()}", "content": x},
-                            ensure_ascii=False
-                        ),
+                            {"dataId": f"Nullcat {time.time()}", "content": x}
+                        ).decode("utf-8")
                     }
 
                     sorted_params = sorted(params.items(), key=lambda k: k[0])
