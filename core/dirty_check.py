@@ -8,8 +8,8 @@ import base64
 import datetime
 import hashlib
 import hmac
-import time
 import urllib.parse
+import uuid
 from typing import Union, List, Dict, Optional
 
 import httpx
@@ -141,7 +141,7 @@ async def check(text: Union[str,
             root = "https://green.cn-shanghai.aliyuncs.com"
             body = {
                 "scenes": ["antispam"],
-                "tasks": [{"dataId": f"Nullcat {time.time()}", "content": x} for x in call_api_list_],
+                "tasks": [{"dataId": str(uuid.uuid4()), "content": x} for x in call_api_list_],
             }
             date = datetime.datetime.now(datetime.UTC).strftime("%a, %d %b %Y %H:%M:%S GMT")
             content_md5 = base64.b64encode(
@@ -153,7 +153,7 @@ async def check(text: Union[str,
                 "Content-MD5": content_md5,
                 "Date": date,
                 "x-acs-version": "2018-05-09",
-                "x-acs-signature-nonce": f"LittleC sb {time.time()}",
+                "x-acs-signature-nonce": str(uuid.uuid4()),
                 "x-acs-signature-version": "1.0",
                 "x-acs-signature-method": "HMAC-SHA1",
             }
@@ -194,11 +194,11 @@ async def check(text: Union[str,
                         "SignatureMethod": "Hmac-SHA1",
                         "Timestamp": date,
                         "SignatureVersion": "1.0",
-                        "SignatureNonce": f"LittleC sb {time.time()}",
+                        "SignatureNonce": str(uuid.uuid4()),
                         "Action": "TextModerationPlus",
-                        "Service": "chat_detection_pro",
+                        "Service": "comment_detection_pro",
                         "ServiceParameters": json.dumps(
-                            {"dataId": f"Nullcat {time.time()}", "content": x}
+                            {"dataId": str(uuid.uuid4())}", "content": x}
                         ).decode("utf-8")
                     }
 
