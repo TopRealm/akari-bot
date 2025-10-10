@@ -198,7 +198,7 @@ async def check(text: Union[str,
                         "Action": "TextModerationPlus",
                         "Service": "comment_detection_pro",
                         "ServiceParameters": json.dumps(
-                            {"dataId": str(uuid.uuid4())}", "content": x}
+                            {"dataId": str(uuid.uuid4()), "content": x}
                         ).decode("utf-8")
                     }
 
