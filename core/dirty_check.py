@@ -169,11 +169,14 @@ async def check(text: Union[str,
                     result = json.loads(resp.content)
                     Logger.debug(result)
 
-                    for item in result["data"]:
-                        content = item["content"]
-                        for n in call_api_list[content]:
-                            query_list[n][content] = parse_data(content, item, confidence, additional_text)
-                        await DirtyWordCache.create(desc=content, result=item)
+                    if result["code"] == 200:
+                        for item in result["data"]:
+                            content = item["content"]
+                            for n in call_api_list[content]:
+                                query_list[n][content] = parse_data(content, item, confidence, additional_text)
+                            await DirtyWordCache.create(desc=content, result=item)
+                    else:
+                        raise ValueError(result["msg"])
                 else:
                     raise ValueError(resp.text)
         else:
@@ -216,9 +219,12 @@ async def check(text: Union[str,
                         result = json.loads(resp.content)
                         Logger.debug(result)
 
-                        for n in call_api_list[x]:
-                            query_list[n][x] = parse_data(x, result["Data"], confidence, additional_text)
-                        await DirtyWordCache.create(desc=x, result=result["Data"])
+                        if result["Code"] == 200:
+                            for n in call_api_list[x]:
+                                query_list[n][x] = parse_data(x, result["Data"], confidence, additional_text)
+                            await DirtyWordCache.create(desc=x, result=result["Data"])
+                        else:
+                            raise ValueError(result["Message"])
                     else:
                         raise ValueError(resp.text)
 
