@@ -181,52 +181,59 @@ async def check(text: Union[str,
                     raise ValueError(resp.text)
         else:
             root = "https://green-cip.cn-shanghai.aliyuncs.com"
-            for x in call_api_list_:
-                date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-                params = {
-                    "Format": "JSON",
-                    "Version": "2022-03-02",
-                    "AccessKeyId": access_key_id,
-                    "SignatureMethod": "Hmac-SHA1",
-                    "Timestamp": date,
-                    "SignatureVersion": "1.0",
-                    "SignatureNonce": f"LittleC sb {time.time()}",
-                    "Action": "TextModerationPlus",
-                    "Service": "chat_detection_pro",
-                    "ServiceParameters": json.dumps({"dataId": f"Nullcat {time.time()}", "content": x}).decode("utf-8")
-                }
-                sorted_params = sorted(params.items(), key=lambda k: k[0])
-                step1 = "&".join(
-                    f"{urllib.parse.quote(str(k), safe='-_.~')}="
-                    f"{urllib.parse.quote(str(v), safe='-_.~')}"
-                    for k, v in sorted_params
-                )
-                step2 = "POST&%2F&" + urllib.parse.quote(step1, safe='-_.~')
-                step3 = f"{access_key_secret}&"
-                signature = base64.b64encode(
-                    hmac.new(step3.encode("utf-8"),
-                             step2.encode("utf-8"),
-                             hashlib.sha1).digest()
-                ).decode("utf-8")
-                params["Signature"] = signature
+            sem = asyncio.Semaphore(10)
 
-                query_string = "&".join(
-                    f"{k}={urllib.parse.quote(str(v), safe='-_.~')}" for k, v in params.items()
-                )
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(f"{root}/?{query_string}")
-                    if resp.status_code == 200:
-                        result = json.loads(resp.content)
-                        Logger.debug(result)
+            async def call_api(x: str):
+                async with sem:
+                    date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    params = {
+                        "Format": "JSON",
+                        "Version": "2022-03-02",
+                        "AccessKeyId": access_key_id,
+                        "SignatureMethod": "Hmac-SHA1",
+                        "Timestamp": date,
+                        "SignatureVersion": "1.0",
+                        "SignatureNonce": f"LittleC sb {time.time()}",
+                        "Action": "TextModerationPlus",
+                        "Service": "chat_detection_pro",
+                        "ServiceParameters": json.dumps(
+                            {"dataId": f"Nullcat {time.time()}", "content": x},
+                            ensure_ascii=False
+                        ),
+                    }
 
-                        if result["Code"] == 200:
-                            for n in call_api_list[x]:
-                                query_list[n][x] = parse_data(x, result["Data"], confidence, additional_text)
-                            await DirtyWordCache.create(desc=x, result=result["Data"])
+                    sorted_params = sorted(params.items(), key=lambda k: k[0])
+                    step1 = "&".join(
+                        f"{urllib.parse.quote(str(k), safe='-_.~')}="
+                        f"{urllib.parse.quote(str(v), safe='-_.~')}"
+                        for k, v in sorted_params
+                    )
+                    step2 = "POST&%2F&" + urllib.parse.quote(step1, safe='-_.~')
+                    step3 = f"{access_key_secret}&"
+                    signature = base64.b64encode(
+                        hmac.new(step3.encode("utf-8"), step2.encode("utf-8"), hashlib.sha1).digest()
+                    ).decode("utf-8")
+                    params["Signature"] = signature
+
+                    query_string = "&".join(
+                        f"{k}={urllib.parse.quote(str(v), safe='-_.~')}" for k, v in params.items()
+                    )
+
+                    async with client.post(f"{root}/?{query_string}") as resp:
+                        if resp.status_code == 200:
+                            result = json.loads(resp.content)
+                            Logger.debug(result)
+                            if result["Code"] == 200:
+                                for n in call_api_list[x]:
+                                    query_list[n][x] = parse_data(x, result["Data"], confidence, additional_text)
+                                await DirtyWordCache.create(desc=x, result=result["Data"])
+                            else:
+                                raise ValueError(result["Message"])
                         else:
-                            raise ValueError(result["Message"])
-                    else:
-                        raise ValueError(resp.text)
+                            raise ValueError(resp.text)
+
+            async with httpx.AsyncClient() as client:
+                await asyncio.gather(*(call_api(x) for x in call_api_list_))
 
     results = []
     Logger.debug(query_list)
