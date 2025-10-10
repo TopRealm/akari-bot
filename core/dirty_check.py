@@ -219,7 +219,7 @@ async def check(text: Union[str,
                         f"{k}={urllib.parse.quote(str(v), safe='-_.~')}" for k, v in params.items()
                     )
 
-                    resp = await client.post(f"{root}/?{query_string}"):
+                    resp = await client.post(f"{root}/?{query_string}")
                     if resp.status_code == 200:
                         result = resp.json()
                         Logger.debug(result)
