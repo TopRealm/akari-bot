@@ -3,6 +3,7 @@
 在使用前，请在配置文件中填写`check_access_key_id`和`check_access_key_secret`，以便进行鉴权。
 """
 
+import asyncio
 import base64
 import datetime
 import hashlib
