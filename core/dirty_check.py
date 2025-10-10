@@ -221,7 +221,7 @@ async def check(text: Union[str,
 
                     async with client.post(f"{root}/?{query_string}") as resp:
                         if resp.status_code == 200:
-                            result = json.loads(resp.content)
+                            result = resp.json()
                             Logger.debug(result)
                             if result["Code"] == 200:
                                 for n in call_api_list[x]:
