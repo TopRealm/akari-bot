@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain, I18NMessageChain, PlatformMessageChain
 from core.builtins.message.internal import Plain
@@ -8,6 +10,7 @@ from core.logger import Logger
 from core.scheduler import CronTrigger
 from core.utils.image import msgchain2image
 from modules.weekly import get_weekly, get_teahouse_rss
+from modules.weekly.ysarchives import get_rss as get_ysarchives_rss
 
 weekly_rss = module(
     "weekly_rss",
@@ -57,7 +60,7 @@ async def _():
 @teahouse_weekly_rss.schedule(trigger=CronTrigger.from_crontab("30 9 * * MON"))
 async def _():
     Logger.info("Checking teahouse weekly...")
-
+    
     weekly = await get_teahouse_rss()
 
     weekly_cn = MessageChain.assign(Plain(
@@ -79,3 +82,55 @@ async def _():
     post_msg_qq = I18NMessageChain.assign({"zh_cn": weekly_cn_qq, "zh_tw": weekly_tw_qq, "default": weekly_cn_qq})
     await Bot.post_message("teahouse_weekly_rss", PlatformMessageChain.assign({"QQ": post_msg_qq, "default": post_msg}))
     Logger.success("Teahouse Weekly checked.")
+
+
+def is_odd_week():
+    today = datetime.now()
+    return today.isocalendar()[1] % 2 != 0
+
+
+ysarchives_weekly_rss = module(
+    "ysarchives_weekly_rss",
+    desc="{I18N:weekly_rss.help.ysarchives_weekly_rss.desc}",
+    developers=["Zorua_Fox"],
+    alias=["ysarchivesrss", "ysyrss"],
+    doc=True,
+    rss=True,
+)
+
+
+@ysarchives_weekly_rss.schedule(trigger=CronTrigger.from_crontab('0 9 * * MON'))
+async def _():
+    if not is_odd_week():
+        Logger.info("YsArchives biweekly skipped (even week).")
+        return
+
+    Logger.info("Checking YsArchives biweekly...")
+
+    weekly = await get_ysarchives_rss()
+
+    weekly_cn = MessageChain.assign(
+        Plain(
+            Locale("zh_cn").t(
+                "weekly_rss.message.ysarchives_weekly_rss", prefix=command_prefix[0]
+            )
+            + weekly
+        )
+    )
+    weekly_tw = MessageChain.assign(
+        Plain(
+            Locale("zh_tw").t(
+                "weekly_rss.message.ysarchives_weekly_rss", prefix=command_prefix[0]
+            )
+            + weekly
+        )
+    )
+    weekly_cn_qq = MessageChain.assign(await msgchain2image(weekly_cn))
+    weekly_tw_qq = MessageChain.assign(await msgchain2image(weekly_tw))
+    post_msg = I18NMessageChain.assign({"zh_cn": weekly_cn, "zh_tw": weekly_tw, "default": weekly_cn})
+    post_msg_qq = I18NMessageChain.assign({"zh_cn": weekly_cn_qq, "zh_tw": weekly_tw_qq, "default": weekly_cn_qq})
+    await Bot.post_message(
+        "ysarchives_weekly_rss",
+        PlatformMessageChain.assign({"QQ": post_msg_qq, "default": post_msg}),
+    )
+    Logger.success("YsArchives biweekly checked.")

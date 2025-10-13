@@ -710,7 +710,7 @@ post_ = module("post", required_superuser=True, base=True, doc=True)
 
 @post_.command("<target> <post_msg>")
 async def _(msg: Bot.MessageSession, target: str, post_msg: str):
-    if not Alive.determine_target_from(target):
+    if not target.startswith(f"{msg.session_info.client_name}|"):
         await msg.finish(I18NContext("message.id.invalid.target", target=msg.session_info.target_from))
     session = await Bot.fetch_target(target, create=True)
     msg_chain = MessageChain.assign([I18NContext("core.message.post.prefix")] + match_kecode(post_msg))
