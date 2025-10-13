@@ -25,6 +25,7 @@ quick_confirm = true # 是否啟用訊息快速確認。
 enable_analytics = true # 是否啟用內建的統計功能。
 enable_commit_url = true # 是否在展示版本訊息時顯示 commit URL。
 enable_dirty_check = false # 是否啟用文字過濾偵測，需要設定阿里雲內容安全服務的 AccessKey ID 與 AccessKey Secret。
+check_use_textscan_v1 = false # 是否使用舊版阿里雲內容安全 1.0 服務介面。
 enable_db = false # 是否啟用「database」模組。
 enable_eval = false # 是否啟用「eval」模組。
 enable_urlmanager = false # 是否啟用 URLManager，用於 URL 跳板用。（聲明此 URL 非官方連結等）
@@ -45,14 +46,13 @@ petal_sign_rate = 0.5 # 簽到取得花瓣機率，範圍 0 到 1 之間，取�
 enable_joke = true # 是否啟用玩笑，啟用後將在伺服器時間 4 月 1 日時發生。
 shuffle_rate = 0.1 # 玩笑的隨機發生率，範圍 0 到 1 之間。
 enable_rickroll = true # 當文字過濾偵測失敗時，是否 Rickroll 使用者。
-rickroll_msg = "<Replace me with str value>" # 文字過濾偵測失敗時的 Rickroll 訊息。
+rickroll_msg = "https://b23.tv/vXaKjqJ" # 文字過濾偵測失敗時的 Rickroll 訊息。
 bug_report_url = "https://s.wd-ljt.com/botreportbug" # 回報錯誤網址。
 donate_url = "http://afdian.com/a/teahouse" # 捐贈網址。
 help_url = "https://bot.teahouse.team" # 線上說明文件網址。
 help_page_url = "https://bot.teahouse.team/wiki/${module}" # 模組線上說明文件網址。
 issue_url = "https://github.com/Teahouse-Studios/bot/issues/new/choose" # 問題報告網址。
 locale_url = "https://www.crowdin.com/project/akari-bot" # 在地化專案網址。
-check_use_textscan_v1 = false # 是否使用旧版阿里云内容安全 1.0 服务。
 
 [secret]
 # 金鑰組態部分，此處的值若意外出現在傳送的訊息中，機器人會嘗試攔截。但請務必提防洩漏。
