@@ -8,6 +8,7 @@ import base64
 import datetime
 import hashlib
 import hmac
+import re
 import urllib.parse
 import uuid
 from typing import Union, List, Dict, Optional
