@@ -2,7 +2,7 @@ import re
 from html import unescape
 from typing import Awaitable, Callable, List, cast
 
-import orjson as json
+import orjson
 from bs4 import BeautifulSoup
 
 from core.builtins.bot import Bot
@@ -53,7 +53,7 @@ def _resolve_locale(msg: Bot.MessageSession) -> Locale:
 
 async def get_weekly(with_img=False, zh_tw=False):
     locale = Locale("zh_cn" if not zh_tw else "zh_tw")
-    result = json.loads(await get_url(
+    result = orjson.loads(await get_url(
         "https://zh.minecraft.wiki/api.php?action=parse&page=Template:Mainpage_section_featured_article&prop=text|revid|images&format=json" +
         ("&variant=zh-tw" if zh_tw else ""),
         200))
@@ -108,7 +108,7 @@ async def get_weekly_img(with_img=False, zh_tw=False):
         for i in img:
             msg_.append(Image(i))
     if with_img:
-        """result = json.loads(await get_url(
+        """result = orjson.loads(await get_url(
             "https://zh.minecraft.wiki/api.php?action=parse&page=Minecraft_Wiki/weekly&prop=images&format=json" +
             ("&variant=zh-tw" if zh_tw else ""),
             200))

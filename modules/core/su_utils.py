@@ -3,7 +3,7 @@ import shutil
 from datetime import datetime
 from tabulate import tabulate
 
-import orjson as json
+import orjson
 from tortoise import Tortoise
 from tortoise.exceptions import OperationalError
 
@@ -28,7 +28,7 @@ from core.utils.alive import Alive
 from core.utils.bash import run_sys_command
 from core.utils.decrypt import decrypt_string
 from core.utils.image_table import image_table_render, ImageTable
-from core.utils.message import isfloat, isint
+from core.utils.message import is_float, is_int
 from core.utils.storedata import get_stored_list, update_stored_list
 
 auto_purge_crontab = Config("auto_purge_crontab", "0 0 * * *")
@@ -161,8 +161,8 @@ async def _(msg: Bot.MessageSession, target: str):
             if re.match(r"\[.*\]|\{.*\}", v):
                 try:
                     v = v.replace("\'", "\"")
-                    v = json.loads(v)
-                except json.JSONDecodeError as e:
+                    v = orjson.loads(v)
+                except orjson.JSONDecodeError as e:
                     Logger.error(str(e))
                     await msg.finish(I18NContext("message.failed"))
             elif v.lower() == "true":
@@ -202,8 +202,8 @@ async def _(msg: Bot.MessageSession, user: str):
             if re.match(r"\[.*\]|\{.*\}", v):
                 try:
                     v = v.replace("\'", "\"")
-                    v = json.loads(v)
-                except json.JSONDecodeError as e:
+                    v = orjson.loads(v)
+                except orjson.JSONDecodeError as e:
                     Logger.error(str(e))
                     await msg.finish(I18NContext("message.failed"))
             elif v.lower() == "true":
@@ -441,7 +441,7 @@ rst = module(
 def write_restart_cache(msg: Bot.MessageSession):
     update = Bot.PrivateAssets.path / ".cache_restart_author"
     with open(update, "wb") as write_version:
-        write_version.write(json.dumps(converter.unstructure(msg.session_info)))
+        write_version.write(orjson.dumps(converter.unstructure(msg.session_info)))
 
 
 restart_time = []
@@ -553,7 +553,7 @@ async def _(msg: Bot.MessageSession, sql: str):
 
             page = (
                 max(min(int(get_page["<page>"]), total_pages), 1)
-                if get_page and isint(get_page["<page>"])
+                if get_page and is_int(get_page["<page>"])
                 else 1
             )
             start_index = (page - 1) * DBDATA_PER_PAGE
@@ -750,15 +750,15 @@ async def _(msg: Bot.MessageSession, k: str, v: str, table_name: str = None):
         v = True
     elif v.lower() == "false":
         v = False
-    elif isint(v):
+    elif is_int(v):
         v = int(v)
-    elif isfloat(v):
+    elif is_float(v):
         v = float(v)
     elif re.match(r"\[.*\]", v):
         try:
             v = v.replace("\'", "\"")
-            v = json.loads(v)
-        except json.JSONDecodeError as e:
+            v = orjson.loads(v)
+        except orjson.JSONDecodeError as e:
             Logger.error(str(e))
             await msg.finish(I18NContext("message.failed"))
     if (not table_name and secret) or (table_name and table_name.lower() == "secret"):
