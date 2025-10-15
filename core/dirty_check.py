@@ -13,7 +13,7 @@ import uuid
 from typing import Union, List, Dict, Optional
 
 import httpx
-import orjson as json
+import orjson
 from tenacity import retry, wait_fixed, stop_after_attempt
 
 from core.builtins.message.chain import MessageChain
@@ -71,11 +71,24 @@ def parse_data(original_content: str, result: dict, confidence: float = 60, addi
                     risk_words = itemDetail.get("RiskWords")
                     if risk_words:
                         risk_words = sorted(risk_words.split(","), key=len, reverse=True)
+                        i18ncode_pattern = re.compile(r"\{I18N:[^}]*\}")
+                        placeholders = [(m.start(), m.end()) for m in i18ncode_pattern.finditer(content)]
+
+                        def is_in_placeholder(start, end):
+                            for p_start, p_end in placeholders:
+                                if start < p_end and end > p_start:
+                                    return True
+                            return False
+
                         for word in risk_words:
                             word = word.strip()
-                            if word in content:
-                                reason = str(I18NContext("check.redacted", reason=itemDetail["Label"]))
-                                content = content.replace(word, reason)
+                            for match in re.finditer(re.escape(word), content):
+                                start, end = match.start(), match.end()
+                                if not is_in_placeholder(start, end):
+                                    reason = str(I18NContext("check.redacted", reason=itemDetail["Label"]))
+                                    content = content[:start] + reason + content[end:]
+                                    shift = len(reason) - len(word)
+                                    placeholders = [(s + shift if s > start else s, e + shift if e > start else e) for s, e in placeholders]
                     else:
                         content = str(I18NContext("check.redacted", reason=itemDetail["Label"]))
 
@@ -146,7 +159,7 @@ async def check(text: Union[str,
             }
             date = datetime.datetime.now(datetime.UTC).strftime("%a, %d %b %Y %H:%M:%S GMT")
             content_md5 = base64.b64encode(
-                hashlib.md5(json.dumps(body), usedforsecurity=False).digest()
+                hashlib.md5(orjson.dumps(body), usedforsecurity=False).digest()
             ).decode("utf-8")
             headers = {
                 "Accept": "application/json",
@@ -166,9 +179,9 @@ async def check(text: Union[str,
             headers["Authorization"] = sign
 
             async with httpx.AsyncClient(headers=headers) as client:
-                resp = await client.post(f"{root}{url}", content=json.dumps(body))
+                resp = await client.post(f"{root}{url}", content=orjson.dumps(body))
                 if resp.status_code == 200:
-                    result = json.loads(resp.content)
+                    result = orjson.loads(resp.content)
                     Logger.debug(result)
 
                     if result["code"] == 200:
@@ -198,7 +211,7 @@ async def check(text: Union[str,
                         "SignatureNonce": str(uuid.uuid4()),
                         "Action": "TextModerationPlus",
                         "Service": "comment_detection_pro",
-                        "ServiceParameters": json.dumps(
+                        "ServiceParameters": orjson.dumps(
                             {"dataId": str(uuid.uuid4()), "content": x}
                         ).decode("utf-8")
                     }
