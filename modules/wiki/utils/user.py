@@ -36,7 +36,6 @@ async def get_user_info(msg: Bot.MessageSession, username, wikiurl, headers=None
     )["query"]["users"][0]
     if "missing" in base_user_info:
         return I18NContext("wiki.message.user.not_found")
-    
     if await check_bool(base_user_info["name"], msg):
         return Plain(rickroll())
     data["username"] = base_user_info["name"]
