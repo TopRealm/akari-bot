@@ -112,8 +112,14 @@ class WikiLib:
     def __init__(self, url: str, headers=None, locale="zh_cn"):
         self.url = url
         self.wiki_info = WikiInfo()
-        self.headers = headers
         self.locale = Locale(locale)
+
+        if not headers:
+            headers = {}
+        # Default User-Agent
+        if "User-Agent" not in headers:
+            headers["User-Agent"] = "AkariBot/1.0"
+        self.headers = headers
 
     async def get_json_from_api(self, api, _no_login=False, **kwargs) -> dict:
         cookies = None
@@ -217,6 +223,14 @@ class WikiLib:
         except Exception:
             try:
                 get_page = await get_url(self.url, status_code=None, fmt="text", headers=self.headers)
+                if get_page.find("T400119") != -1:
+                    return WikiStatus(
+                        available=False,
+                        value=False,
+                        message=self.locale.t(
+                            "wiki.message.utils.wikilib.get_failed.wikimedia"
+                        ),
+                    )
                 if get_page.find("<title>Attention Required! | Cloudflare</title>") != -1:
                     return WikiStatus(
                         available=False,
@@ -225,15 +239,25 @@ class WikiLib:
                             "wiki.message.utils.wikilib.get_failed.cloudflare"
                         ),
                     )
-                m = re.findall(
-                    r"(?im)<\s*link\s*rel=\"EditURI\"\s*type=\"application/rsd\+xml\"\s*href=\"([^>]+?)\?action=rsd\"\s*/?\s*>",
-                    get_page,
-                )
-                api_match = m[0]
-                if api_match.startswith("//"):
-                    api_match = self.url.split("//")[0] + api_match
-                # Logger.info(api_match)
-                wiki_api_link = api_match
+                try:
+                    m = re.findall(
+                        r"(?im)<\s*link\s*rel=\"EditURI\"\s*type=\"application/rsd\+xml\"\s*href=\"([^>]+?)\?action=rsd\"\s*/?\s*>",
+                        get_page,
+                    )
+                    api_match = m[0]
+                    if api_match.startswith("//"):
+                        api_match = self.url.split("//")[0] + api_match
+                    # Logger.info(api_match)
+                    wiki_api_link = api_match
+                except IndexError:
+                    Logger.error(get_page)
+                    return WikiStatus(
+                        available=False,
+                        value=False,
+                        message=self.locale.t(
+                            "wiki.message.utils.wikilib.get_failed.not_mediawiki"
+                        ),
+                    )
             except TimeoutError:
                 return WikiStatus(
                     available=False,
@@ -242,17 +266,8 @@ class WikiLib:
                         "wiki.message.utils.wikilib.get_failed.timeout"
                     ),
                 )
-            except IndexError:
-                return WikiStatus(
-                    available=False,
-                    value=False,
-                    message=self.locale.t(
-                        "wiki.message.utils.wikilib.get_failed.not_mediawiki"
-                    ),
-                )
             except Exception as e:
-                if Config("debug", False):
-                    Logger.exception()
+                Logger.exception()
                 if str(e).startswith("403"):
                     message = self.locale.t(
                         "wiki.message.utils.wikilib.get_failed.forbidden"
