@@ -16,6 +16,7 @@ browser_executable_path = Config("browser_executable_path", cfg_type=str, table_
 
 web_render = WebRender(debug=False,
                        remote_webrender_url=remote_web_render_url,
+                       remote_only=bool(remote_web_render_url),
                        export_logs=True,
                        logs_path=str(logs_path))
 
