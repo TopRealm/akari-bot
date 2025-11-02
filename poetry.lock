@@ -295,14 +295,14 @@ reference = "mirrors"
 
 [[package]]
 name = "akari-bot-webrender"
-version = "0.5.7"
+version = "0.5.8"
 description = ""
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "akari_bot_webrender-0.5.7-py3-none-any.whl", hash = "sha256:afc41ec599a0db4ccbe7414fce03c517c3a88e340ac6a5a4cccee999b8257ac8"},
-    {file = "akari_bot_webrender-0.5.7.tar.gz", hash = "sha256:198ab87ab269e8f1232ce2a30d1073dbba5980cee49f0b925e5746612d5455c3"},
+    {file = "akari_bot_webrender-0.5.8-py3-none-any.whl", hash = "sha256:4be41af610fb68bf751701221e162d1ce76231cc83da42304bd7cc5811a6e077"},
+    {file = "akari_bot_webrender-0.5.8.tar.gz", hash = "sha256:59d04ed1b84febc336fcdcb66de48b806e4efcd4612d8f755495551e46e3d4af"},
 ]
 
 [package.dependencies]
@@ -6721,4 +6721,4 @@ reference = "mirrors"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12.0"
-content-hash = "9e90c4df1b517ce0e668c342cacef99025a047f44f7bc127a41c0ed5fce462ff"
+content-hash = "4b82ad02dc0d7970576ebdee6ca10ef2c90949b10e6da2b85c40ba2049a37880"
