@@ -19,7 +19,7 @@ package-mode = false
 python = "^3.12.0"
 
 # akari-bot-service
-akari-bot-webrender = "0.5.10"
+akari-bot-webrender = "0.5.11"
 akari-bot-webui = "0.3.6"
 
 # lib
@@ -38,7 +38,7 @@ aiocqhttp = "^1.4.3"
 aiogram = "^3.4.1"
 argon2-cffi = "^25.0.0"
 fastapi = ">=0.120.0, <1.0.0"
-ffmpy = "^0.6.0"
+ffmpy = "^1.0.0"
 khl-py = "^0.3.16"
 matrix-nio = "^0.25.0"
 py-cord = {git = "https://github.com/Pycord-Development/pycord"}
@@ -93,7 +93,7 @@ mcstatus = "^12.0.0"
 numpy = "<2.3.5"
 openai = "^2.0.0"
 pandas = "^2.2.0"
-pint = "^0.24.0"
+pint = "^0.25.0"
 python-whois = "^0.9.0"
 rdkit = "^2025.0.0"
 simpleeval = "^1.0.0"

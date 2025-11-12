@@ -34,7 +34,7 @@ logger_format = (
     "<level>[{level}]:{message}</level>"
 )
 Logger.add(
-    sys.stderr,
+    sys.stdout,
     format=logger_format,
     colorize=True,
     filter=lambda record: record["extra"].get("name") == "BotDaemon"
@@ -292,7 +292,6 @@ def terminate_process(process: multiprocessing.Process):
 async def main_async():
     if not (config_path / config_filename).exists():
         import core.scripts.config_generate  # noqa
-    from core.config import Config  # noqa
 
     try:
         multiprocess_run_until_complete(pre_init)
@@ -302,12 +301,7 @@ async def main_async():
             Logger.warning(f"Terminating process {ps.pid} ({ps.name})...")
             terminate_process(ps)
         processes.clear()
-        try:
-            await Tortoise.close_connections()
-        except ConfigurationError:
-            pass
         raise e
-
     except (KeyboardInterrupt, SystemExit) as e:
         for ps in processes:
             terminate_process(ps)
