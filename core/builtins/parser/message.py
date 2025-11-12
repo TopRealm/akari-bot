@@ -314,6 +314,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                 none_templates = False
         if not none_templates:  # 如果有，送入命令解析
             await _execute_module_command(msg, module, command_first_word)
+            raise FinishedException(msg.sent)  # if not using msg.finish
         else:  # 如果没有，直接传入下游模块
             msg.parsed_msg = None
             for func in module.command_list.set:
@@ -366,6 +367,9 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
 async def _execute_regex(msg: "Bot.MessageSession", modules, identify_str):
     bot: "Bot" = exports["Bot"]
     for m in modules:  # 遍历模块
+        if not modules[m]._db_load:
+            continue
+
         try:
             if m in msg.session_info.enabled_modules and modules[m].regex_list.set:  # 如果模块已启用
                 regex_module: Module = modules[m]
