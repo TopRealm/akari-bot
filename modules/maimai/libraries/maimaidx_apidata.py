@@ -8,6 +8,7 @@ from langconv.language.zh import zh_cn
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
 from core.builtins.message.internal import I18NContext, Image, Plain
+from core.config import Config
 from core.constants.exceptions import ConfigValueError
 from core.constants.path import cache_path
 from core.logger import Logger
@@ -64,7 +65,7 @@ async def update_alias() -> bool:
 
         except Exception:
             Logger.exception()
-
+        """
         try:
             xray_data = await get_url("https://download.xraybot.site/maimai/alias.json", 200, fmt="json")
 
@@ -75,7 +76,7 @@ async def update_alias() -> bool:
 
         except Exception:
             Logger.exception()
-
+        """
         if not alias_map:
             return False
 
@@ -162,7 +163,7 @@ async def search_by_alias(input_: str) -> list:
 
 async def get_record(
     msg: Bot.MessageSession, payload: dict, use_cache: bool = True
-) -> Optional[str]:
+) -> Optional[dict]:
     mai_cache_path = cache_path / "maimai-record"
     mai_cache_path.mkdir(parents=True, exist_ok=True)
     cache_dir = mai_cache_path / f"{msg.session_info.sender_id.replace("|", "_")}_maimaidx_record.json"
@@ -173,7 +174,7 @@ async def get_record(
             data=orjson.dumps(payload),
             status_code=200,
             headers={"Content-Type": "application/json", "accept": "*/*"},
-            fmt="json",
+            fmt="json"
         )
         if use_cache and data:
             with open(cache_dir, "wb") as f:
@@ -184,7 +185,7 @@ async def get_record(
             if "qq" in payload:
                 await msg.finish(I18NContext("maimai.message.user_unbound.qq"))
             else:
-                await msg.finish(I18NContext("maimai.message.user_not_found"))
+                await msg.finish(I18NContext("maimai.message.user_not_found.df"))
         elif str(e).startswith("403"):
             if "qq" in payload:
                 await msg.finish(I18NContext("maimai.message.forbidden.eula"))
@@ -210,7 +211,7 @@ async def get_song_record(
     sid: Union[str, list[str]],
     use_cache: bool = True,
 ) -> Optional[str]:
-    if DEVELOPER_TOKEN:
+    if DF_DEVELOPER_TOKEN:
         mai_cache_path = cache_path / "maimai-record"
         mai_cache_path.mkdir(parents=True, exist_ok=True)
         cache_dir = mai_cache_path / f"{msg.session_info.sender_id.replace("|", "_")}_maimaidx_song_record.json"
@@ -224,7 +225,7 @@ async def get_song_record(
                 headers={
                     "Content-Type": "application/json",
                     "accept": "*/*",
-                    "Developer-Token": DEVELOPER_TOKEN,
+                    "Developer-Token": DF_DEVELOPER_TOKEN,
                 },
                 fmt="json",
             )
@@ -288,7 +289,7 @@ async def get_total_record(
             if "qq" in payload:
                 await msg.finish(I18NContext("maimai.message.user_unbound.qq"))
             else:
-                await msg.finish(I18NContext("maimai.message.user_not_found"))
+                await msg.finish(I18NContext("maimai.message.user_not_found.df"))
         elif str(e).startswith("403"):
             if "qq" in payload:
                 await msg.finish(I18NContext("maimai.message.forbidden.eula"))
@@ -316,7 +317,7 @@ async def get_total_record(
 
 async def get_plate(
     msg: Bot.MessageSession, payload: dict, version: str, use_cache: bool = True
-) -> Optional[str]:
+) -> Optional[dict]:
     version = "舞" if version == "覇" else version  # “覇者”属于舞代
     mai_cache_path = cache_path / "maimai-record"
     mai_cache_path.mkdir(parents=True, exist_ok=True)
@@ -342,7 +343,7 @@ async def get_plate(
             if "qq" in payload:
                 await msg.finish(I18NContext("maimai.message.user_unbound.qq"))
             else:
-                await msg.finish(I18NContext("maimai.message.user_not_found"))
+                await msg.finish(I18NContext("maimai.message.user_not_found.df"))
         elif str(e).startswith("403"):
             if "qq" in payload:
                 await msg.finish(I18NContext("maimai.message.forbidden.eula"))
