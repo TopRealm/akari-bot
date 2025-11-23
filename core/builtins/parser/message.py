@@ -156,33 +156,50 @@ async def parser(msg: "Bot.MessageSession"):
 def _transform_alias(msg, command: str):
     aliases = dict(msg.session_info.target_info.target_data.get("command_alias", {}).items())
     command_split = msg.trigger_msg.split(" ")  # 切割消息
+    matched_aliases = []  # 用来记录所有可匹配的模板 (placeholder_count, pattern, replacement, match_obj)
+
     for pattern, replacement in aliases.items():
         if re.search(r"\${[^}]*}", pattern):
-            # 使用正则表达式匹配并分隔多个连在一起的占位符
-            pattern = re.sub(r"(\$\{\w+})(?=\$\{\w+})", r"\1 ", pattern)
-            # 匹配占位符
-            pattern_placeholders = re.findall(r"\$\{([^{}$]+)}", pattern)
-
-            regex_pattern = re.escape(pattern)
-            for placeholder in pattern_placeholders:
-                regex_pattern = regex_pattern.replace(re.escape(f"${{{placeholder}}}"), r"(\S+)")  # 匹配非空格字符
+            # 处理连在一起的多个占位符
+            normalized_pattern = re.sub(r"(\$\{\w+})(?=\$\{\w+})", r"\1 ", pattern)
+            # 提取占位符
+            placeholders = re.findall(r"\$\{([^{}$]+)}", normalized_pattern)
+            # 构造匹配正则
+            regex_pattern = re.escape(normalized_pattern)
+            for ph in placeholders:
+                regex_pattern = regex_pattern.replace(
+                    re.escape(f"${{{ph}}}"), r"(\S+)"
+                )
 
             match = re.match(regex_pattern, command)
             if match:
-                groups = match.groups()
-                placeholder_dict = {placeholder: groups[i] for i,
-                                    placeholder in enumerate(pattern_placeholders) if i < len(groups)}
-                result = stringTemplate(replacement).safe_substitute(placeholder_dict)
+                # 记录匹配结果
+                matched_aliases.append(
+                    (len(placeholders), pattern, replacement, placeholders, match)
+                )
 
-                Logger.debug(msg.session_info.prefixes[0] + result)
-                return msg.session_info.prefixes[0] + result
-        elif command_split[0] == pattern:
-            # 旧语法兼容
-            command_split[0] = msg.session_info.prefixes[0] + replacement  # 将自定义别名替换为命令
-            Logger.debug(" ".join(command_split))
-            return " ".join(command_split)  # 重新连接消息
-        else:
-            pass
+    # 复杂度最高的优先
+    if matched_aliases:
+        matched_aliases.sort(key=lambda x: x[0], reverse=True)  # 按占位符数量降序
+
+        _, pattern, replacement, placeholders, match = matched_aliases[0]
+        groups = match.groups()
+        placeholder_dict = {
+            placeholders[i]: groups[i]
+            for i in range(len(groups))
+        }
+
+        result = stringTemplate(replacement).safe_substitute(placeholder_dict)
+        Logger.debug(msg.session_info.prefixes[0] + result)
+        return msg.session_info.prefixes[0] + result
+
+    # 旧语法兼容
+    for pattern, replacement in aliases.items():
+        if not re.search(r"\${[^}]*}", pattern):
+            if command_split[0] == pattern:
+                command_split[0] = msg.session_info.prefixes[0] + replacement  # 将自定义别名替换为命令
+                Logger.debug(" ".join(command_split))
+                return " ".join(command_split)  # 重新连接消息
 
     return command
 
@@ -243,7 +260,7 @@ async def _process_command(msg: "Bot.MessageSession", modules, disable_prefix, i
                     alias_list.append(alias)
 
     if alias_list:
-        max_alias = max(alias_list, key=len)
+        max_alias = str(max(alias_list, key=len))
         real_name = ModulesManager.modules_aliases[max_alias]
         command_words = command.split(" ")
         command_words = real_name.split(" ") + command_words[len(max_alias.split(" ")):]
@@ -263,6 +280,8 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
 
         module: Module = modules[command_first_word]
         if not module.command_list.set:  # 如果没有可用的命令，则展示模块简介
+            if module.rss and not msg.session_info.support_rss:
+                return
             if module.desc:
                 desc = [I18NContext("parser.module.desc", desc=msg.session_info.locale.t_str(module.desc))]
                 if command_first_word not in msg.session_info.enabled_modules:
@@ -405,8 +424,7 @@ async def _execute_regex(msg: "Bot.MessageSession", modules, identify_str):
                                 matched = True
                                 matched_hash = hash(msg.matched_msg.groups())
                         elif rfunc.mode.upper() in ["A", "FINDALL"]:
-                            msg.matched_msg = re.findall(rfunc.pattern, trigger_msg, flags=rfunc.flags)
-                            msg.matched_msg = tuple(set(msg.matched_msg))
+                            msg.matched_msg = tuple(set(re.findall(rfunc.pattern, trigger_msg, flags=rfunc.flags)))
                             if msg.matched_msg:
                                 matched = True
                                 matched_hash = hash(msg.matched_msg)

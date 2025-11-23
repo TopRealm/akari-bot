@@ -116,13 +116,13 @@ async def _(msg: Bot.MessageSession):
         if user in msg.session_info.custom_admins:
             await msg.finish(I18NContext("core.message.admin.add.already"))
         if await msg.session_info.target_info.config_custom_admin(user):
-            await msg.finish(I18NContext("core.message.admin.add.success", user=user))
+            await msg.finish(I18NContext("core.message.admin.add.success", sender=user))
     if "remove" in msg.parsed_msg:
         if user == msg.session_info.sender_id:
             if not await msg.wait_confirm(I18NContext("core.message.admin.remove.confirm")):
                 await msg.finish()
         if await msg.session_info.target_info.config_custom_admin(user, enable=False):
-            await msg.finish(I18NContext("core.message.admin.remove.success", user=user))
+            await msg.finish(I18NContext("core.message.admin.remove.success", sender=user))
 
 
 @admin.command(
@@ -146,10 +146,10 @@ async def _(msg: Bot.MessageSession):
         if user in msg.session_info.banned_users:
             await msg.finish(I18NContext("core.message.admin.ban.already"))
         await msg.session_info.target_info.config_banned_user(user)
-        await msg.finish(I18NContext("core.message.admin.ban.success", user=user))
+        await msg.finish(I18NContext("core.message.admin.ban.success", sender=user))
     if "unban" in msg.parsed_msg:
         if await msg.session_info.target_info.config_banned_user(user, enable=False):
-            await msg.finish(I18NContext("core.message.admin.unban.success", user=user))
+            await msg.finish(I18NContext("core.message.admin.unban.success", sender=user))
 
 
 locale = module(
@@ -178,7 +178,7 @@ async def _(msg: Bot.MessageSession, lang: str):
         await msg.finish([I18NContext("core.message.locale.set.invalid"),
                           I18NContext("core.message.locale.langlist", langlist=avaliable_lang)])
 
-
+"""
 @locale.command("reload", required_superuser=True)
 async def _(msg: Bot.MessageSession):
     err = load_locale_file()
@@ -186,7 +186,7 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(I18NContext("message.success"))
     else:
         await msg.finish([I18NContext("core.message.locale.reload.failed"), Plain("\n".join(err), disable_joke=True)])
-
+"""
 
 whoami = module("whoami", base=True, doc=True)
 
