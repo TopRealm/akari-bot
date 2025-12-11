@@ -47,7 +47,7 @@ class CoolDown:
         """
         cd_instance = self._get_cd_dict()
         elapsed = datetime.now().timestamp() - cd_instance.ts
-        remaining = cd_instance._exp - elapsed
+        remaining = cd_instance.exp - elapsed
         return max(remaining, 0)
 
     def reset(self):
