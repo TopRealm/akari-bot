@@ -26,7 +26,7 @@ from core.logger import Logger
 from core.tos import TOS_TEMPBAN_TIME, temp_ban_counter, abuse_warn_target, remove_temp_ban
 from core.types import Module, Param
 from core.types.module.component_meta import CommandMeta
-from core.utils.message import normalize_space
+from core.utils.format import normalize_space
 from core.utils.temp import ExpiringTempDict, TempCounter
 from core.utils.token_bucket import TokenBucket
 
@@ -203,7 +203,7 @@ def _get_prefixes(msg: "Bot.MessageSession"):
             break
     if in_prefix_list or disable_prefix:  # 检查消息前缀
         if len(msg.trigger_msg) <= 1 or msg.trigger_msg[:2] == "~~":  # 排除 ~~xxx~~ 的情况
-            return False, False, ""
+            return False, False
         if in_prefix_list:  # 如果在命令前缀列表中，则将此命令前缀移动到列表首位
             msg.session_info.prefixes.remove(display_prefix)
             msg.session_info.prefixes.insert(0, display_prefix)
@@ -289,7 +289,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
             if command_first_word not in msg.session_info.enabled_modules and msg.session_info.require_enable_modules:  # 若未开启
                 if await msg.check_permission():
                     await msg.send_message(I18NContext("parser.module.disabled.prompt", module=command_first_word,
-                                                   prefix=msg.session_info.prefixes[0]))
+                                                       prefix=msg.session_info.prefixes[0]))
                     if await msg.wait_confirm(I18NContext("parser.module.disabled.to_enable"), no_confirm_action=False):
                         await msg.session_info.target_info.config_module(command_first_word)
                         await msg.send_message(
@@ -300,7 +300,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                     await msg.finish(I18NContext("parser.module.disabled", module=command_first_word))
         elif module.required_admin:
             if not await msg.check_permission():
-                await msg.send_message(I18NContext("parser.admin.module.permission.denied", module=command_first_word))
+                await msg.send_message(I18NContext("parser.admin.permission.denied.module", module=command_first_word))
                 return
 
         if not module.base:
@@ -333,7 +333,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                 else:
                     await msg.send_message(I18NContext("parser.module.unloaded", module=new_command_first_word))
             elif not confirmed:
-                await msg.send_message(I18NContext("parser.command.invalid.format",
+                await msg.send_message(I18NContext("parser.command.invalid.syntax",
                                                    module=command_first_word,
                                                    prefix=msg.session_info.prefixes[0]))
     except SendMessageFailed:
@@ -577,7 +577,7 @@ async def _execute_module_command(msg: "Bot.MessageSession", module, command_fir
                     return
             elif command.required_admin:
                 if not await msg.check_permission():
-                    await msg.send_message(I18NContext("parser.admin.command.permission.denied"))
+                    await msg.send_message(I18NContext("parser.admin.permission.denied.command"))
                     return
 
             if not command.load or \
@@ -647,7 +647,7 @@ async def _execute_module_command(msg: "Bot.MessageSession", module, command_fir
             raise FinishedException(msg.sent)  # if not using msg.finish
         except InvalidCommandFormatError:
             if not msg.session_info.sender_info.sender_data.get("typo_check", True):
-                await msg.send_message(I18NContext("parser.command.invalid.format",
+                await msg.send_message(I18NContext("parser.command.invalid.syntax",
                                                    module=command_first_word,
                                                    prefix=msg.session_info.prefixes[0]))
             return
