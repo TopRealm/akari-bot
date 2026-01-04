@@ -3,7 +3,6 @@ import re
 import urllib.parse
 from copy import deepcopy
 from datetime import datetime
-from typing import Union, Dict, List, Optional
 
 import orjson
 from attrs import define
@@ -34,7 +33,7 @@ class InvalidWikiError(Exception):
 @define
 class QueryInfo:
     api: str
-    headers: Dict[str, str] = {
+    headers: dict[str, str] = {
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"
     }
     prefix: str = ""
@@ -44,7 +43,7 @@ class QueryInfo:
     def assign(
         cls,
         api: str,
-        headers: Dict[str, str],
+        headers: dict[str, str],
         prefix: str = "",
         locale: str = default_locale,
     ):
@@ -57,13 +56,13 @@ class QueryInfo:
 class WikiInfo:
     api: str = ""
     articlepath: str = ""
-    extensions: List[str] = []
-    interwiki: Dict[str, str] = {}
+    extensions: list[str] = []
+    interwiki: dict[str, str] = {}
     realurl: str = ""
     name: str = ""
-    namespaces: Dict[str, int] = {}
-    namespaces_local: Dict[str, str] = {}
-    namespacealiases: Dict[str, str] = {}
+    namespaces: dict[str, int] = {}
+    namespaces_local: dict[str, str] = {}
+    namespacealiases: dict[str, str] = {}
     in_allowlist: bool = False
     in_blocklist: bool = False
     script: str = ""
@@ -75,32 +74,32 @@ class WikiInfo:
 @define
 class WikiStatus:
     available: bool
-    value: Union[WikiInfo, bool]
+    value: WikiInfo | bool
     message: str
 
 
 @define
 class PageInfo:
     info: WikiInfo
-    title: Optional[str]
+    title: str | None
     id: int = -1
-    before_title: Optional[str] = None
-    link: Optional[str] = None
-    edit_link: Optional[str] = None
-    file: Optional[str] = None
-    desc: Optional[str] = None
-    args: Optional[str] = None
-    selected_section: Optional[str] = None
-    sections: List[str] = None
-    interwiki_prefix: Optional[str] = ""
+    before_title: str | None = None
+    link: str | None = None
+    edit_link: str | None = None
+    file: str | None = None
+    desc: str | None = None
+    args: str | None = None
+    selected_section: str | None = None
+    sections: list[str] = None
+    interwiki_prefix: str | None = ""
     status: bool = True
-    templates: List[str] = None
+    templates: list[str] = None
     before_page_property: str = "page"
     page_property: str = "page"
     has_template_doc: bool = False
-    invalid_namespace: Union[str, bool] = False
-    possible_research_title: List[str] = None
-    body_class: List[str] = None
+    invalid_namespace: str | bool = False
+    possible_research_title: list[str] = None
+    body_class: list[str] = None
     invalid_section: bool = False
     is_talk_page: bool = False
     is_forum: bool = False
@@ -157,7 +156,7 @@ class WikiLib:
             raise NoReportException(str(e))
 
     async def rearrange_siteinfo(
-        self, info: Union[dict, str, bytes], wiki_api_link
+        self, info: dict | str | bytes, wiki_api_link
     ) -> WikiInfo:
         if isinstance(info, (str, bytes)):
             info = orjson.loads(info)
@@ -726,19 +725,19 @@ class WikiLib:
             )
 
         # handle redirects, normalized titles, converted titles
-        normalized_: List[Dict[str, str]] = query.get("normalized")
+        normalized_: list[dict[str, str]] = query.get("normalized")
         if normalized_:
             for n in normalized_:
                 if n["from"] == title:
                     page_info.before_title = n["from"]
                     page_info.title = n["to"]
-        converted_: List[Dict[str, str]] = query.get("converted")
+        converted_: list[dict[str, str]] = query.get("converted")
         if converted_:
             for c in converted_:
                 if c["from"] == title:
                     page_info.before_title = c["from"]
                     page_info.title = c["to"]
-        redirects_: List[Dict[str, str]] = query.get("redirects")
+        redirects_: list[dict[str, str]] = query.get("redirects")
         if redirects_:
             for r in redirects_:
                 if r["from"] == title:
@@ -746,7 +745,7 @@ class WikiLib:
                     page_info.title = r["to"]
 
         # get page data
-        pages: Dict[str, dict] = query.get("pages")
+        pages: dict[str, dict] = query.get("pages")
         if pages:
             for page_id in pages:
                 # set default values
@@ -771,8 +770,10 @@ class WikiLib:
                         )
                     page_info.desc = rs
                 elif "missing" in page_raw:
+                    # if page is missing... try to research
                     if "title" in page_raw:
                         if "known" in page_raw:
+                            # if page is known to be missing... return link without desc
                             full_url = (
                                 re.sub(
                                     r"\$1",
@@ -788,6 +789,7 @@ class WikiLib:
                             page_info.file = file
                             page_info.status = True
                         else:
+                            # try to reparse the title
                             split_title = title.split(":")
                             reparse = False
                             if (
@@ -796,6 +798,7 @@ class WikiLib:
                                 and self.wiki_info.namespaces_local[split_title[0]]
                                 == "Template"
                             ):
+                                # if Template namespace, reparse title without Template namespace
                                 rstitle = ":".join(split_title[1:]) + page_info.args
                                 reparse = await self.parse_page_info(rstitle)
                                 page_info.before_page_property = "template"
@@ -805,6 +808,7 @@ class WikiLib:
                                 in self.wiki_info.namespacealiases
                                 and not _search
                             ):
+                                # reparse title with canonical namespace... e.g. "MCW" -> "Minecraft Wiki"
                                 rstitle = (
                                     f"{self.wiki_info.namespacealiases[split_title[0].lower()]}:"
                                     + ":".join(split_title[1:])
@@ -813,7 +817,7 @@ class WikiLib:
                                 reparse = await self.parse_page_info(
                                     rstitle, _search=True
                                 )
-                            if reparse:
+                            if reparse:  # if reparsed successfully, use the reparsed result
                                 page_info.before_title = page_info.title
                                 page_info.title = reparse.title
                                 page_info.link = reparse.link
@@ -825,14 +829,17 @@ class WikiLib:
                                     reparse.possible_research_title
                                 )
                             else:
+                                # otherwise, try to research the page
                                 namespace = "*"
                                 if (
                                     len(split_title) > 1
                                     and split_title[0] in self.wiki_info.namespaces
                                 ):
+                                    # if namespace exists, use it
                                     namespace = self.wiki_info.namespaces[
                                         split_title[0]
                                     ]
+                                # search by text, title, nearmatch
                                 srwhats = ["text", "title", "nearmatch"]
                                 preferred = None
                                 invalid_namespace = False
@@ -857,6 +864,7 @@ class WikiLib:
                                 searched_result = []
                                 for srwhat in srwhats:
                                     searches.append(search_something(srwhat))
+                                # request concurrently
                                 gather_search = await asyncio.gather(*searches)
                                 for search in gather_search:
                                     if search[0] and search[0] not in searched_result:
@@ -864,6 +872,8 @@ class WikiLib:
 
                                 if not preferred and searched_result:
                                     preferred = searched_result[0]
+
+                                # if found possible research result, set possible_research_title
 
                                 page_info.before_title = page_info.title
                                 page_info.title = preferred
@@ -1112,8 +1122,9 @@ class WikiLib:
                             page_info.edit_link = query_langlinks.edit_link
                             page_info.file = query_langlinks.file
                             page_info.desc = query_langlinks.desc
-        interwiki_: List[Dict[str, str]] = query.get("interwiki")
+        interwiki_: list[dict[str, str]] = query.get("interwiki")
         if interwiki_:
+            # handling interwiki pages
             for i in interwiki_:
                 if i["title"] == page_info.title:
                     iw_title = re.match(r"^" + i["iw"] + ":(.*)", i["title"])
@@ -1121,12 +1132,15 @@ class WikiLib:
                     _prefix += i["iw"] + ":"
                     _iw = True
 
+                    # if interwiki target not found, raise InvalidWikiError
+
                     if not (get_iw := self.wiki_info.interwiki.get(i["iw"])):
                         raise InvalidWikiError(
                             self.locale.t(
                                 "wiki.message.utils.wikilib.get_failed.invalid_interwiki"
                             )
                         )
+                    # try to query interwiki page
                     iw_query = await WikiLib(
                         url=get_iw, headers=self.headers
                     ).parse_page_info(
@@ -1137,6 +1151,7 @@ class WikiLib:
                     if not iw_query.title:
                         page_info.title = ""
                     else:
+                        # redirect to new result
                         page_info.before_title = before_page_info.title
                         t = page_info.title
                         if t:
@@ -1144,7 +1159,7 @@ class WikiLib:
                                 before_page_info.args
                                 or page_info.id == -1
                                 or not page_info.id
-                            ):
+                            ):  # preserve args if any
                                 page_info.before_title += urllib.parse.unquote(
                                     before_page_info.args
                                 )
@@ -1152,14 +1167,16 @@ class WikiLib:
                                 if page_info.link:
                                     page_info.link += before_page_info.args
                             else:
+                                # else rebuild link by curid
                                 page_info.link = (
                                     page_info.info.script + f"?curid={page_info.id}"
                                 )
-                            if _tried == 0:
-                                if lang and page_info.status:
+                            if _tried == 0:  # handle when first level iw redirect, for final title setting
+                                if lang and page_info.status:  # if lang specified and page exists, set before_title directly
                                     page_info.before_title = page_info.title
                                 else:
                                     page_info.title = page_info.interwiki_prefix + t
+                                    # set possible research titles with interwiki prefix
                                     if page_info.possible_research_title:
                                         page_info.possible_research_title = [
                                             page_info.interwiki_prefix + possible_title
@@ -1170,7 +1187,7 @@ class WikiLib:
                                     page_info.selected_section = (
                                         before_page_info.selected_section
                                     )
-        if not self.wiki_info.in_allowlist:
+        if not self.wiki_info.in_allowlist:  # check content if not in allowlist
             checklist = []
             if page_info.title:
                 checklist.append(page_info.title)
@@ -1182,7 +1199,7 @@ class WikiLib:
             for x in chk:
                 if not x["status"]:
                     ban = True
-        if ban:
+        if ban:  # if content check failed, mark as banned
             page_info.status = False
             page_info.title = page_info.before_title = None
             page_info.id = -1

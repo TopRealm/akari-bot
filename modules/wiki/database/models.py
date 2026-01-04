@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from urllib.parse import urlparse
 
 import orjson
@@ -22,7 +21,7 @@ class WikiTargetInfo(DBModel):
     :param prefix: 自定义请求前缀
     """
 
-    target_id = fields.CharField(max_length=512, pk=True)
+    target_id = fields.CharField(max_length=512, primary_key=True)
     api_link = fields.CharField(max_length=512, null=True)
     interwikis = fields.JSONField(default={})
     headers = fields.JSONField(default={"accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"})
@@ -36,7 +35,7 @@ class WikiTargetInfo(DBModel):
         await self.save()
         return True
 
-    async def config_interwikis(self, iw: str, iwlink: Optional[str] = None):
+    async def config_interwikis(self, iw: str, iwlink: str | None = None):
         interwikis = self.interwikis
         if iwlink:
             interwikis[iw] = iwlink
@@ -47,7 +46,7 @@ class WikiTargetInfo(DBModel):
         await self.save()
         return True
 
-    async def config_headers(self, headers: Optional[str] = None, add: bool = True):
+    async def config_headers(self, headers: str | None = None, add: bool = True):
         try:
             headers_ = self.headers
             if headers and add:
@@ -64,7 +63,7 @@ class WikiTargetInfo(DBModel):
         except Exception:
             return False
 
-    async def config_prefix(self, prefix: Optional[str] = None):
+    async def config_prefix(self, prefix: str | None = None):
         self.prefix = prefix
         await self.save()
         return True
@@ -78,7 +77,7 @@ class WikiSiteInfo(DBModel):
     :param site_info: 站点信息
     :param timestamp: 更新时间
     """
-    api_link = fields.CharField(max_length=512, pk=True)
+    api_link = fields.CharField(max_length=512, primary_key=True)
     site_info = fields.JSONField(default={})
     timestamp = fields.DatetimeField(auto_now_add=True)
 
@@ -108,7 +107,7 @@ class WikiAllowList(DBModel):
     :param api_link: API 链接
     :param timestamp: 更新时间
     """
-    api_link = fields.CharField(max_length=512, pk=True)
+    api_link = fields.CharField(max_length=512, primary_key=True)
     timestamp = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -141,7 +140,7 @@ class WikiBlockList(DBModel):
     :param api_link: API 链接
     :param timestamp: 更新时间
     """
-    api_link = fields.CharField(max_length=512, pk=True)
+    api_link = fields.CharField(max_length=512, primary_key=True)
     timestamp = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -174,7 +173,7 @@ class WikiBotAccountList(DBModel):
     :param bot_account: Bot 账号
     :param bot_password: Bot 密码
     """
-    api_link = fields.CharField(max_length=512, pk=True)
+    api_link = fields.CharField(max_length=512, primary_key=True)
     bot_account = fields.CharField(max_length=512)
     bot_password = fields.CharField(max_length=512)
 
