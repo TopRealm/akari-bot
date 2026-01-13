@@ -360,8 +360,7 @@ async def chemical_code(
                 Image(newpath),
                 I18NContext("chemical_code.message.captcha", times=set_timeout),
             ],
-            timeout=GAME_EXPIRED,
-            append_instruction=False,
+            timeout=GAME_EXPIRED
         )
         if play_state.check():
             play_state.disable()

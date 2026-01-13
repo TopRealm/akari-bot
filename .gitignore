@@ -35,3 +35,6 @@ matrix_store
 output/*
 modules/yunhei/admins.json
 .bot.lock
+/test*.*
+!tester.py
+.run/*
