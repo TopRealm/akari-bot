@@ -6757,8 +6757,4 @@ reference = "mirrors"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12.0"
-<<<<<<< HEAD
-content-hash = "27f2cf0045bf2d77b10c8a99ffe5ced90a2f10d44fb7fba029680b9db9115f63"
-=======
-content-hash = "a0ec0b92f7cce1bb8e0db1a37d935edb97a078b4d995fb07a278537d8061afe5"
->>>>>>> origin/upstream
+content-hash = "375a853d522cc6b722c9c607b3d70181094d4669a6bd5d27bc4e0e38d56aa007"
