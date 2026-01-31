@@ -14,7 +14,6 @@ from core.constants import QueueAlreadyRunning
 from core.database.models import JobQueuesTable
 from core.exports import exports
 from core.logger import Logger
-from core.utils.container import ExpiringTempDict
 
 
 if TYPE_CHECKING:
@@ -29,7 +28,7 @@ class QueueFinished:
 
 
 class QueueTaskManager:
-    tasks = ExpiringTempDict()
+    tasks = {}
 
     @classmethod
     async def add(cls, task_id: str):
