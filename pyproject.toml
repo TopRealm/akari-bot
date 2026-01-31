@@ -29,7 +29,8 @@ deprecated = "^1.2.18"
 poetry-plugin-export = "^1.9.0"
 pre-commit = "^4.0.0"
 pycryptodome = "^3.18.0"
-python-multipart = "^0.0.21"
+python-dotenv = "^1.2.1"
+python-multipart = "^0.0.22"
 pywin32 = { version = "^308", platform = "win32" }
 
 
@@ -92,7 +93,7 @@ langconv = {git = "https://github.com/Teahouse-Studios/langconv.py.git"}
 mcstatus = "^12.0.0"
 numpy = "<2.4.2"
 openai = "^2.0.0"
-pandas = "^2.2.0"
+pandas = "^3.0.0"
 pint = "^0.25.0"
 python-whois = "^0.9.0"
 rdkit = "^2025.0.0"

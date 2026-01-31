@@ -9,7 +9,7 @@ from core.builtins.session.info import SessionInfo
 from core.builtins.session.internal import MessageSession, I18NContext
 from core.builtins.utils import confirm_command
 from core.config import Config
-from core.constants import FinishedException
+from core.constants.exceptions import SessionFinished
 
 
 class MockMessageSession(MessageSession):
@@ -77,7 +77,7 @@ class MockMessageSession(MessageSession):
             callback=None):
         if message_chain:
             await self.send_message(message_chain)
-        raise FinishedException
+        raise SessionFinished
 
     async def send_direct_message(
             self,
@@ -165,7 +165,6 @@ class MockMessageSession(MessageSession):
         delete=False,
         timeout=120,
         append_instruction=True,
-        add_confirm_reaction=False,
     ):
         confirm_prompt = None
         if message_chain:
@@ -191,51 +190,6 @@ class MockMessageSession(MessageSession):
                     result = input(f"{confirm_prompt}\nSend: ")
                 else:
                     result = input("Send: ")
-                if delete:
-                    await self.delete()
-                new_msg = MockMessageSession(parent_session=self)
-                await new_msg.async_init(result)
-                return new_msg
-            raise IndexError("Input has been exhausted")
-        except (EOFError, KeyboardInterrupt):
-            os._exit(1)
-        except Exception as e:
-            raise e
-
-    async def wait_reply(
-        self,
-        message_chain,
-        quote=True,
-        delete=False,
-        timeout=120,
-        all_=False,
-        append_instruction=True,
-        add_confirm_reaction=False,
-    ):
-        confirm_prompt = None
-        if message_chain:
-            message_chain = get_message_chain(self.session_info, message_chain)
-            if append_instruction:
-                message_chain.append(I18NContext("message.reply.prompt"))
-            await self.send_message(message_chain, quote)
-            confirm_prompt = "\n".join([x.text if isinstance(x, PlainElement) else str(x)
-                                       for x in message_chain.as_sendable()])
-        try:
-            if self._script:
-                result = self._script.pop(0)
-                if delete:
-                    await self.delete()
-                new_msg = MockMessageSession(parent_session=self, is_ci=self.is_ci)
-                new_msg._script = self._script
-                self._script = []
-                await new_msg.async_init(result)
-                return new_msg
-
-            if not self.is_ci:
-                if confirm_prompt:
-                    result = input(f"{confirm_prompt}\nReply: ")
-                else:
-                    result = input("Reply: ")
                 if delete:
                     await self.delete()
                 new_msg = MockMessageSession(parent_session=self)
@@ -277,6 +231,50 @@ class MockMessageSession(MessageSession):
                     result = input(f"{confirm_prompt}\nSend: ")
                 else:
                     result = input("Send: ")
+                if delete:
+                    await self.delete()
+                new_msg = MockMessageSession(parent_session=self)
+                await new_msg.async_init(result)
+                return new_msg
+            raise IndexError("Input has been exhausted")
+        except (EOFError, KeyboardInterrupt):
+            os._exit(1)
+        except Exception as e:
+            raise e
+
+    async def wait_reply(
+        self,
+        message_chain,
+        quote=True,
+        delete=False,
+        timeout=120,
+        all_=False,
+        append_instruction=True,
+    ):
+        confirm_prompt = None
+        if message_chain:
+            message_chain = get_message_chain(self.session_info, message_chain)
+            if append_instruction:
+                message_chain.append(I18NContext("message.reply.prompt"))
+            await self.send_message(message_chain, quote)
+            confirm_prompt = "\n".join([x.text if isinstance(x, PlainElement) else str(x)
+                                       for x in message_chain.as_sendable()])
+        try:
+            if self._script:
+                result = self._script.pop(0)
+                if delete:
+                    await self.delete()
+                new_msg = MockMessageSession(parent_session=self, is_ci=self.is_ci)
+                new_msg._script = self._script
+                self._script = []
+                await new_msg.async_init(result)
+                return new_msg
+
+            if not self.is_ci:
+                if confirm_prompt:
+                    result = input(f"{confirm_prompt}\nReply: ")
+                else:
+                    result = input("Reply: ")
                 if delete:
                     await self.delete()
                 new_msg = MockMessageSession(parent_session=self)

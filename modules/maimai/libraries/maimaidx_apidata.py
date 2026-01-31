@@ -1,4 +1,5 @@
 from collections import defaultdict
+from urllib.parse import urlencode
 
 import orjson
 from langconv.converter import LanguageConverter
@@ -12,7 +13,7 @@ from core.constants.exceptions import ConfigValueError
 from core.constants.path import cache_path
 from core.logger import Logger
 from core.utils.http import download, get_url, post_url
-from core.utils.tools import is_int
+from core.utils.func import is_int
 from .maimaidx_mapping import *
 from .maimaidx_music import get_cover_len5_id, Music, TotalList
 
@@ -258,13 +259,15 @@ async def get_total_record(
         mai_cache_path.mkdir(parents=True, exist_ok=True)
         cache_dir = mai_cache_path / f"{msg.session_info.sender_id.replace("|", "_")}_maimaidx_total_record.json"
         url = "https://www.diving-fish.com/api/maimaidxprober/dev/player/records"
-        payload["version"] = versions
         try:
-            data = await post_url(
-                url,
-                data=orjson.dumps(payload),
+            data = await get_url(
+                f"{url}?{urlencode(payload)}",
                 status_code=200,
-                headers={"Content-Type": "application/json", "accept": "*/*"},
+                headers={
+                    "Content-Type": "application/json",
+                    "accept": "*/*",
+                    "Developer-Token": DF_DEVELOPER_TOKEN
+                },
                 fmt="json",
             )
             if use_cache and data:
@@ -272,7 +275,7 @@ async def get_total_record(
                     f.write(orjson.dumps(data))
             if not utage:
                 data = {
-                    "verlist": [d for d in data["verlist"] if int(d.get("id", 0)) < 100000]
+                    "records": [d for d in data["records"] if int(d.get("id", 0)) < 100000]
                 }  # 过滤宴谱
             return data
         except Exception as e:
@@ -295,8 +298,8 @@ async def get_total_record(
                     await msg.send_message(I18NContext("maimai.message.use_cache"))
                     if not utage:
                         data = {
-                            "verlist": [
-                                d for d in data["verlist"] if d.get("id", 0) < 100000
+                            "records": [
+                                d for d in data["records"] if d.get("id", 0) < 100000
                             ]
                         }  # 过滤宴谱
                     return data

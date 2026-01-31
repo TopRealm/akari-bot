@@ -17,9 +17,9 @@ from core.builtins.session.tasks import SessionTaskManager
 from core.builtins.types import MessageElement
 from core.builtins.utils import confirm_command
 from core.config import Config
-from core.constants import FinishedException, WaitCancelException
+from core.constants import SessionFinished, WaitCancelException
 from core.exports import add_export, exports
-from core.utils.tools import is_int
+from core.utils.func import is_int
 
 if TYPE_CHECKING:
     from core.queue.server import JobQueueServer
@@ -113,7 +113,7 @@ class MessageSession:
                 enable_split_image=enable_split_image,
                 callback=callback,
             )
-        raise FinishedException(f)
+        raise SessionFinished(f)
 
     async def send_direct_message(
         self,
@@ -225,16 +225,10 @@ class MessageSession:
         _queue_server: "JobQueueServer" = exports["JobQueueServer"]
         if self.session_info.support_reaction:
             if self.session_info.client_name in ["QQ", "QQBot"]:
-                if self.session_info.locale.locale == "ja_jp":
-                    await _queue_server.client_add_reaction(self.session_info, message_id, "11093")
-                else:
-                    await _queue_server.client_add_reaction(self.session_info, message_id, "11088")
+                await _queue_server.client_add_reaction(self.session_info, message_id, "11093")
                 await _queue_server.client_add_reaction(self.session_info, message_id, "10060")
             else:
-                if self.session_info.locale.locale == "ja_jp":
-                    await _queue_server.client_add_reaction(self.session_info, message_id, "⭕")
-                else:
-                    await _queue_server.client_add_reaction(self.session_info, message_id, "✅")
+                await _queue_server.client_add_reaction(self.session_info, message_id, "⭕")
                 await _queue_server.client_add_reaction(self.session_info, message_id, "❌")
 
     async def wait_confirm(
@@ -302,7 +296,6 @@ class MessageSession:
         delete: bool = False,
         timeout: float | None = 120,
         append_instruction: bool = True,
-        add_confirm_reaction: bool = False,
     ) -> MessageSession:
         """
         一次性模板，用于等待对象的下一条消息。
@@ -324,59 +317,9 @@ class MessageSession:
                 message_chain.append(I18NContext("message.wait.next_message.prompt"))
             send = await self.send_message(message_chain, quote)
         await asyncio.sleep(0.1)
-        if add_confirm_reaction and quick_confirm:
-            await self._add_confirm_reaction(send.message_id)
 
         flag = asyncio.Event()
         SessionTaskManager.add_task(self, flag, timeout=timeout)
-        try:
-            await asyncio.wait_for(flag.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            if send and delete:
-                await send.delete()
-            raise WaitCancelException
-        result = SessionTaskManager.get_result(self)
-        if send and delete:
-            await send.delete()
-        if result:
-            return result
-        raise WaitCancelException
-
-    async def wait_reply(
-        self,
-        message_chain: Chainable,
-        quote: bool = True,
-        delete: bool = False,
-        timeout: float | None = 120,
-        all_: bool = False,
-        append_instruction: bool = True,
-        add_confirm_reaction: bool = False,
-    ) -> MessageSession:
-        """
-        一次性模板，用于等待触发对象回复消息。
-
-        :param message_chain: 需要发送的确认消息。
-        :param quote: 是否引用传入dict中的消息。（默认为True）
-        :param delete: 是否在触发后删除消息。（默认为False）
-        :param timeout: 超时时间。（默认为120）
-        :param all_: 是否设置触发对象为对象内的所有人。（默认为False）
-        :param append_instruction: 是否在发送的消息中附加提示。
-        :return: 回复消息的MessageChain对象。
-        """
-        send = None
-        ExecutionLockList.remove(self)
-        await self.end_typing()
-        message_chain = get_message_chain(self.session_info, message_chain)
-        if append_instruction:
-            message_chain.append(I18NContext("message.reply.prompt"))
-        send = await self.send_message(message_chain, quote)
-        await asyncio.sleep(0.1)
-        if add_confirm_reaction and quick_confirm:
-            await self._add_confirm_reaction(send.message_id)
-        flag = asyncio.Event()
-        SessionTaskManager.add_task(
-            self, flag, reply=send.message_id, all_=all_, timeout=timeout
-        )
         try:
             await asyncio.wait_for(flag.wait(), timeout=timeout)
         except asyncio.TimeoutError:
@@ -428,6 +371,59 @@ class MessageSession:
             return SessionTaskManager.get()[self.session_info.target_id]["all"][self][
                 "result"
             ]
+        raise WaitCancelException
+
+    async def wait_reply(
+        self,
+        message_chain: Chainable,
+        quote: bool = True,
+        delete: bool = False,
+        timeout: float | None = 120,
+        all_: bool = False,
+        append_instruction: bool = True,
+    ) -> MessageSession:
+        """
+        一次性模板，用于等待触发对象回复消息。
+
+        :param message_chain: 需要发送的确认消息。
+        :param quote: 是否引用传入dict中的消息。（默认为True）
+        :param delete: 是否在触发后删除消息。（默认为False）
+        :param timeout: 超时时间。（默认为120）
+        :param all_: 是否设置触发对象为对象内的所有人。（默认为False）
+        :param append_instruction: 是否在发送的消息中附加提示。
+        :return: 回复消息的MessageChain对象。
+        """
+        if not self.session_info.support_quote:
+            message_chain = get_message_chain(self.session_info, message_chain)
+            if append_instruction:
+                message_chain.append(I18NContext("message.wait.next_message.prompt"))
+            if all_:
+                return await self.wait_anyone(message_chain, False, delete, timeout)
+            return await self.wait_next_message(message_chain, False, delete, timeout, False)
+
+        send = None
+        ExecutionLockList.remove(self)
+        await self.end_typing()
+        message_chain = get_message_chain(self.session_info, message_chain)
+        if append_instruction:
+            message_chain.append(I18NContext("message.reply.prompt"))
+        send = await self.send_message(message_chain, quote)
+        await asyncio.sleep(0.1)
+        flag = asyncio.Event()
+        SessionTaskManager.add_task(
+            self, flag, reply=send.message_id, all_=all_, timeout=timeout
+        )
+        try:
+            await asyncio.wait_for(flag.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            if send and delete:
+                await send.delete()
+            raise WaitCancelException
+        result = SessionTaskManager.get_result(self)
+        if send and delete:
+            await send.delete()
+        if result:
+            return result
         raise WaitCancelException
 
     async def sleep(self, s: float):

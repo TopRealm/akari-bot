@@ -15,9 +15,9 @@ from core.builtins.session.lock import ExecutionLockList
 from core.builtins.session.tasks import SessionTaskManager
 from core.config import Config
 from core.constants.default import bug_report_url_default, ignored_sender_default
-from core.constants.exceptions import AbuseWarning, FinishedException, InvalidCommandFormatError, \
-    InvalidHelpDocTypeError, \
-    WaitCancelException, NoReportException, SendMessageFailed
+from core.constants.exceptions import AbuseWarning, ExternalException, \
+    InvalidCommandFormatError, InvalidHelpDocTypeError, \
+    NoReportException, SessionFinished, SendMessageFailed, WaitCancelException
 from core.constants.info import Info
 from core.database.models import AnalyticsData
 from core.exports import exports
@@ -26,9 +26,8 @@ from core.logger import Logger
 from core.tos import TOS_TEMPBAN_TIME, temp_ban_counter, abuse_warn_target, remove_temp_ban
 from core.types import Module, Param
 from core.types.module.component_meta import CommandMeta
-from core.utils.format import normalize_space
-from core.utils.temp import ExpiringTempDict, TempCounter
-from core.utils.token_bucket import TokenBucket
+from core.utils.func import normalize_space
+from core.utils.container import ExpiringTempDict, TokenBucket
 
 if TYPE_CHECKING:
     from core.builtins.bot import Bot
@@ -131,12 +130,11 @@ async def parser(msg: "Bot.MessageSession"):
         Logger.exception()
     finally:
         ExecutionLockList.remove(msg)
-        TempCounter.add()
+        Info.message_parsed += 1
 
 
 def _transform_alias(msg, command: str):
     aliases = dict(msg.session_info.target_info.target_data.get("command_alias", {}).items())
-    command_split = msg.trigger_msg.split(" ")  # 切割消息
     matched_aliases = []  # 用来记录所有可匹配的模板 (placeholder_count, pattern, replacement, match_obj)
 
     for pattern, replacement in aliases.items():
@@ -174,13 +172,13 @@ def _transform_alias(msg, command: str):
         Logger.debug(msg.session_info.prefixes[0] + result)
         return msg.session_info.prefixes[0] + result
 
-    # 旧语法兼容
+    # 处理不带占位符的命令别名
     for pattern, replacement in aliases.items():
         if not re.search(r"\${[^}]*}", pattern):
-            if command_split[0] == pattern:
-                command_split[0] = msg.session_info.prefixes[0] + replacement  # 将自定义别名替换为命令
-                Logger.debug(" ".join(command_split))
-                return " ".join(command_split)  # 重新连接消息
+            if command.startswith(pattern):
+                new_command = command.replace(pattern, msg.session_info.prefixes[0] + replacement, 1)
+                Logger.debug(new_command)
+                return new_command
 
     return command
 
@@ -315,7 +313,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                 none_templates = False
         if not none_templates:  # 如果有，送入命令解析
             await _execute_module_command(msg, module, command_first_word)
-            raise FinishedException(msg.sent)  # if not using msg.finish
+            raise SessionFinished(msg.sent)  # if not using msg.finish
         # 如果没有，直接传入下游模块
         msg.parsed_msg = None
         for func in module.command_list.set:
@@ -324,7 +322,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                     await msg.start_typing()
                     _typing = True
                 await func.function(msg)  # 将msg传入下游模块
-                raise FinishedException(msg.sent)  # if not using msg.finish
+                raise SessionFinished(msg.sent)  # if not using msg.finish
 
         if msg.session_info.sender_info.sender_data.get("typo_check", True):  # 判断是否开启错字检查
             new_msg, new_command_first_word, confirmed = await _command_typo_check(msg, modules, command_first_word)
@@ -340,8 +338,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
     except SendMessageFailed:
         await _process_send_message_failed(msg)
 
-    except FinishedException as e:
-
+    except SessionFinished as e:
         time_used = time.perf_counter() - time_start
         Logger.success(f"Successfully finished session from {identify_str}, returns: {str(e)}. "
                        f"Times take up: {time_used:06f}s")
@@ -352,6 +349,10 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                                        command=msg.trigger_msg,
                                        module_name=command_first_word,
                                        module_type="normal")
+
+    except ExternalException as e:
+        await _process_external_exception(msg, e)
+
     except AbuseWarning as e:
         await _process_tos_abuse_warning(msg, e)
 
@@ -359,6 +360,8 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
         await _process_noreport_exception(msg, e)
 
     except Exception as e:
+        if "timeout" in str(e).lower().replace(" ", ""):
+            await _process_external_exception(msg, e)
         await _process_exception(msg, e)
     finally:
         if _typing:
@@ -462,8 +465,8 @@ async def _execute_regex(msg: "Bot.MessageSession", modules, identify_str):
                             else:
                                 await rfunc.function(msg)  # 将msg传入下游模块
                             ExecutionLockList.remove(msg)
-                            raise FinishedException(msg.sent)  # if not using msg.finish
-                    except FinishedException as e:
+                            raise SessionFinished(msg.sent)  # if not using msg.finish
+                    except SessionFinished as e:
                         time_used = time.perf_counter() - time_start
                         if rfunc.logging:
                             Logger.success(
@@ -479,6 +482,9 @@ async def _execute_regex(msg: "Bot.MessageSession", modules, identify_str):
                                                        module_type="regex")
                         continue
 
+                    except ExternalException as e:
+                        await _process_external_exception(msg, e)
+
                     except NoReportException as e:
                         await _process_noreport_exception(msg, e)
 
@@ -486,6 +492,8 @@ async def _execute_regex(msg: "Bot.MessageSession", modules, identify_str):
                         await _process_tos_abuse_warning(msg, e)
 
                     except Exception as e:
+                        if "timeout" in str(e).lower().replace(" ", ""):
+                            await _process_external_exception(msg, e)
                         await _process_exception(msg, e)
                     finally:
                         if _typing:
@@ -648,7 +656,7 @@ async def _execute_module_command(msg: "Bot.MessageSession", module, command_fir
                 _typing = True
             await parsed_msg[0].function(**kwargs)  # 将msg传入下游模块
 
-            raise FinishedException(msg.sent)  # if not using msg.finish
+            raise SessionFinished(msg.sent)  # if not using msg.finish
         except InvalidCommandFormatError:
             if not msg.session_info.sender_info.sender_data.get("typo_check", True):
                 await msg.send_message(I18NContext("parser.command.invalid.syntax",
@@ -692,6 +700,18 @@ async def _process_noreport_exception(msg: "Bot.MessageSession", e: NoReportExce
     await msg.send_message(err_msg_chain)
 
 
+async def _process_external_exception(msg: "Bot.MessageSession", e: Exception):
+    Logger.exception()
+    err_msg_chain = MessageChain.assign(I18NContext("error.message.prompt"))
+    err_msg = msg.session_info.locale.t_str(str(e))
+    err_msg_chain += match_kecode(err_msg)
+    err_msg_chain.append(I18NContext("error.message.prompt.external"))
+    if bug_report_url:
+        err_msg_chain.append(I18NContext("error.message.prompt.address", url=bug_report_url))
+    await msg.handle_error_signal()
+    await msg.send_message(err_msg_chain)
+
+
 async def _process_exception(msg: "Bot.MessageSession", e: Exception):
     bot: "Bot" = exports["Bot"]
     tb = traceback.format_exc()
@@ -699,30 +719,12 @@ async def _process_exception(msg: "Bot.MessageSession", e: Exception):
     err_msg_chain = MessageChain.assign(I18NContext("error.message.prompt"))
     err_msg = msg.session_info.locale.t_str(str(e))
     err_msg_chain += match_kecode(err_msg)
-    await msg.handle_error_signal()
-
-    external = False
-    if "timeout" in err_msg.lower().replace(" ", ""):
-        external = True
-    else:
-        try:
-            status_code = int(str(e).strip().split("[")[0])
-            expected_msg = f"{status_code}[KE:Image,path=https://http.cat/{status_code}.jpg]"
-            if err_msg == expected_msg and 500 <= status_code < 600:
-                external = True
-        except Exception:
-            pass
-
-    if external:
-        err_msg_chain.append(I18NContext("error.message.prompt.external"))
-    else:
-        err_msg_chain.append(I18NContext("error.message.prompt.report"))
-
+    err_msg_chain.append(I18NContext("error.message.prompt.report"))
     if bug_report_url:
         err_msg_chain.append(I18NContext("error.message.prompt.address", url=bug_report_url))
+    await msg.handle_error_signal()
     await msg.send_message(err_msg_chain)
-
-    if not external and report_targets:
+    if report_targets:
         for target in report_targets:
             if f := await bot.fetch_target(target):
                 await bot.send_direct_message(f, [I18NContext("error.message.report", command=msg.trigger_msg),

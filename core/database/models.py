@@ -10,7 +10,7 @@ from tortoise import fields
 from tortoise.transactions import in_transaction
 
 from core.constants.default import default_locale
-from core.utils.tools import convert_list
+from core.utils.func import convert_list
 from .base import DBModel
 from ..logger import Logger
 
@@ -474,7 +474,7 @@ class JobQueuesTable(DBModel):
         return True
 
     @classmethod
-    async def clear_task(cls, time=600) -> bool:
+    async def clear_task(cls, time=3600) -> bool:
         timestamp = datetime.now(UTC) - timedelta(seconds=time)
         Logger.debug(f"Clearing tasks older than {timestamp}...")
 
