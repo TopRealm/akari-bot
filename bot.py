@@ -1,6 +1,10 @@
 from core import check_python_version  # noqa
 check_python_version()  # noqa
 
+from core.constants import config_path, config_filename  # noqa
+if not (config_path / config_filename).exists():
+    import core.scripts.config_generate  # noqa
+
 import asyncio
 import importlib
 import multiprocessing
@@ -14,7 +18,7 @@ from pathlib import Path
 from loguru import logger
 from tortoise import Tortoise, run_async
 
-from core.constants import bots_path, config_path, config_filename, logs_path
+from core.constants import bots_path, logs_path
 from core.database import close_db
 
 
@@ -293,9 +297,6 @@ def terminate_process(process: multiprocessing.Process):
 
 
 async def main_async():
-    if not (config_path / config_filename).exists():
-        import core.scripts.config_generate  # noqa
-
     try:
         multiprocess_run_until_complete(pre_init)
         await run_bot()  # Process will block here so
