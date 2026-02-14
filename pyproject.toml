@@ -98,8 +98,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Teahouse-Studios/akari-bot"
-Issues = "https://github.com/Teahouse-Studios/akari-bot/issues"
+Homepage = "https://github.com/TopRealm/akari-bot"
+Issues = "https://github.com/TopRealm/akari-bot/issues"
 
 [dependency-groups]
 dev = ["ruff>=0.15.1"]
