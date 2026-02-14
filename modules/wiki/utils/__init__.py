@@ -160,7 +160,6 @@ async def _(msg: Bot.MessageSession):
 usr = module("user", developers=["OasisAkari"], recommend_modules="wiki", doc=True)
 
 
-import re
 
 @usr.command("<username> {{I18N:wiki.help.user}}")
 async def _(msg: Bot.MessageSession, username: str):
