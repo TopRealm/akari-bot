@@ -88,22 +88,15 @@ class MockMessageSession(MessageSession):
             callback=None):
         await self.send_message(message_chain)
 
-    async def delete(self):
-        self.action.append("(delete message)")
+    async def delete(self, reason=None):
+        self.action.append(f"(delete message{f": {reason}" if reason else ""})")
 
-    async def kick_member(self, user_id, ban=False):
+    async def restrict_member(self, user_id, duration=None, reason=None):
         if isinstance(user_id, str):
             user_id = [user_id]
 
         for x in user_id:
-            self.action.append(f"({"ban" if ban else "kick"} {x})")
-
-    async def restrict_member(self, user_id, duration):
-        if isinstance(user_id, str):
-            user_id = [user_id]
-
-        for x in user_id:
-            self.action.append(f"(restrict {x}{f" ({duration}s)" if duration else ""})")
+            self.action.append(f"(restrict {x}{f" ({duration}s)" if duration else ""}{f": {reason}" if reason else ""})")
 
     async def unrestrict_member(self, user_id):
         if isinstance(user_id, str):
@@ -111,6 +104,27 @@ class MockMessageSession(MessageSession):
 
         for x in user_id:
             self.action.append(f"(unrestrict {x})")
+
+    async def kick_member(self, user_id, reason=None):
+        if isinstance(user_id, str):
+            user_id = [user_id]
+
+        for x in user_id:
+            self.action.append(f"(kick {x}{f": {reason}" if reason else ""})")
+
+    async def ban_member(self, user_id, reason=None):
+        if isinstance(user_id, str):
+            user_id = [user_id]
+
+        for x in user_id:
+            self.action.append(f"(ban {x}{f": {reason}" if reason else ""})")
+
+    async def unban_member(self, user_id):
+        if isinstance(user_id, str):
+            user_id = [user_id]
+
+        for x in user_id:
+            self.action.append(f"(unban {x})")
 
     async def add_reaction(self, emoji):
         self.action.append(f"(add reaction {emoji})")
