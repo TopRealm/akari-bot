@@ -29,7 +29,7 @@ aiosqlite==0.22.1
     # via tortoise-orm
 akari-bot-webrender==0.5.13
     # via akari-bot
-akari-bot-webui==0.3.7
+akari-bot-webui==0.3.8
     # via akari-bot
 annotated-doc==0.0.4
     # via fastapi
@@ -342,8 +342,6 @@ python-socks==2.8.0
     # via aiohttp-socks
 python-whois==0.9.6
     # via akari-bot
-pytz==2025.2
-    # via tortoise-orm
 pywin32==311 ; sys_platform == 'win32'
     # via akari-bot
 pyyaml==6.0.3
@@ -388,7 +386,7 @@ tf-playwright-stealth==1.2.0
     # via akari-bot-webrender
 tomlkit==0.14.0
     # via akari-bot
-tortoise-orm==0.25.4
+tortoise-orm==1.1.2
     # via akari-bot
 tqdm==4.67.3
     # via openai

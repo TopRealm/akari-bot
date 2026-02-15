@@ -262,7 +262,7 @@ requires-dist = [
     { name = "aiofile", specifier = ">=3.8.1,<4.0.0" },
     { name = "aiogram", specifier = ">=3.4.1,<4.0.0" },
     { name = "akari-bot-webrender", specifier = "==0.5.13" },
-    { name = "akari-bot-webui", specifier = "==0.3.7" },
+    { name = "akari-bot-webui", specifier = "==0.3.8" },
     { name = "apscheduler", specifier = ">=3.9.1.post0,<4.0.0.0" },
     { name = "argon2-cffi", specifier = ">=25.0.0,<26.0.0" },
     { name = "attrs", specifier = ">=25.0.0,<26.0.0" },
@@ -343,11 +343,11 @@ wheels = [
 
 [[package]]
 name = "akari-bot-webui"
-version = "0.3.7"
+version = "0.3.8"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8d/d6/e0711332949065b5db3f2f9f0b867008c0614071a3c3e038341f3860fb7b/akari_bot_webui-0.3.7.tar.gz", hash = "sha256:30e34aa14c359a16c0944619722d2df4a81de69e69e8612a96352b4e05b5da67", size = 1083989, upload-time = "2026-02-04T18:42:55.052Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/de/b0235d44bd867f17d74faf82c9b7c19278e4abcfa074be9f8228301b1cfb/akari_bot_webui-0.3.8.tar.gz", hash = "sha256:4856d821342b47cdd7b156788c6090aab6a7fabbfdbd93cda839c306c5223f41", size = 1085898, upload-time = "2026-02-15T11:09:41.47Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/62/cde587cfef6b18845e65b0455b2877ddc8a7c2837bcf1d3230d1095e3ae2/akari_bot_webui-0.3.7-py3-none-any.whl", hash = "sha256:9bd78db6bf0ae1ed668e6c79d492056f238adb6543592aa2589bf9fe0a738424", size = 1101674, upload-time = "2026-02-04T18:42:53.408Z" },
+    { url = "https://files.pythonhosted.org/packages/df/82/1a6565b3fc5ffd154db51e2453890878f46d80de4c78f80c55c29072c66f/akari_bot_webui-0.3.8-py3-none-any.whl", hash = "sha256:8541affe99aee6a0ec420d2f11cc02dc6bb41ff94be574f6520d4c77ffa47335", size = 1104474, upload-time = "2026-02-15T11:09:39.197Z" },
 ]
 
 [[package]]

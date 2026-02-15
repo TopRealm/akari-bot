@@ -36,6 +36,7 @@ async def api_root(request: Request):
 async def get_config(request: Request):
     return {"enable_https": enable_https,
             "command_prefix": command_prefix[0],
+            "help_url": Config("help_url", cfg_type=str),
             "locale": Config("default_locale", cfg_type=str),
             "heartbeat_interval": Config("heartbeat_interval", 30, table_name="bot_web"),
             "heartbeat_timeout": Config("heartbeat_timeout", 5, table_name="bot_web"),
