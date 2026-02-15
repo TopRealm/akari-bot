@@ -420,7 +420,8 @@ async def _(msg: Bot.MessageSession):
                 await msg.send_message(Plain(pull_repo_result, disable_joke=True))
 
         update_dependencies_result = await update_dependencies()
-        await msg.finish(Plain(update_dependencies_result, disable_joke=True))
+        if update_dependencies_result:
+            await msg.finish(Plain(update_dependencies_result, disable_joke=True))
     else:
         await msg.finish(I18NContext("core.message.update.binary_mode"))
 
