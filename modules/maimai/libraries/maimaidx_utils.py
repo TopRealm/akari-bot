@@ -21,8 +21,7 @@ async def get_diving_prober_bind_info(msg: Bot.MessageSession, **kwargs):
     if not bind_info:
         if msg.session_info.sender_from == "QQ":
             return {"qq": msg.session_info.get_common_sender_id()} | kwargs
-        else:
-            await msg.finish(I18NContext("maimai.message.user_unbound", prefix=msg.session_info.prefixes[0]))
+        await msg.finish(I18NContext("maimai.message.user_unbound", prefix=msg.session_info.prefixes[0]))
     else:
         return {"username": bind_info.username} | kwargs
 
