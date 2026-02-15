@@ -404,8 +404,8 @@ async def pull_repo():
 
 
 async def update_dependencies():
-    returncode, uv_sync, _ = await run_sys_command(["uv", "sync"], timeout=60)
-    if returncode == 0 and uv_sync:
+    returncode, _, uv_sync = await run_sys_command(["uv", "sync"], timeout=60)
+    if returncode == 0:
         return uv_sync
     _, pip_install, _ = await run_sys_command(["pip", "install", "-r", "requirements.txt"], timeout=60)
     return "..." + pip_install[-500:] if len(pip_install) > 500 else pip_install
