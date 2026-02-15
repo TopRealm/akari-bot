@@ -33,7 +33,7 @@ jobs:
       - name: Install Dependencies
         run: |
           uv sync --locked --all-extras --dev
-          playwright install --with-deps chromium
+          uv run playwright install --with-deps chromium
           uv run python core/scripts/config_generate.py
 
       - name: Write version file
