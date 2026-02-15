@@ -5,7 +5,7 @@ import pkgutil
 from typing import Any
 
 from tortoise import Tortoise
-from tortoise.exceptions import ConfigurationError, DBConnectionError
+from tortoise.exceptions import DBConnectionError
 
 from core.builtins.temp import Temp
 from core.logger import Logger
@@ -116,5 +116,5 @@ async def reload_db(db_models: list[str] | None = None):
 async def close_db():
     try:
         await Tortoise.close_connections()
-    except ConfigurationError:
+    except RuntimeError:
         pass
