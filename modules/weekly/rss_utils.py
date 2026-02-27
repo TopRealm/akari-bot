@@ -47,9 +47,7 @@ async def fetch_latest_entry(
     try:
         feed = entries[entry_index]
     except IndexError as exc:
-        Logger.error(
-            f"Invalid entry index {entry_index} for feed {feed_url} (available: {len(entries)})"
-        )
+        Logger.error(f"Invalid entry index {entry_index} for feed {feed_url} (available: {len(entries)})")
         raise RSSFeedError("The requested feed entry does not exist") from exc
 
     title = feed.get("title")

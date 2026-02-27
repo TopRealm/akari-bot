@@ -55,6 +55,7 @@ class JobQueueBase:
     queue_actions = {}
     report_targets = Config("report_targets", [])
     is_running = False
+    TASK_TIMEOUT_SECONDS = 7200
     pause_event = asyncio.Event()
     pause_event.set()
 
@@ -63,7 +64,7 @@ class JobQueueBase:
         if target_client:
             task_id = await JobQueuesTable.add_task(target_client, action, args)
         else:
-            Logger.warning(f"Cannot add job {action} due to target_client is None, perhaps a bug?")
+            Logger.warning(f"Cannot add job {action} due to target_client being None, perhaps a bug?")
             return None
         if wait:
             return await QueueTaskManager.add(task_id)
@@ -79,7 +80,7 @@ class JobQueueBase:
         bot: "Bot" = exports["Bot"]
         try:
             timestamp = tsk.timestamp
-            if time.time() - timestamp.timestamp() > 7200:
+            if time.time() - timestamp.timestamp() > cls.TASK_TIMEOUT_SECONDS:
                 Logger.warning(f"Task {tsk.task_id} timeout, skip.")
                 tsk_val = await cls.return_val(tsk, {}, status="timeout")
             elif tsk.action in cls.queue_actions:
@@ -108,10 +109,17 @@ class JobQueueBase:
             try:
                 for target in cls.report_targets:
                     if ft := await bot.fetch_target(target):
-                        await cls.client_direct_message(ft, MessageChain.assign(
-                            [I18NContext("error.message.report", command=tsk.action),
-                                Plain(f.strip(), disable_joke=True)]), enable_parse_message=False,
-                            disable_secret_check=True)
+                        await cls.client_direct_message(
+                            ft,
+                            MessageChain.assign(
+                                [
+                                    I18NContext("error.message.report", command=tsk.action),
+                                    Plain(f.strip(), disable_joke=True),
+                                ]
+                            ),
+                            enable_parse_message=False,
+                            disable_secret_check=True,
+                        )
             except Exception:
                 Logger.exception()
             return
@@ -126,7 +134,8 @@ class JobQueueBase:
         # Logger.debug([cls.name, target_client if target_client else exports["Bot"].Info.client_name])
 
         get_all = await JobQueuesTable.get_all(
-            [cls.name, target_client if target_client else exports["Bot"].Info.client_name])
+            [cls.name, target_client if target_client else exports["Bot"].Info.client_name]
+        )
 
         for tsk in get_all:
             Logger.trace(f"Received job queue task {tsk.task_id}, action: {tsk.action}")
@@ -156,10 +165,20 @@ class JobQueueBase:
         return decorator
 
     @classmethod
-    async def client_direct_message(cls, session_info: SessionInfo, message: MessageChain | MessageNodes,
-                                    enable_parse_message=False, disable_secret_check=True):
-        await cls.add_job("Server", "client_direct_message",
-                          {"session_info": converter.unstructure(session_info),
-                           "message": converter.unstructure(message, MessageChain | MessageNodes),
-                           "enable_parse_message": enable_parse_message,
-                           "disable_secret_check": disable_secret_check})
+    async def client_direct_message(
+        cls,
+        session_info: SessionInfo,
+        message: MessageChain | MessageNodes,
+        enable_parse_message=False,
+        disable_secret_check=True,
+    ):
+        await cls.add_job(
+            "Server",
+            "client_direct_message",
+            {
+                "session_info": converter.unstructure(session_info),
+                "message": converter.unstructure(message, MessageChain | MessageNodes),
+                "enable_parse_message": enable_parse_message,
+                "disable_secret_check": disable_secret_check,
+            },
+        )

@@ -246,6 +246,7 @@ dependencies = [
     { name = "tenacity" },
     { name = "tomlkit" },
     { name = "tortoise-orm", extra = ["asyncmy"] },
+    { name = "urllib3" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "webcolors" },
     { name = "wolframalpha" },
@@ -262,12 +263,12 @@ requires-dist = [
     { name = "aiofile", specifier = ">=3.8.1,<4.0.0" },
     { name = "aiogram", specifier = ">=3.4.1,<4.0.0" },
     { name = "akari-bot-webrender", specifier = "==0.5.13" },
-    { name = "akari-bot-webui", specifier = "==0.3.7" },
+    { name = "akari-bot-webui", specifier = "==0.3.8" },
     { name = "apscheduler", specifier = ">=3.9.1.post0,<4.0.0.0" },
     { name = "argon2-cffi", specifier = ">=25.0.0,<26.0.0" },
     { name = "attrs", specifier = ">=25.0.0,<26.0.0" },
     { name = "beautifulsoup4", specifier = ">=4.11.1,<5.0.0" },
-    { name = "cattrs", specifier = ">=25.0.0,<26.0.0" },
+    { name = "cattrs", specifier = ">=26.1.0,<26.2.0" },
     { name = "coverage", specifier = ">=7.9.1,<8.0.0" },
     { name = "cryptography", specifier = ">=46.0.0,<47.0.0" },
     { name = "deprecated", specifier = ">=1.2.18,<2.0.0" },
@@ -312,6 +313,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9.0.0,<10.0.0" },
     { name = "tomlkit", specifier = ">=0.14.0,<1.0.0" },
     { name = "tortoise-orm", extras = ["asyncmy"], specifier = ">=1.1.2,<1.2.0" },
+    { name = "urllib3", specifier = ">=2.6.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0,<1.0.0" },
     { name = "webcolors", specifier = ">=25.0.0,<26.0.0" },
     { name = "wolframalpha", specifier = ">=5.0.0,<6.0.0" },
@@ -343,11 +345,11 @@ wheels = [
 
 [[package]]
 name = "akari-bot-webui"
-version = "0.3.7"
+version = "0.3.8"
 source = { registry = "https://mirrors.huaweicloud.com/repository/pypi/simple/" }
-sdist = { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/8d/d6/e0711332949065b5db3f2f9f0b867008c0614071a3c3e038341f3860fb7b/akari_bot_webui-0.3.7.tar.gz", hash = "sha256:30e34aa14c359a16c0944619722d2df4a81de69e69e8612a96352b4e05b5da67" }
+sdist = { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/fb/de/b0235d44bd867f17d74faf82c9b7c19278e4abcfa074be9f8228301b1cfb/akari_bot_webui-0.3.8.tar.gz", hash = "sha256:4856d821342b47cdd7b156788c6090aab6a7fabbfdbd93cda839c306c5223f41" }
 wheels = [
-    { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/1f/62/cde587cfef6b18845e65b0455b2877ddc8a7c2837bcf1d3230d1095e3ae2/akari_bot_webui-0.3.7-py3-none-any.whl", hash = "sha256:9bd78db6bf0ae1ed668e6c79d492056f238adb6543592aa2589bf9fe0a738424" },
+    { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/df/82/1a6565b3fc5ffd154db51e2453890878f46d80de4c78f80c55c29072c66f/akari_bot_webui-0.3.8-py3-none-any.whl", hash = "sha256:8541affe99aee6a0ec420d2f11cc02dc6bb41ff94be574f6520d4c77ffa47335" },
 ]
 
 [[package]]
@@ -526,15 +528,15 @@ wheels = [
 
 [[package]]
 name = "cattrs"
-version = "25.3.0"
+version = "26.1.0"
 source = { registry = "https://mirrors.huaweicloud.com/repository/pypi/simple/" }
 dependencies = [
     { name = "attrs" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/6e/00/2432bb2d445b39b5407f0a90e01b9a271475eea7caf913d7a86bcb956385/cattrs-25.3.0.tar.gz", hash = "sha256:1ac88d9e5eda10436c4517e390a4142d88638fe682c436c93db7ce4a277b884a" }
+sdist = { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/a0/ec/ba18945e7d6e55a58364d9fb2e46049c1c2998b3d805f19b703f14e81057/cattrs-26.1.0.tar.gz", hash = "sha256:fa239e0f0ec0715ba34852ce813986dfed1e12117e209b816ab87401271cdd40" }
 wheels = [
-    { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/d8/2b/a40e1488fdfa02d3f9a653a61a5935ea08b3c2225ee818db6a76c7ba9695/cattrs-25.3.0-py3-none-any.whl", hash = "sha256:9896e84e0a5bf723bc7b4b68f4481785367ce07a8a02e7e9ee6eb2819bc306ff" },
+    { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/80/56/60547f7801b97c67e97491dc3d9ade9fbccbd0325058fd3dfcb2f5d98d90/cattrs-26.1.0-py3-none-any.whl", hash = "sha256:d1e0804c42639494d469d08d4f26d6b9de9b8ab26b446db7b5f8c2e97f7c3096" },
 ]
 
 [[package]]
@@ -3044,6 +3046,15 @@ source = { registry = "https://mirrors.huaweicloud.com/repository/pypi/simple/" 
 sdist = { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/4d/f8/114266b21a7a9e3d09b352bb63c9d61d918bb7aa35d08c722793bfbfd28f/unpaddedbase64-2.1.0.tar.gz", hash = "sha256:7273c60c089de39d90f5d6d4a7883a79e319dc9d9b1c8924a7fab96178a5f005" }
 wheels = [
     { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/4c/a7/563b2d8fb7edc07320bf69ac6a7eedcd7a1a9d663a6bb90a4d9bd2eda5f7/unpaddedbase64-2.1.0-py3-none-any.whl", hash = "sha256:485eff129c30175d2cd6f0cd8d2310dff51e666f7f36175f738d75dfdbd0b1c6" },
+]
+
+[[package]]
+name = "urllib3"
+version = "2.6.3"
+source = { registry = "https://mirrors.huaweicloud.com/repository/pypi/simple/" }
+sdist = { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/c7/24/5f1b3bdffd70275f6661c76461e25f024d5a38a46f04aaca912426a2b1d3/urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed" }
+wheels = [
+    { url = "https://mirrors.huaweicloud.com/repository/pypi/packages/39/08/aaaad47bc4e9dc8c725e68f9d04865dbcb2052843ff09c97b08904852d84/urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4" },
 ]
 
 [[package]]

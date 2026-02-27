@@ -74,7 +74,7 @@ blinker==1.9.0
     #   quart
 caio==0.9.25
     # via aiofile
-cattrs==25.3.0
+cattrs==26.1.0
     # via akari-bot
 certifi==2026.1.4
     # via
@@ -422,6 +422,8 @@ tzlocal==5.3.1
     # via apscheduler
 unpaddedbase64==2.1.0
     # via matrix-nio
+urllib3==2.6.3
+    # via akari-bot
 uvicorn==0.40.0
     # via
     #   akari-bot
