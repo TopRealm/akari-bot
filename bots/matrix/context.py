@@ -16,7 +16,7 @@ from .info import client_name
 
 class MatrixContextManager(ContextManager):
     context: dict[str, tuple[nio.MatrixRoom, nio.RoomMessageFormatted]] = {}
-    features: Features | None = Features
+    features: type[Features] | None = Features
 
     @classmethod
     async def check_native_permission(cls, session_info: SessionInfo) -> bool:
@@ -439,7 +439,9 @@ class MatrixFetchedContextManager(MatrixContextManager):
             cls.del_context(session_info)
 
     @classmethod
-    async def delete_message(cls, session_info: SessionInfo, message_id: list[str]) -> None:
+    async def delete_message(
+        cls, session_info: SessionInfo, message_id: str | list[str], reason: str | None = None
+    ) -> None:
         try:
             room = await cls._resolve_matrix_room_(session_info)
             cls.add_context(session_info, (room, None))
