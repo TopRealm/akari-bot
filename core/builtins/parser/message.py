@@ -100,7 +100,7 @@ buckets_same = ExpiringTempDict()
 buckets_all = ExpiringTempDict()
 
 # 冷却计数 - 记录被暂时禁止的用户和禁止时长
-target_cooldown_counter = ExpiringTempDict(exp=TOS_TEMPBAN_TIME)
+target_cooldown_counter = ExpiringTempDict()
 
 # 匹配哈希缓存 - 缓存消息与模块的匹配结果，加速处理
 match_hash_cache = ExpiringTempDict()

@@ -1,4 +1,4 @@
-from core import check_python_version
+from core import check_python_version  # skipcq
 
 check_python_version()  # noqa
 
@@ -17,12 +17,17 @@ import time
 import traceback
 from pathlib import Path
 
+from dotenv import load_dotenv
 from loguru import logger
 from tortoise import Tortoise, run_async
 
-from core.constants import bots_path, logs_path
+from core.constants import ascii_art, bots_path, logs_path  # skipcq
 from core.database import close_db
 
+
+load_dotenv()
+os.environ.setdefault("PYTHONIOENCODING", "UTF-8")
+os.environ.setdefault("PYTHONPATH", str(Path(".").resolve()))
 
 # Capture the base import lists to avoid clearing essential modules when restarting
 base_import_lists = list(sys.modules)
@@ -63,16 +68,6 @@ Logger.add(
     encoding="utf8",
     filter=lambda record: record["extra"].get("name") == "BotDaemon",
 )
-
-ascii_art = r"""
-           _              _   ____        _
-     /\   | |            (_) |  _ \      | |
-    /  \  | | ____ _ _ __ _  | |_) | ___ | |_
-   / /\ \ | |/ / _` | '__| | |  _ < / _ \| __|
-  / ____ \|   < (_| | |  | | | |_) | (_) | |_
- /_/    \_\_|\_\__,_|_|  |_| |____/ \___/ \__|
-"""
-encode = "UTF-8"
 
 
 class RestartBot(Exception):
@@ -176,7 +171,6 @@ binary_mode = not sys.argv[0].endswith(".py")
 
 
 async def run_bot():
-    from dotenv import load_dotenv
     from core.config import CFGManager
     from core.server.run import run_async as server_run_async
 
@@ -208,10 +202,6 @@ async def run_bot():
         p.start()
         processes.append(p)
 
-    load_dotenv()
-    envs = os.environ.copy()
-    envs["PYTHONIOENCODING"] = encode
-    envs["PYTHONPATH"] = Path(".").resolve()
     bots_list = [p.name for p in bots_path.iterdir() if p.is_dir() and not p.name.startswith("_")]
 
     for t in CFGManager.values:

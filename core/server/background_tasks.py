@@ -21,24 +21,16 @@ from core.web_render import init_web_render, web_render
 
 
 @Scheduler.scheduled_job(IntervalTrigger(minutes=60))
-async def _():
+async def hourly_background_task():
     """每小时执行一次的后台检查任务。
 
     功能：
     - 执行会话的后台检查
     - 清理已完成的任务队列
+    - 清理过期的临时数据
     """
     await SessionTaskManager.bg_check()
     await JobQueuesTable.clear_task()
-
-
-@Scheduler.scheduled_job(IntervalTrigger(seconds=1), max_instances=1)
-async def _():
-    """每秒执行一次的清理任务。
-
-    功能：
-    - 清理过期的临时数据
-    """
     await ExpiringTempDict.clear_all()
 
 

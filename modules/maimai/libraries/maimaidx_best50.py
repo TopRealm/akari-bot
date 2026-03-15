@@ -178,7 +178,9 @@ class DrawBest:
 
     @staticmethod
     def _get_rating_color(rating: int):
-        if rating >= 15000:
+        if rating >= 16000:
+            color = [(255, 235, 0), (255, 56, 56), (186, 82, 255), (50, 90, 200), (69, 174, 255)]  # 彩极
+        elif rating >= 15000:
             color = [(255, 56, 56), (255, 235, 0), (129, 217, 85), (69, 174, 255), (186, 82, 255)]  # 彩
         elif rating >= 14500:
             color = [(248, 225, 67), (255, 250, 160), (248, 225, 67)]  # 白金
@@ -238,7 +240,7 @@ class DrawBest:
         return color
 
     def _draw_best_list(self, img: Image.Image, sd_best: BestList, dx_best: BestList):
-        item_weight = 150
+        item_width = 150
         item_height = 100
         color = [
             (69, 193, 36),
@@ -247,8 +249,7 @@ class DrawBest:
             (134, 49, 200),
             (217, 197, 233),
         ]
-        level_triangle = [(item_weight, 0), (item_weight - 27, 0), (item_weight, 27)]
-        ImageDraw.Draw(img)
+        level_triangle = [(item_width, 0), (item_width - 27, 0), (item_width, 27)]
 
         for num in range(min(len(self.sd_best), 35)):
             i = num // 5
@@ -260,12 +261,12 @@ class DrawBest:
 
             if cover_path.exists():
                 temp = Image.open(cover_path).convert("RGBA")
-                temp = self._resize_image(temp, item_weight / temp.size[0])
-                temp = temp.crop((0, (temp.size[1] - item_height) / 2, item_weight, (temp.size[1] + item_height) / 2))
+                temp = self._resize_image(temp, item_width / temp.size[0])
+                temp = temp.crop((0, (temp.size[1] - item_height) / 2, item_width, (temp.size[1] + item_height) / 2))
                 overlay = Image.new("RGBA", temp.size, (0, 0, 0, 100))
                 temp = Image.alpha_composite(temp, overlay)
             else:
-                temp = Image.new("RGBA", (item_weight, item_height), (111, 111, 111, 255))
+                temp = Image.new("RGBA", (item_width, item_height), (111, 111, 111, 255))
 
             temp_draw = ImageDraw.Draw(temp)
             temp_draw.polygon(level_triangle, color[chart_info.diff])
@@ -314,7 +315,7 @@ class DrawBest:
             )
             temp_draw.text((120, 80), f"#{num + 1}", "white", font)
 
-            rec_base = Image.new("RGBA", (item_weight, item_height), "black")
+            rec_base = Image.new("RGBA", (item_width, item_height), "black")
             rec_base = rec_base.point(lambda p: int(p * 0.8))
             self.img.paste(rec_base, (self.columns_image[j + 1] + 5, self.rows_image[i] + 5))
             self.img.paste(temp, (self.columns_image[j + 1] + 4, self.rows_image[i] + 4))
@@ -329,12 +330,12 @@ class DrawBest:
 
             if cover_path.exists():
                 temp = Image.open(cover_path).convert("RGBA")
-                temp = self._resize_image(temp, item_weight / temp.size[0])
-                temp = temp.crop((0, (temp.size[1] - item_height) / 2, item_weight, (temp.size[1] + item_height) / 2))
+                temp = self._resize_image(temp, item_width / temp.size[0])
+                temp = temp.crop((0, (temp.size[1] - item_height) / 2, item_width, (temp.size[1] + item_height) / 2))
                 overlay = Image.new("RGBA", temp.size, (0, 0, 0, 100))
                 temp = Image.alpha_composite(temp, overlay)
             else:
-                temp = Image.new("RGBA", (item_weight, item_height), (111, 111, 111, 255))
+                temp = Image.new("RGBA", (item_width, item_height), (111, 111, 111, 255))
 
             temp_draw = ImageDraw.Draw(temp)
             temp_draw.polygon(level_triangle, color[chart_info.diff])
@@ -383,7 +384,7 @@ class DrawBest:
             )
             temp_draw.text((120, 80), f"#{num + 1}", "white", font)
 
-            rec_base = Image.new("RGBA", (item_weight, item_height), "black")
+            rec_base = Image.new("RGBA", (item_width, item_height), "black")
             rec_base = rec_base.point(lambda p: int(p * 0.8))
             self.img.paste(rec_base, (self.columns_image[j + 1] + 5, self.rows_image[i + 7] + 5))
             self.img.paste(temp, (self.columns_image[j + 1] + 4, self.rows_image[i + 7] + 4))
