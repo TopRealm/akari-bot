@@ -47,7 +47,7 @@ class Bot:
     FetchedMessageSession: type[FetchedMessageSession] = FetchedMessageSession
 
     # 模块钩子上下文类型 - 用于模块钩子函数的参数传递
-    ModuleHookContext: type[ModuleHookContext] = ModuleHookContext
+    ModuleHookContext = ModuleHookContext
 
     # 执行锁列表 - 防止同一用户并发执行命令
     ExecutionLockList = ExecutionLockList

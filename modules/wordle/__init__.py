@@ -99,8 +99,7 @@ async def _(msg: Bot.MessageSession):
         qc.reset()
         if text_mode:
             await msg.finish([Plain(board.format_board())] + g_msg, quote=False)
-        else:
-            await msg.finish([BImage(board_image.board_image), BImage(board_image.keyboard_image)] + g_msg, quote=False)
+        await msg.finish([BImage(board_image.board_image), BImage(board_image.keyboard_image)] + g_msg, quote=False)
 
 
 @wordle.command("stop {{I18N:game.help.stop}}")
@@ -110,8 +109,7 @@ async def _(msg: Bot.MessageSession):
         play_state.disable()
         CoolDown("wordle", msg, 180).reset()
         await msg.finish(I18NContext("wordle.message.stop", answer=play_state.get("answer")))
-    else:
-        await msg.finish(I18NContext("game.message.stop.none"))
+    await msg.finish(I18NContext("game.message.stop.none"))
 
 
 @wordle.command("theme {{I18N:wordle.help.theme}}", load=not text_mode)
@@ -121,6 +119,5 @@ async def _(msg: Bot.MessageSession):
     if dark_theme:
         await msg.session_info.target_info.edit_target_data("wordle_dark_theme", False)
         await msg.finish(I18NContext("wordle.message.theme.disable"))
-    else:
-        await msg.session_info.target_info.edit_target_data("wordle_dark_theme", True)
-        await msg.finish(I18NContext("wordle.message.theme.enable"))
+    await msg.session_info.target_info.edit_target_data("wordle_dark_theme", True)
+    await msg.finish(I18NContext("wordle.message.theme.enable"))
