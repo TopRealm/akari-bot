@@ -1,12 +1,10 @@
-import itertools
-
 from simpleeval import simple_eval
 
 from core.builtins.bot import Bot
-from core.builtins.message.internal import I18NContext
+from core.builtins.message.internal import I18NContext, Plain
 from core.component import module
 from core.game import PlayState, GAME_EXPIRED
-from core.utils.petal import gained_petal, lost_petal
+from core.utils.petal import cost_petal, gained_petal, lost_petal
 from core.utils.random import Random
 from core.utils.func import is_int
 
@@ -83,38 +81,57 @@ def check_valid(expr):
     return True
 
 
-async def find_solution(numbers):
-    perms = list(itertools.permutations(numbers))
-    operators = ["+", "-", "*", "/"]
-    exprs = list(itertools.product(operators, repeat=4))
+def find_solution(numbers):
+    ops = {
+        "+": (lambda a, b: a + b, 1),
+        "-": (lambda a, b: a - b, 1),
+        "*": (lambda a, b: a * b, 2),
+        "/": (lambda a, b: a / b if b != 0 else None, 2),
+    }
 
-    for perm in perms:
-        for expr in exprs:  # 穷举就完事了
-            exp = f"(({perm[0]}{expr[0]}{perm[1]}){expr[1]}{perm[2]}){expr[2]}{perm[3]}"
-            try:
-                if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
-                    return exp
-            except Exception:
-                pass
-            exp = f"({perm[0]}{expr[0]}{perm[1]}){expr[1]}({perm[2]}{expr[2]}{perm[3]})"
-            try:
-                if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
-                    return exp
-            except Exception:
-                pass
-            exp = f"{perm[0]}{expr[0]}({perm[1]}{expr[1]}({perm[2]}{expr[2]}{perm[3]}))"
-            try:
-                if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
-                    return exp
-            except Exception:
-                pass
-            exp = f"{perm[0]}{expr[0]}({perm[1]}{expr[1]}{perm[2]}){expr[2]}{perm[3]}"
-            try:
-                if calc(exp) == 24 or 0 < 24 - calc(exp) < 1e-13:
-                    return exp
-            except Exception:
-                pass
-    return None
+    results = set()
+
+    def dfs(nums, exprs):
+        if len(nums) == 1:
+            if nums[0] is not None and abs(nums[0] - 24) < 1e-10:
+                results.add(exprs[0][0])
+            return
+
+        for i in range(len(nums)):
+            for j in range(len(nums)):
+                if i == j:
+                    continue
+
+                a, b = nums[i], nums[j]
+                expr_a, prec_a = exprs[i]
+                expr_b, prec_b = exprs[j]
+
+                rest_nums = [nums[k] for k in range(len(nums)) if k != i and k != j]
+                rest_exprs = [exprs[k] for k in range(len(nums)) if k != i and k != j]
+
+                for op, (func, prec) in ops.items():
+                    if op in ["+", "*"] and j < i:
+                        continue
+
+                    val = func(a, b)
+                    if val is None:
+                        continue
+
+                    left = expr_a
+                    if prec_a < prec:
+                        left = f"({left})"
+
+                    right = expr_b
+                    if prec_b < prec or (op in ["-", "/"] and prec_b == prec):
+                        right = f"({right})"
+
+                    new_expr = f"{left}{op}{right}"
+
+                    dfs(rest_nums + [val], rest_exprs + [(new_expr, prec)])
+
+    dfs(numbers, [(str(x), 3) for x in numbers])
+
+    return list(results) if results else None
 
 
 def contains_all_numbers(expr, numbers):
@@ -153,11 +170,11 @@ async def _(msg: Bot.MessageSession):
     play_state = PlayState("twenty_four", msg)
     if play_state.check():
         await msg.finish(I18NContext("game.message.running"))
-    else:
-        play_state.enable()
 
-    numbers = [Random.randint(1, 13) for _ in range(4)]
-    solution = await find_solution(numbers)
+    play_state.enable()
+    numbers = tuple(Random.randint(1, 13) for _ in range(4))
+    play_state.update(numbers=numbers)
+    solution = find_solution(numbers)
 
     answer = await msg.wait_next_message(I18NContext("twenty_four.message", numbers=numbers), timeout=GAME_EXPIRED)
     expr = answer.as_display(text_only=True)
@@ -165,6 +182,7 @@ async def _(msg: Bot.MessageSession):
         play_state.disable()
         if expr.lower() in no_solution_lst:
             if solution:
+                solution = solution[0]
                 if msg.session_info.support_markdown:
                     solution.replace("*", "\\*")
                 send = [I18NContext("twenty_four.message.incorrect.have_solution", solution=solution)]
@@ -175,7 +193,7 @@ async def _(msg: Bot.MessageSession):
                 if g_msg := await gained_petal(msg, 1):
                     send.append(g_msg)
             await answer.finish(send)
-        elif check_valid(expr):
+        if check_valid(expr):
             result = calc(expr)
             if not result:
                 await answer.finish(I18NContext("twenty_four.message.incorrect.invalid"))
@@ -184,17 +202,38 @@ async def _(msg: Bot.MessageSession):
                 if g_msg := await gained_petal(msg, 1):
                     send.append(g_msg)
                 await answer.finish(send)
-            else:
-                await answer.finish(I18NContext("twenty_four.message.incorrect"))
-        else:
-            await answer.finish(I18NContext("twenty_four.message.incorrect.invalid"))
+            await answer.finish(I18NContext("twenty_four.message.incorrect"))
+        await answer.finish(I18NContext("twenty_four.message.incorrect.invalid"))
 
 
 @tf.command("stop {{I18N:game.help.stop}}")
-async def s(msg: Bot.MessageSession):
+async def _(msg: Bot.MessageSession):
     play_state = PlayState("twenty_four", msg)
     if play_state.check():
         play_state.disable()
         await msg.finish(I18NContext("game.message.stop"))
+    await msg.finish(I18NContext("game.message.stop.none"))
+
+
+@tf.command("solve <num1> <num2> <num3> <num4> {{I18N:twenty_four.help.solve}}")
+async def _(msg: Bot.MessageSession, num1: int, num2: int, num3: int, num4: int):
+    numbers = (num1, num2, num3, num4)
+    play_state = PlayState("twenty_four", msg)
+    if play_state.check():
+        await msg.finish(I18NContext("twenty_four.message.solve.running"))
+    if not all(1 <= x <= 13 for x in numbers):
+        await msg.finish(I18NContext("twenty_four.message.solve.invalid"))
+    if not (msg.check_super_user() or await cost_petal(msg, 4)):
+        await msg.finish()
+
+    solutions = find_solution(numbers)
+    if solutions:
+        msg_chain = [I18NContext("twenty_four.message.solve.prompt", numbers=numbers)]
+        for solution in solutions:
+            if msg.session_info.support_markdown:
+                solution.replace("*", "\\*")
+            msg_chain.append(Plain(solution))
     else:
-        await msg.finish(I18NContext("game.message.stop.none"))
+        msg_chain = [I18NContext("twenty_four.message.solve.no_solution", numbers=numbers)]
+
+    await msg.finish(msg_chain)
