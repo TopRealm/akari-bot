@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, UTC
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Coroutine, Match, TYPE_CHECKING
+from typing import Any, Coroutine, Match, NoReturn, TYPE_CHECKING
 
 from attrs import define
 from deprecated import deprecated
@@ -58,13 +58,13 @@ class MessageSession:
     sent: list[MessageChain] = []
 
     # 触发消息 - 原始的触发消息文本内容
-    trigger_msg: str | None = ""
+    trigger_msg: str = ""
 
     # 匹配结果 - 正则匹配或其他处理的结果
     matched_msg: Match[str] | tuple[Any, ...] | None = None
 
     # 解析后的消息 - 命令参数等解析结果
-    parsed_msg: dict | None = None
+    parsed_msg: dict = {}
 
     @property
     @deprecated(reason="Use `session_info` instead.")
@@ -158,7 +158,7 @@ class MessageSession:
         enable_parse_message: bool = True,
         enable_split_image: bool = True,
         callback: Coroutine | None = None,
-    ):
+    ) -> NoReturn:
         """
         用于向消息发送者返回消息并终结会话（模块后续代码不再执行）。
 
@@ -809,7 +809,7 @@ class MessageSession:
 
         unit, scale = unit_info
         fmted_num = _fmt_num(number / scale, precision)
-        return self.session_info.locale.t_str(f"{fmted_num} {{I18N:i18n.unit.{unit}}}", fallback_failed_prompt=True)
+        return self.session_info.locale.t_str(f"{fmted_num} {{I18N:i18n.unit.{unit}}}", locale_failed_prompt=True)
 
     def __hash__(self):
         return hash(self.session_info.session_id)

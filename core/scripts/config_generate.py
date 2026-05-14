@@ -46,7 +46,7 @@ def generate_config(dir_path: Path, language: str):
     :param language: 语言代码（如"zh_cn"、"en_us"等）
     """
     # 加载本地化语言文件
-    load_locale_file()
+    load_locale_file(list(lang_list.keys()), all_locales_path)
 
     # 创建目录（如果不存在则创建，包括父目录）
     dir_path.mkdir(parents=True, exist_ok=True)
@@ -56,20 +56,20 @@ def generate_config(dir_path: Path, language: str):
     locale = Locale(language)
     with open(path_, "w", encoding="utf-8") as f:
         # 从本地化文件中读取配置文件头说明（多行注释）
-        f.write(f"# {locale.t('config.header.line.1', fallback_failed_prompt=False)}\n")
-        f.write(f"# {locale.t('config.header.line.2', fallback_failed_prompt=False)}\n")
-        f.write(f"# {locale.t('config.header.line.3', fallback_failed_prompt=False)}\n")
+        f.write(f"# {locale.t('config.header.line.1', locale_failed_prompt=False)}\n")
+        f.write(f"# {locale.t('config.header.line.2', locale_failed_prompt=False)}\n")
+        f.write(f"# {locale.t('config.header.line.3', locale_failed_prompt=False)}\n")
         f.write("\n")
         # 写入默认语言配置
         f.write(
             f'default_locale = "{language}" # {
-                locale.t("config.comments.default_locale", fallback_failed_prompt=False)
+                locale.t("config.comments.default_locale", locale_failed_prompt=False)
             }\n'
         )
         # 写入配置版本信息，用于版本兼容性检查
         f.write(
             f"config_version = {str(config_version)} # {
-                locale.t('config.comments.config_version', fallback_failed_prompt=False)
+                locale.t('config.comments.config_version', locale_failed_prompt=False)
             }\n"
         )
         f.close()

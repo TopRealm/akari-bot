@@ -7,7 +7,6 @@ from core.component import module
 from core.config import Config
 from core.constants.exceptions import InvalidHelpDocTypeError
 from core.database.models import ModuleStatus
-from core.i18n import load_locale_file
 from core.loader import ModulesManager
 from .help import modules_list_help
 
@@ -202,11 +201,6 @@ async def config_modules(msg: Bot.MessageSession):
                     ):
                         await msg.finish()
                 msglist.append(await module_reload(module_, extra_reload_modules, base_module))
-
-        locale_err = load_locale_file()
-        if len(locale_err) != 0:
-            msglist.append(I18NContext("core.message.locale.reload.failed"))
-            msglist.append(Plain("\n".join(locale_err), disable_joke=True))
     elif msg.parsed_msg.get("load", False):
         for module_ in wait_config_list:
             if module_ not in await ModuleStatus.get_unloaded_modules():
@@ -235,7 +229,7 @@ async def config_modules(msg: Bot.MessageSession):
             await msg.send_message(msglist)
     if recommend_modules_help_doc_list:
         if await msg.wait_confirm(
-            [I18NContext("core.message.module.recommends", modules="\n".join(recommend_modules_list)), Plain("\n")]
+            [I18NContext("core.message.module.recommends", modules="\n".join(recommend_modules_list))]
             + recommend_modules_help_doc_list
         ):
             if await msg.session_info.target_info.config_module(recommend_modules_list, True):

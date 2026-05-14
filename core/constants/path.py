@@ -1,3 +1,4 @@
+import glob
 from pathlib import Path
 
 # 基本路径
@@ -6,8 +7,9 @@ bots_path = Path("./bots").resolve()
 cache_path = Path("./cache").resolve()
 config_path = Path("./config").resolve()
 database_path = Path("./database").resolve()
-locales_path = Path("./core/locales").resolve()
+base_locales_path = Path("./core/locales").resolve()
 logs_path = Path("./logs").resolve()
+modules_path = Path("./modules").resolve()
 tests_path = Path("./tests").resolve()
 webui_path = Path("./webui").resolve()
 
@@ -21,8 +23,12 @@ noto_sans_demilight_path = fonts_path / "Noto Sans CJK DemiLight.otf"
 noto_sans_symbol_path = fonts_path / "Noto Sans Symbols2 Regular.ttf"
 
 # 特殊路径
-modules_locales_path = str(Path("./modules").resolve() / "*" / "locales")
-bots_info_path = str(bots_path / "*" / "info.py")
+bots_locales_path = bots_path / "*" / "locales"
+modules_locales_path = modules_path / "*" / "locales"
+
+all_locales_path = (
+    glob.glob(str(base_locales_path)) + glob.glob(str(bots_locales_path)) + glob.glob(str(modules_locales_path))
+)
 
 
 class PrivateAssets:
