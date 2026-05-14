@@ -52,7 +52,7 @@ class MessageSession:
     """
 
     # 会话信息 - 存储会话的所有基本信息
-    session_info: type[SessionInfo]
+    session_info: SessionInfo
 
     # 已发送消息列表 - 用于跟踪和管理已发送的消息
     sent: list[MessageChain] = []
@@ -809,7 +809,7 @@ class MessageSession:
 
         unit, scale = unit_info
         fmted_num = _fmt_num(number / scale, precision)
-        return self.session_info.locale.t_str(f"{fmted_num} {{I18N:i18n.unit.{unit}}}", fallback_failed_prompt=True)
+        return self.session_info.locale.t_str(f"{fmted_num} {{I18N:i18n.unit.{unit}}}", locale_failed_prompt=True)
 
     def __hash__(self):
         return hash(self.session_info.session_id)
