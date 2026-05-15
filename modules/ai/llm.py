@@ -3,8 +3,8 @@ import io
 from openai import AsyncOpenAI, APITimeoutError, RateLimitError
 from PIL import Image as PILImage
 
+from core.builtins.bot import Bot
 from core.builtins.message.internal import I18NContext, Image, Plain
-from core.builtins.session.internal import MessageSession
 from core.config import Config
 from core.constants.exceptions import ExternalException
 from core.dirty_check import check
@@ -24,13 +24,24 @@ MAX_ITERATIONS = 6
 
 
 async def ask_llm(
-    prompt: str, model_name: str, api_url: str, api_key: str, session: MessageSession
+    session: Bot.MessageSession,
+    prompt: str,
+    model_name: str,
+    api_url: str,
+    api_key: str, 
+    use_tools: bool = True,
 ) -> tuple[list, int, int]:
     client = AsyncOpenAI(base_url=api_url, api_key=api_key)
+
     messages = [{"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": prompt}]
+    custom_instructions = session.session_info.sender_info.sender_data.get("ai_custom_instructions")
+    if custom_instructions:
+        messages.insert(1, {"role": "system", "content": custom_instructions})
+        
     total_input_tokens = 0
     total_output_tokens = 0
     content_pieces = []
+    tool_choice = "auto" if use_tools else "none"
 
     iterations = 0
     while iterations <= MAX_ITERATIONS:
@@ -42,11 +53,12 @@ async def ask_llm(
                     "content": "Warning: Iteration limit reached. Provide the final answer based on the available information and do not attempt to call functions again.",
                 }
             )
+            tool_choice = "none"
         try:
             completion = await client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                tool_choice="none" if is_final_attempt else "auto",
+                tool_choice=tool_choice,
                 tools=TOOLS,
                 max_completion_tokens=max_tokens,
                 temperature=temperature,
