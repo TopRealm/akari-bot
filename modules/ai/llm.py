@@ -4,14 +4,14 @@ from openai import AsyncOpenAI, APITimeoutError, RateLimitError
 from PIL import Image as PILImage
 
 from core.builtins.bot import Bot
-from core.builtins.message.internal import I18NContext, Image, Plain
+from core.builtins.message.internal import Image, Plain
 from core.config import Config
 from core.constants.exceptions import ExternalException
 from core.dirty_check import check
 from core.logger import Logger
 from .formatting import parse_markdown, generate_code_snippet, generate_latex, generate_md_table
 from .setting import INSTRUCTIONS
-from .tools import TOOLS, execute_tool_calls
+from .tools import TOOLS, tool_function_calls
 
 max_tokens = Config("llm_max_tokens", 2048, table_name="module_ai")
 timeout = Config("llm_timeout", 60, cfg_type=float, table_name="module_ai")
@@ -28,7 +28,7 @@ async def ask_llm(
     prompt: str,
     model_name: str,
     api_url: str,
-    api_key: str, 
+    api_key: str,
     use_tools: bool = True,
 ) -> tuple[list, int, int]:
     client = AsyncOpenAI(base_url=api_url, api_key=api_key)
@@ -37,7 +37,6 @@ async def ask_llm(
     custom_instructions = session.session_info.sender_info.sender_data.get("ai_custom_instructions")
     if custom_instructions:
         messages.insert(1, {"role": "system", "content": custom_instructions})
-        
     total_input_tokens = 0
     total_output_tokens = 0
     content_pieces = []
@@ -80,7 +79,7 @@ async def ask_llm(
         if res_msg.content:
             content_pieces.append(res_msg.content)
         if res_msg.tool_calls and not is_final_attempt:
-            messages = await execute_tool_calls(res_msg.tool_calls, messages)
+            messages = await tool_function_calls(res_msg.tool_calls, messages)
             iterations += 1
             continue
         else:
@@ -122,5 +121,5 @@ async def ask_llm(
                     chain.append(Plain(content))
     else:
         chain = [Plain(resm)]
-        
+
     return chain, total_input_tokens, total_output_tokens
