@@ -88,7 +88,7 @@ async def ask_llm(
     else:
         Logger.warning("LLM function calling reached maximum iterations.")
 
-    res = await check("\n".join(content_pieces), session=session)
+    res = await check("\n\n".join(content_pieces), session=session)
     resm = "".join(m["content"] for m in res)
 
     if session.session_info.support_image:
