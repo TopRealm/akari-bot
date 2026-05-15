@@ -35,9 +35,9 @@ async def ask_llm(
 ) -> tuple[list, int, int]:
     client = AsyncOpenAI(base_url=api_url, api_key=api_key)
 
-    tz = session.session_info.target_info.target_data.get("timezone_offset", Config("timezone_offset", "+8"))
-    now_tz = datetime.now(timezone(parse_time_string(tz)))
-    fmt_now = now_tz.strftime("%Y-%m-%d %H:%M:%S %A") + f" ({tz})"
+    tz_ = session.session_info.target_info.target_data.get("timezone_offset", Config("timezone_offset", "+8"))
+    now_tz = datetime.now(timezone(parse_time_string(tz_)))
+    fmt_now = now_tz.strftime("%Y-%m-%d %H:%M:%S %A") + f"(UTC{tz_})" if tz_ != "+0" else "(UTC)"
 
     messages = [
         {"role": "system", "content": INSTRUCTIONS},
