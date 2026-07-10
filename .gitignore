@@ -39,3 +39,7 @@ modules/yunhei/admins.json
 /test*.*
 !tester.py
 .run/*
+generated_docs/*
+.mimocode/*
+.claude/*
+.claude/skills/akaribot-dev/SKILL.md
