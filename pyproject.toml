@@ -4,11 +4,11 @@ version = "0.1.0"
 description = ""
 authors = [
     { name = "OasisAkari", email = "oasisakari@gmail.com" },
-    { name = "Dianliang233", email = "me@dian.fyi" },
     { name = "DoroWolf", email = "dorowolf314@gmail.com" },
-    { name = "nullcat", email = "null@teahou.se" },
-    { name = "_LittleC_", email = "i@ltlec.com" },
     { name = "cloudw233", email = "cloudw233@outlook.com" },
+    { name = "Dianliang233", email = "me@dian.fyi" },
+    { name = "_LittleC_", email = "i@ltlec.com" },
+    { name = "nullcat", email = "null@teahou.se" },
 ]
 license = "AGPL-3.0"
 license-files = ["LICENSE", "**/LICENSE"]
@@ -17,11 +17,11 @@ requires-python = ">=3.12.0,<4.0.0"
 dependencies = [
     # akari-bot-service
     "akari-bot-i18n==0.0.4",
-    "akari-bot-webrender==0.5.13",
-    "akari-bot-webui==0.3.11",
+    "akari-bot-webrender==0.5.14",
+    "akari-bot-webui==0.3.13",
     # lib
     "coverage>=7.9.1,<8.0.0",
-    "cryptography>=48.0.0,<48.1.0",
+    "cryptography>=50.0.0,<50.1.0",
     "deprecated>=1.2.18,<2.0.0",
     "pre-commit>=4.0.0,<5.0.0",
     "pycryptodome>=3.18.0,<4.0.0",
@@ -63,6 +63,7 @@ dependencies = [
     # core.tester
     "defusedxml>=0.7.1",
     # core.utils
+    "boto3>=1.35.0,<2.0.0",
     "ff3>=1.0.2,<2.0.0",
     "psutil>=7.0.0,<8.0.0",
     "tabulate>=0.9.0,<1.0.0",
@@ -81,7 +82,7 @@ dependencies = [
     "gql>=4.0.0,<5.0.0",
     "langconv @ git+https://github.com/Teahouse-Studios/langconv.py.git",
     "mcstatus>=13.1.0,<13.2.0",
-    "numpy<2.5.1",
+    "numpy<2.5.2",
     "openai>=2.0.0,<3.0.0",
     "pandas>=3.0.0,<4.0.0",
     "pint>=0.25.0,<1.0.0",
@@ -90,6 +91,7 @@ dependencies = [
     "simpleeval>=1.0.0,<2.0.0",
     "trafilatura>=2.0.0",
     "webcolors>=25.0.0,<26.0.0",
+    "wikitextparser>=1.0.3",
     "wolframalpha>=5.0.0,<6.0.0",
     "botpy",
 ]

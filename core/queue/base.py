@@ -20,7 +20,7 @@ from core.builtins.converter import converter
 from core.builtins.message.chain import MessageChain, MessageNodes
 from core.builtins.message.internal import I18NContext, Plain
 from core.builtins.session.info import SessionInfo
-from core.config import Config
+from core.config.base import CoreConfig
 from core.constants import QueueAlreadyRunning
 from core.database.models import JobQueuesTable
 from core.exports import exports
@@ -110,7 +110,7 @@ class JobQueueBase:
 
     name = "Internal|" + str(uuid4())
     queue_actions = {}
-    report_targets = Config("report_targets", [])
+    report_targets = CoreConfig.report_targets
     is_running = False
     TASK_TIMEOUT_SECONDS = 7200  # 2小时
     pause_event = asyncio.Event()
@@ -122,7 +122,7 @@ class JobQueueBase:
 
         该方法将任务信息保存到数据库，可选择等待任务完成或立即返回。
 
-        :param target_client: 场景客户端名称，用于将任务路由到特定客户端
+        :param target_client: 目标客户端名称，用于将任务路由到特定客户端
         :param action: 操作名称，对应queue_actions中的处理器
         :param args: 操作参数，会被传递给处理器
         :param wait: 是否等待任务完成（默认True）。
@@ -211,19 +211,19 @@ class JobQueueBase:
             await cls.return_val(tsk, {"traceback": f}, status="failed")
             try:
                 # 向报告场景发送错误信息
-                for target in cls.report_targets:
-                    if ft := await bot.fetch_target(target):
-                        await cls.client_direct_message(
-                            ft,
-                            MessageChain.assign(
-                                [
-                                    I18NContext("error.message.report", command=tsk.action),
-                                    Plain(f.strip(), disable_joke=True),
-                                ]
-                            ),
-                            enable_parse_message=False,
-                            disable_secret_check=True,
-                        )
+                # 上报场景按场景组配置，展开后同一现实场景的多个平台入口只应由其中一个收到回传
+                for ft in await bot.pick_channel_heads(await bot.fetch_union_target_list(cls.report_targets)):
+                    await cls.client_direct_message(
+                        ft,
+                        MessageChain.assign(
+                            [
+                                I18NContext("error.message.report", command=tsk.action),
+                                Plain(f.strip(), disable_joke=True),
+                            ]
+                        ),
+                        enable_parse_message=False,
+                        disable_secret_check=True,
+                    )
             except Exception:
                 Logger.exception()
             return
@@ -237,14 +237,17 @@ class JobQueueBase:
         2. 从数据库中获取待处理和正在处理的任务
         3. 为每个待处理任务创建异步处理任务
 
-        :param target_client: 可选的场景客户端过滤，如果为 None 则获取当前客户端的任务
+        :param target_client: 可选的目标客户端过滤，如果为 None 则获取当前客户端的任务
         """
         # Logger.debug(f"Checking job queue for {cls.name}, target client: {target_client if target_client else "all"}")
-        # 检查并设置已完成的任务结果
-        for task_id in QueueTaskManager.tasks.copy():
-            tsk = await JobQueuesTable.get_or_none(task_id=task_id)
-            if tsk and tsk.status not in ["pending", "processing"]:
-                await QueueTaskManager.set_result(task_id, tsk.result)
+        # 检查并设置已完成的任务结果。
+        # 该轮询每 100 毫秒执行一次，逐个任务查询会让同时等待的任务数直接乘上查询次数，
+        # 故一次取回全部待查任务。
+        waiting = list(QueueTaskManager.tasks)
+        if waiting:
+            for tsk in await JobQueuesTable.filter(task_id__in=waiting):
+                if tsk.status not in ["pending", "processing"]:
+                    await QueueTaskManager.set_result(str(tsk.task_id), tsk.result)
         # Logger.debug([cls.name, target_client if target_client else exports["Bot"].Info.client_name])
 
         # 获取待处理的任务列表
@@ -266,7 +269,7 @@ class JobQueueBase:
         该方法以 100 毫秒的间隔持续检查队列中的任务，直到遇到异常或被外部停止。
         使用 pause_event 来支持队列的暂停/恢复功能。
 
-        :param target_client: 可选的场景客户端过滤
+        :param target_client: 可选的目标客户端过滤
         :raise QueueAlreadyRunning: 如果队列检查循环已经在运行
         """
         if cls.is_running:
@@ -321,7 +324,7 @@ class JobQueueBase:
 
         该方法通过队列系统异步发送消息，不等待消息发送完成。
 
-        :param session_info: 会话信息对象，包含场景客户端和频道等信息
+        :param session_info: 会话信息对象，包含客户端与场景等信息
         :param message: 要发送的消息链对象
         :param enable_parse_message: 是否解析消息中的特殊标记（默认 False）
         :param disable_secret_check: 是否禁用密钥检查（默认 True）

@@ -29,6 +29,8 @@ def _test_features_default():
             return False
         if features.support_markdown is not False:
             return False
+        if features.support_markdown_table is not False:
+            return False
         if features.support_reaction is not False:
             return False
         if features.support_quote is not False:
@@ -39,7 +41,47 @@ def _test_features_default():
             return False
         if features.support_wait is not False:
             return False
+        if features.support_action_text is not False:
+            return False
         return True
+    except Exception:
+        return False
+
+
+async def _test_features_inject_action_text():
+    """测试 support_action_text 能注入会话
+
+    inject_features() 以 asdict(features) 逐字段 setattr，SessionInfo 若缺少同名
+    字段会在注入时抛错，故新增能力标志必须两处同步声明。
+    """
+    try:
+        from core.builtins.session.info import SessionInfo
+
+        session_info = await SessionInfo.assign(
+            target_id="TEST|Group|action_text",
+            target_from="TEST|Group",
+            client_name="TEST",
+            sender_id="TEST|1",
+            features=Features(support_action_text=True),
+        )
+        return session_info.support_action_text is True
+    except Exception:
+        return False
+
+
+async def _test_features_inject_markdown_table():
+    """测试 support_markdown_table 能注入并随会话序列化"""
+    try:
+        from core.builtins.session.info import SessionInfo
+
+        session_info = await SessionInfo.assign(
+            target_id="TEST|Group|markdown_table",
+            target_from="TEST|Group",
+            client_name="TEST",
+            sender_id="TEST|1",
+            features=Features(support_markdown_table=True),
+        )
+        return session_info.support_markdown_table is True
     except Exception:
         return False
 
@@ -150,10 +192,15 @@ async def _test_task_add_and_get():
         SessionTaskManager.add_task(msg, flag, timeout=60)
 
         task_list = SessionTaskManager.get()
+        session_info = msg.session_info
 
-        if "TEST|Console|0" not in task_list:
+        # 任务按消息通道建键：同一现实场景下的多个平台场景共用一份等待任务，
+        # 用户在哪个平台回复都能命中；仅共享 union 而通道号不同的场景则各管各的。
+        if session_info.channel_key not in task_list:
             return False
-        if "TEST|0" not in task_list["TEST|Console|0"]:
+        if session_info.sender_union_id not in task_list[session_info.channel_key]:
+            return False
+        if session_info.target_id in task_list or session_info.target_union_id in task_list:
             return False
 
         SessionTaskManager._task_list.clear()
@@ -197,7 +244,8 @@ async def _test_task_bg_check_timeout():
         await SessionTaskManager.bg_check()
 
         task_list = SessionTaskManager.get()
-        task_info = task_list["TEST|Console|0"]["TEST|0"][msg]
+        session_info = msg.session_info
+        task_info = task_list[session_info.channel_key][session_info.sender_union_id][msg]
         if task_info["active"]:
             return False
 
@@ -216,6 +264,8 @@ async def test_features(tester: Tester):
     """core.builtins.session.features: Features 测试"""
     await tester.test(_test_features_default, "Features 默认值测试")
     await tester.test(_test_features_override, "Features.override() 测试")
+    await tester.test(_test_features_inject_action_text, "support_action_text 注入测试")
+    await tester.test(_test_features_inject_markdown_table, "support_markdown_table 注入测试")
 
     return tester
 

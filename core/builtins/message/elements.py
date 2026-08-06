@@ -25,6 +25,7 @@ from filetype import filetype
 from japanera import EraDate
 from tenacity import retry, stop_after_attempt
 
+from core.logger import Logger
 from core.utils.cache import random_cache_path
 
 if TYPE_CHECKING:
@@ -132,12 +133,17 @@ class PlainElement(BaseElement):
 
         纯文本在 KE 码中用 `[KE:plain,text=...]` 表示。
 
+        文本经 urlencode 编码：KE 码按顶层逗号切分参数、按方括号判定块边界，
+        不编码时含逗号的文本会被切成两段而后半段因缺少等号被静默丢弃，
+        含右方括号的文本则提前结束块。
+
         :return: KE 码格式的字符串
         """
+        encoded = parse.quote(self.text, safe="")
         if self.disable_joke:
             # 有参数，将其拼接到 KE 码中
-            return f"[KE:plain,text={self.text},disable_joke=1]"
-        return f"[KE:plain,text={self.text}]"
+            return f"[KE:plain,text={encoded},disable_joke=1]"
+        return f"[KE:plain,text={encoded}]"
 
     def __str__(self):
         """返回文本内容"""
@@ -155,7 +161,7 @@ class URLElement(BaseElement):
 
     属性：
         url: URL 地址或已转换的链接
-        applied_mm: 是否应用了链接跳板（None 表示自动选择）
+        trusted: 链接是否已认证（None 表示未表态，由会话决定）
         applied_md_format: 是否使用 Markdown 格式
         md_format_name: Markdown 格式的链接显示名称
 
@@ -167,30 +173,33 @@ class URLElement(BaseElement):
     ```
     """
 
+    original_url: str
     url: str
-    applied_mm: bool | None = None
+    trusted: bool | None = None
     applied_md_format: bool = False
     md_format_name: str | None = None
 
     @classmethod
-    def assign(cls, url: str, use_mm: bool | None = None, md_format: bool = False, md_format_name: str | None = None):
+    def assign(cls, url: str, trusted: bool | None = None, md_format: bool = False, md_format_name: str | None = None):
         """
         创建 URL 元素的工厂方法。
 
         支持链接跳板和 Markdown 格式两种转换。
 
         :param url: URL 地址
-        :param use_mm: 是否使用链接跳板，覆盖全局设置
-                      None 表示根据客户端情况自动选择（默认）
-                      True 表示强制使用跳板
-                      False 表示不使用跳板
+        :param trusted: 链接是否已在代码中认证
+                       None 表示未表态，由会话的 URLManager 设置决定（默认）
+                       True 表示已认证，一律不作未认证处理
+                       False 表示显式不可信，强制作未认证处理
         :param md_format: 是否使用 Markdown 格式（默认为 False）
                          True 表示转换为 [名称](URL) 格式
         :param md_format_name: Markdown 格式的链接名称（默认为 None，使用 URL 本身）
         :return: URLElement 实例
         """
+        original_url = url
         # ========== 步骤 1: 应用链接跳板（如果需要）==========
-        if use_mm:
+        # 须判 is False：None 意为未表态，交由会话决定，不可在此就套上跳板
+        if trusted is False:
             # 使用 mm.teahouse.team 的跳板服务，用于隐藏原始链接
             mm_url = "https://mm.teahouse.team/index.html?source=akaribot&rot13=%s"
             # 创建 ROT13 转换表（字母表循环移位 13 位）
@@ -206,17 +215,29 @@ class URLElement(BaseElement):
             # 将 URL 转换为 Markdown 链接格式 [名称](URL)
             url = f"[{md_format_name if md_format_name else url}]({url})"
 
-        return deepcopy(cls(url=url, applied_mm=use_mm, applied_md_format=md_format, md_format_name=md_format_name))
+        return deepcopy(
+            cls(
+                original_url=original_url,
+                url=url,
+                trusted=trusted,
+                applied_md_format=md_format,
+                md_format_name=md_format_name,
+            )
+        )
 
     def kecode(self):
         """
         转换为 KE 码格式。
 
         URL 在 KE 码中以纯文本形式表示，系统会自动识别和处理链接。
+        地址经 urlencode 编码，以免其中的逗号被当作 KE 码的参数分隔符。
 
         :return: KE 码格式的字符串
         """
-        return f"[KE:plain,text={self.url}]"
+        encoded = parse.quote(self.original_url, safe="")
+        if self.trusted is None:
+            return f"[KE:url,text={encoded}]"
+        return f"[KE:url,text={encoded},trusted={'1' if self.trusted else '0'}]"
 
     def __str__(self):
         """返回 URL 地址或转换后的链接"""
@@ -345,10 +366,13 @@ class FormattedTimeElement(BaseElement):
         """
         转换为 KE 码格式。
 
+        时间文案形如「February 14, 2009 07:31:30 (UTC+8)」，本身即含逗号，
+        故与纯文本一样须经 urlencode 编码，否则往返后只剩逗号之前的部分。
+
         :param session_info: 会话信息，用于本地化转换
         :return: KE 码格式的字符串
         """
-        return f"[KE:plain,text={self.to_str(session_info)}]"
+        return f"[KE:plain,text={parse.quote(self.to_str(session_info), safe='')}]"
 
     def __str__(self):
         """返回默认格式的时间字符串"""
@@ -544,14 +568,22 @@ class ImageElement(BaseElement):
         # ========== 处理 Base64 编码数据 ==========
         elif "base64" in path:
             # 提取 Base64 编码的图片数据
-            _, encoded_img = path.split(",", 1)
-            img_data = base64.b64decode(encoded_img)
+            if path.startswith("base64://"):
+                img_data = base64.b64decode(path[len("base64://") :])
+
+            elif path.startswith("data:"):
+                _, encoded_img = path.split(",", 1)
+                img_data = base64.b64decode(encoded_img)
+            else:
+                Logger.error("Cannot match format for Base64 image data.")
+                img_data = None
 
             # 将解码后的数据保存为本地文件
-            save = random_cache_path("png")
-            with open(save, "wb") as img_file:
-                img_file.write(img_data)
-            path = save
+            if img_data:
+                save = random_cache_path("png")
+                with open(save, "wb") as img_file:
+                    img_file.write(img_data)
+                path = save
 
         return deepcopy(cls(str(path), headers, need_get))
 
@@ -642,6 +674,7 @@ class ImageElement(BaseElement):
         # 保存处理后的图片
         save = f"{random_cache_path()}.png"
         image.save(save)
+        image.close()
         return ImageElement.assign(save)
 
     def kecode(self):
@@ -664,14 +697,18 @@ class ImageElement(BaseElement):
 
         :return: PIL Image 对象
         """
-        path = self.path
-        if self.need_get:
-            path = await self.get_image()
-        return PILImage.open(path)
+        return PILImage.open(await self.get())
 
     def __str__(self):
         """返回 KE 码格式"""
         return self.kecode()
+
+    async def get_wh(self):
+        """获取图片的宽度和高度"""
+        image = await self.to_PIL_image()
+        width, height = image.size
+        image.close()
+        return width, height
 
 
 @define
@@ -754,6 +791,193 @@ class MentionElement(BaseElement):
     def __str__(self):
         """返回 AT 码格式"""
         return f"<AT:{self.client}|{self.id}>"
+
+
+def _as_inner_element(value: str | PlainElement | I18NContextElement) -> PlainElement | I18NContextElement:
+    """
+    将指令操作的文案入参规范化为消息元素。
+
+    :param value: 文案，字符串或消息元素。
+    :return: 消息元素；字符串会被包装为纯文本元素。
+    """
+    if isinstance(value, str):
+        return PlainElement.assign(value)
+    return value
+
+
+def _resolve_inner_text(
+    element: PlainElement | I18NContextElement | None,
+    session_info: SessionInfo | None,
+) -> str:
+    """
+    将指令操作的内层元素解析为字符串。
+
+    无会话信息时不作翻译，直接返回元素自身的字符串表示，如此已解析过的元素
+    再次解析仍是恒等变换，KE 码序列化等无会话的路径也不会破坏既有内容。
+
+    :param element: 内层元素。
+    :param session_info: 会话信息，为 None 时不作翻译。
+    :return: 解析后的字符串；元素为 None 时返回空字符串。
+    """
+    if element is None:
+        return ""
+    if isinstance(element, I18NContextElement):
+        if session_info:
+            return session_info.locale.t(
+                element.key,
+                element.fallback,
+                element.locale_failed_prompt,
+                **element.kwargs,
+            )
+        return str(element)
+    if isinstance(element, PlainElement):
+        if session_info:
+            return session_info.locale.t_str(element.text)
+        return element.text
+    return str(element)
+
+
+@define
+class ActionTextElement(BaseElement):
+    """
+    指令操作元素 - 用于在消息中嵌入可点击的命令入口。
+
+    用户点击后，text 的内容会被填入输入框，由用户自行编辑发送。
+    QQ 官方机器人使用平台原生的输入框指令标签；Discord 使用预填命令的 Modal；
+    Telegram 使用当前聊天 Inline Query，并在未启用 Inline Mode 时降级为复制按钮。
+    其余平台在发送前由消息链降级为纯文本，模块侧无须为平台分支。
+
+    text 与 show 均可传入字符串、纯文本元素或多语言元素。传入多语言元素时，
+    实际翻译推迟到发送阶段，因为模块运行于服务端进程，而消息链的转换发生在
+    客户端进程，两者的会话语言只有在后者才能确定。
+
+    属性：
+        text: 点击后插入输入框的文本，必填
+        show: 消息内展示的文本，缺省时由平台取 text
+        reference: 插入输入框时是否携带对原消息的引用回复
+        show_on_fallback: 降级为纯文本时是否带上 show
+        quote_on_fallback: 降级为纯文本时是否为文案加上引号
+
+    show 有两种用法，由 show_on_fallback 区分：其一是语义标签（如以「沙盒」代指
+    某条查询命令），这类文案在何处都读得通，降级时应予保留；其二是纯粹的交互提示
+    （如「点击可添加到输入框」），离开可点击的平台便毫无意义，降级时应当略去，
+    只留命令原文。
+
+    quote_on_fallback 用于引号只该出现在降级文案中的场合：可点击的标签自带视觉边界，
+    外面再套一对引号便显重复，而降级后的命令原文仍需引号与上下文区隔。此时把引号
+    从 i18n 文案中移出、交由本字段补上，两处便各得其所。
+
+    示例：
+    ```
+        > elem = ActionTextElement.assign("~wiki 沙盒", show="沙盒")
+        > elem.to_plain().text
+        '沙盒 (~wiki 沙盒)'
+        > hint = ActionTextElement.assign("~wiki 沙盒", show="点击填入", show_on_fallback=False)
+        > hint.to_plain().text
+        '~wiki 沙盒'
+    ```
+    """
+
+    text: PlainElement | I18NContextElement
+    show: PlainElement | I18NContextElement | None = None
+    reference: bool = False
+    show_on_fallback: bool = True
+    quote_on_fallback: bool = False
+
+    @classmethod
+    def assign(
+        cls,
+        text: str | PlainElement | I18NContextElement,
+        show: str | PlainElement | I18NContextElement | None = None,
+        reference: bool = False,
+        show_on_fallback: bool = True,
+        quote_on_fallback: bool = False,
+    ):
+        """
+        创建指令操作元素的工厂方法。
+
+        :param text: 点击后插入输入框的文本
+        :param show: 消息内展示的文本（默认为 None，由平台取 text）
+        :param reference: 插入输入框时是否携带引用回复（默认为 False）
+        :param show_on_fallback: 降级为纯文本时是否带上 show（默认为 True）
+        :param quote_on_fallback: 降级为纯文本时是否为文案加上引号（默认为 False）
+        :return: ActionTextElement 实例
+        """
+        return deepcopy(
+            cls(
+                text=_as_inner_element(text),
+                show=_as_inner_element(show) if show is not None else None,
+                reference=bool(reference),
+                show_on_fallback=bool(show_on_fallback),
+                quote_on_fallback=bool(quote_on_fallback),
+            )
+        )
+
+    def resolve(self, session_info: SessionInfo | None = None) -> "ActionTextElement":
+        """
+        将内层元素解析为纯文本，返回新实例。
+
+        解析后所有下游（KE 码序列化、纯文本降级、平台渲染）都只面对字符串。
+        该方法幂等，对内层已是纯文本的实例再次调用不会改变其内容。
+
+        :param session_info: 会话信息，用于多语言翻译
+        :return: 内层全为纯文本元素的新实例
+        """
+        return ActionTextElement(
+            text=PlainElement.assign(_resolve_inner_text(self.text, session_info)),
+            show=(PlainElement.assign(_resolve_inner_text(self.show, session_info)) if self.show is not None else None),
+            reference=self.reference,
+            show_on_fallback=self.show_on_fallback,
+            quote_on_fallback=self.quote_on_fallback,
+        )
+
+    def to_plain(self, session_info: SessionInfo | None = None) -> PlainElement:
+        """
+        降级为纯文本元素，用于不支持指令操作的平台。
+
+        文案取「show（text）」，既保留可读标签，又不丢失用户实际需要发送的命令。
+        show 为空或声明了不在降级时展示时，只输出 text，不产生空括号。
+        此处不施加平台的字符数上限，纯文本没有该限制，截断只会平白丢失内容。
+
+        :param session_info: 会话信息，用于多语言翻译与括号样式
+        :return: 降级后的纯文本元素
+        """
+        resolved = self.resolve(session_info)
+        text = resolved.text.text
+        if self.quote_on_fallback:
+            text = session_info.locale.t("message.quotes", msg=text) if session_info else f'"{text}"'
+        show = resolved.show.text if (resolved.show and self.show_on_fallback) else ""
+        if not show:
+            return PlainElement.assign(text)
+        if session_info:
+            return PlainElement.assign(f"{show}{session_info.locale.t('message.brackets', msg=text)}")
+        return PlainElement.assign(f"{show} ({text})")
+
+    def kecode(self):
+        """
+        转换为 KE 码格式。
+
+        text 与 show 的值经 urlencode 编码。这一步同时解决两个问题：其一，逗号、
+        方括号、等号都会被编码，不会撞上 KE 码的分隔符；其二，平台本就要求这两个
+        值 urlencode 后传值。
+
+        :return: KE 码格式的字符串
+        """
+        resolved = self.resolve()
+        params = [f"text={parse.quote(resolved.text.text, safe='')}"]
+        if resolved.show is not None:
+            params.append(f"show={parse.quote(resolved.show.text, safe='')}")
+        params.append(f"reference={1 if self.reference else 0}")
+        # 仅在非默认时写出，避免既有 KE 码平白变长
+        if not self.show_on_fallback:
+            params.append("show_on_fallback=0")
+        if self.quote_on_fallback:
+            params.append("quote_on_fallback=1")
+        return f"[KE:action_text,{','.join(params)}]"
+
+    def __str__(self):
+        """返回 KE 码格式"""
+        return self.kecode()
 
 
 @define
@@ -1002,5 +1226,6 @@ __all__ = [
     "EmbedFieldElement",
     "EmbedElement",
     "MentionElement",
+    "ActionTextElement",
     "RawElement",
 ]

@@ -2,16 +2,16 @@ import asyncio
 import re
 import urllib.parse
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, UTC
 
 import orjson
-from attrs import define
+from attrs import define, field
 from bs4 import BeautifulSoup
 
 import core.utils.html2text as html2text
 from core.builtins.message.internal import Url
 from core.builtins.session.internal import MessageSession
-from core.config import Config
+from core.config.base import BaseConfig, CoreConfig
 from core.constants.exceptions import AbuseWarning, NoReportException
 from core.dirty_check import check
 from core.i18n import Locale
@@ -20,10 +20,11 @@ from core.utils.http import get_url
 from core.web_render import web_render, SourceOptions
 from modules.wiki.database.models import WikiSiteInfo, WikiAllowList, WikiBlockList
 from modules.wiki.utils.bot import BotAccount
+from modules.wiki.utils.summarize import extract_summary, truncate_summary
 from .mapping import *
 
-default_locale = Config("default_locale", cfg_type=str)
-enable_tos = Config("enable_tos", True)
+default_locale = BaseConfig.default_locale
+enable_tos = CoreConfig.enable_tos
 
 
 class InvalidWikiError(Exception):
@@ -33,9 +34,11 @@ class InvalidWikiError(Exception):
 @define
 class QueryInfo:
     api: str
-    headers: dict[str, str] = {"accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"}
+    headers: dict[str, str] = field(
+        factory=lambda: {"accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"}
+    )
     prefix: str = ""
-    locale: Locale = Locale(default_locale)
+    locale: Locale = field(factory=lambda: Locale(default_locale))
 
     @classmethod
     def assign(
@@ -52,13 +55,13 @@ class QueryInfo:
 class WikiInfo:
     api: str = ""
     articlepath: str = ""
-    extensions: list[str] = []
-    interwiki: dict[str, str] = {}
+    extensions: list[str] = field(factory=list)
+    interwiki: dict[str, str] = field(factory=dict)
     realurl: str = ""
     name: str = ""
-    namespaces: dict[str, int] = {}
-    namespaces_local: dict[str, str] = {}
-    namespacealiases: dict[str, str] = {}
+    namespaces: dict[str, int] = field(factory=dict)
+    namespaces_local: dict[str, str] = field(factory=dict)
+    namespacealiases: dict[str, str] = field(factory=dict)
     in_allowlist: bool = False
     in_blocklist: bool = False
     script: str = ""
@@ -100,7 +103,7 @@ class PageInfo:
     is_talk_page: bool = False
     is_forum: bool = False
     is_forum_topic: bool = False
-    forum_data: dict = {}
+    forum_data: dict = field(factory=dict)
 
 
 class WikiLib:
@@ -262,7 +265,10 @@ class WikiLib:
             wiki_api_link = redirect_list[wiki_api_link]
         get_cache_info = await WikiSiteInfo.get_or_none(api_link=wiki_api_link)
         if get_cache_info:
-            if get_cache_info.site_info and datetime.now().timestamp() - get_cache_info.timestamp.timestamp() < 43200:
+            if (
+                get_cache_info.site_info
+                and datetime.now(UTC).timestamp() - get_cache_info.timestamp.timestamp() < 43200
+            ):
                 return WikiStatus(
                     available=True,
                     value=await self.rearrange_siteinfo(get_cache_info.site_info, wiki_api_link),
@@ -278,14 +284,16 @@ class WikiLib:
                 siprop="general|namespaces|namespacealiases|interwikimap|extensions",
             )
         except Exception as e:
-            if Config("debug", False):
+            if CoreConfig.debug:
                 Logger.exception()
             message = self.locale.t("wiki.message.utils.wikilib.get_failed.api") + str(e)
             if self.url.find("moegirl.org.cn") != -1:
                 message += "\n" + self.locale.t("wiki.message.utils.wikilib.get_failed.moegirl")
             return WikiStatus(available=False, value=False, message=message)
         get_cache_info.site_info = get_json
-        get_cache_info.timestamp = datetime.now()
+        # 须带时区：不带时区的时间会被 Tortoise 当作 UTC 存入，缓存时间凭空提前一个时区差，
+        # 上面的 43200 秒过期判断会因此多留缓存整整一个时区差的时长
+        get_cache_info.timestamp = datetime.now(UTC)
         await get_cache_info.save()
         info = await self.rearrange_siteinfo(get_json, wiki_api_link)
         return WikiStatus(
@@ -350,39 +358,7 @@ class WikiLib:
         """
         parse text to get a short description
         """
-        try:
-            desc = text.split("\n")
-            desc_list = []
-            for x in desc:
-                if x != "":
-                    desc_list.append(x)
-            desc = "\n".join(desc_list)
-            desc_end = re.findall(r"(.*?(?:!\s|\?\s|\.\s|！|？|。)).*", desc, re.S | re.M)
-            if desc_end:
-                if re.findall(r"[({\[>\"\'《【‘“「（]", desc_end[0]):
-                    desc_end = re.findall(
-                        r"(.*?[)}\]>\"\'》】’”」）].*?(?:!\s|\?\s|\.\s|！|？|。)).*",
-                        desc,
-                        re.S | re.M,
-                    )
-                desc = desc_end[0]
-        except Exception:
-            Logger.exception()
-            desc = ""
-        if desc in ["...", "…"]:
-            desc = ""
-        ell = False
-        if len(desc) > 250:
-            desc = desc[0:250]
-            ell = True
-        split_desc = desc.split("\n")
-        for d in split_desc:
-            if not d:
-                split_desc.remove("")
-        if len(split_desc) > 5:
-            split_desc = split_desc[0:5]
-            ell = True
-        return "\n".join(split_desc) + ("..." if ell else "")
+        return truncate_summary(text)
 
     async def get_html_to_text(self, page_name, section=None):
         """
@@ -423,6 +399,26 @@ class WikiLib:
             Logger.exception()
             desc = ""
         return desc
+
+    @staticmethod
+    def _get_revision_content(page_raw: dict) -> str:
+        """
+        从查询结果中取出页面的 Wikitext。
+
+        MediaWiki 1.32 起内容置于 slots 结构下，更低版本直接置于 revision 上，
+        两种结构都要认。
+
+        :param page_raw: 查询结果中单个页面的原始数据。
+        :returns: 页面的 Wikitext；无修订内容时返回空字符串。
+        """
+        revisions = page_raw.get("revisions")
+        if not revisions:
+            return ""
+        revision = revisions[0]
+        slots = revision.get("slots")
+        if slots:
+            return slots.get("main", {}).get("*", "")
+        return revision.get("*", "")
 
     async def search_page(self, search_text, namespace="*", limit=10, srwhat="text"):
         await self.fixup_wiki_info()
@@ -493,7 +489,7 @@ class WikiLib:
                     if tdi == 0:
                         if td.find("a"):
                             parsed_data[label]["data"].append(td.find("a").text)
-                            parsed_data[label]["text"] = page_name + "/" + td.find("a").text
+                            parsed_data[label]["text"] = td.find("a").attrs["title"]
                         else:
                             parsed_data[label]["data"].append(td.text)
                     else:
@@ -505,8 +501,8 @@ class WikiLib:
 
     async def parse_page_info(
         self,
-        title: str = None,
-        pageid: int = None,
+        title: str | None = None,
+        pageid: int | None = None,
         inline=False,
         lang=None,
         _doc=False,
@@ -514,7 +510,7 @@ class WikiLib:
         _prefix="",
         _iw=False,
         _search=False,
-        session: MessageSession = None,
+        session: MessageSession | None = None,
     ) -> PageInfo:
         """
         :param title: 页面标题，如果为None，则使用pageid。
@@ -646,7 +642,12 @@ class WikiLib:
 
         # if TextExtracts extension is available and no selected section, add extracts to query
         use_textextracts = "TextExtracts" in self.wiki_info.extensions
-        if use_textextracts and not selected_section:
+        # 模板文档页不走 TextExtracts：该扩展为条目而设，会把 documentation header、
+        # shortcut 与 TemplateData 一概视作非正文滤去，只剩「参见」一类的章节残留，
+        # 而文档页的说明往往正写在 TemplateData 里，须由本地解析取出
+        is_template_doc = _doc or title.endswith("/doc")
+        use_extracts = use_textextracts and not selected_section and not is_template_doc
+        if use_extracts:
             query_props += ["extracts", "pageprops"]
             query_string.update(
                 {
@@ -654,7 +655,19 @@ class WikiLib:
                     "ppprop": "description|displaytitle|disambiguation|infoboxes",
                     "explaintext": "true",
                     "exsectionformat": "plain",
-                    "exchars": "200",
+                    "exchars": "300",
+                }
+            )
+        else:
+            # 摘要须由本地解析 Wikitext 得出。此处随主查询一并取回，无须额外请求。
+            # rvslots 自 MediaWiki 1.32 起提供，更低版本会忽略该参数并返回旧式结构，
+            # 故读取时两种结构都要认。
+            query_props += ["revisions"]
+            query_string.update(
+                {
+                    "prop": "|".join(query_props),
+                    "rvprop": "content",
+                    "rvslots": "main",
                 }
             )
 
@@ -789,7 +802,7 @@ class WikiLib:
                                             invalid_namespace = research[1]
                                         return research
                                     except Exception:
-                                        if Config("debug", False):
+                                        if CoreConfig.debug:
                                             Logger.exception()
                                         return None, False
 
@@ -977,12 +990,16 @@ class WikiLib:
                                     page_info.before_page_property = page_info.page_property = "template"
                             # get description
                             if get_desc:
-                                if use_textextracts and (not selected_section or page_info.invalid_section):
+                                if use_extracts:
                                     raw_desc = page_raw.get("extract")
                                     if raw_desc:
                                         page_desc = self.parse_text(raw_desc)
                                 else:
-                                    page_desc = self.parse_text(await self.get_html_to_text(title, selected_section))
+                                    # 解析不出正文时不再回退至渲染 HTML：那条路径取回的是信息框、
+                                    # 导航栏一类的原始文本，充作摘要没有意义，宁可只给出链接
+                                    page_desc = self.parse_text(
+                                        extract_summary(self._get_revision_content(page_raw), selected_section)
+                                    )
                             full_url = page_raw["fullurl"] + page_info.args
                             file = None
                             if "imageinfo" in page_raw:
@@ -1065,14 +1082,10 @@ class WikiLib:
                 if not x["status"]:
                     ban = True
         if ban:  # if content check failed, mark as banned
-            page_info.status = False
-            page_info.title = page_info.before_title = None
+            page_info.title = page_info.before_title = ""
             page_info.id = -1
-            if page_info.link:
-                page_info.desc = str(
-                    Url(page_info.link, use_mm=True, md_format=session and session.session_info.use_url_md_format)
-                )
-            page_info.link = None
+            page_info.desc = ""
+            page_info.link = str(Url(page_info.link, trusted=False))
         return page_info
 
     async def random_page(self) -> PageInfo:

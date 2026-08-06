@@ -19,25 +19,33 @@ from core.builtins.session.info import SessionInfo
 from core.builtins.temp import Temp
 from core.builtins.utils import command_prefix
 from core.client.init import client_init
-from core.config import Config
-from core.constants.default import confirm_command_default, ignored_sender_default, qq_host_default
-from core.database.models import SenderInfo, TargetInfo, UnfriendlyActionRecords
+from bots.onebot.config import AiocqhttpConfig
+from core.config.base import BaseConfig, CoreConfig
+from core.constants.default import confirm_command_default
+from core.database.models import SenderUnionInfo, TargetUnionInfo, UnfriendlyActionRecords
 from core.i18n import Locale
 from core.logger import Logger
+from core.retired import is_retired_client
 from core.tos import tos_report
 
 Bot.register_bot(client_name=client_name)
 ctx_id = Bot.register_context_manager(OneBotContextManager)
 Bot.register_context_manager(OneBotFetchedContextManager, fetch_session=True)
 
-default_locale = Config("default_locale", cfg_type=str)
-ignored_sender = Config("ignored_sender", ignored_sender_default)
-enable_tos = Config("enable_tos", True)
-mention_required = Config("mention_required", False)
-quick_confirm = Config("quick_confirm", True)
+default_locale = BaseConfig.default_locale
+ignored_sender = CoreConfig.ignored_sender
+enable_tos = CoreConfig.enable_tos
+mention_required = CoreConfig.mention_required
+quick_confirm = CoreConfig.quick_confirm
 
-enable_temp_session = Config("qq_enable_temp_session", True, table_name="bot_onebot")
-enable_listening_self_message = Config("qq_enable_listening_self_message", False, table_name="bot_onebot")
+# 本平台退役后不再追究针对机器人自身的不友好行为。退役实例已停止服务，将机器人禁言或移出群聊
+# 是管理员的正常处置，不应据此追责；且迁移完成后两侧的账号与场景同属一个 union，在此处封禁会
+# 连带波及用户在新平台上的身份，把一次合理的清退变成对已迁移用户的误封。
+client_retired = is_retired_client(client_name)
+
+enable_temp_session = AiocqhttpConfig.qq_enable_temp_session
+enable_listening_self_message = AiocqhttpConfig.qq_enable_listening_self_message
+qq_account = None
 
 
 @aiocqhttp_bot.on_startup
@@ -50,6 +58,7 @@ async def startup():
 @aiocqhttp_bot.on_websocket_connection
 async def _(event: Event):
     qq_login_info = await aiocqhttp_bot.call_action("get_login_info")
+    global qq_account
     qq_account = qq_login_info.get("user_id")
     Temp.data["qq_account"] = str(qq_account)
     Temp.data["qq_nickname"] = qq_login_info.get("nickname")
@@ -135,6 +144,7 @@ async def message_handler(event: Event):
         target_id=target_id,
         sender_id=sender_id,
         target_from=target_group_prefix if event.detail_type == "group" else target_private_prefix,
+        is_private=event.detail_type != "group",
         sender_from=sender_prefix,
         sender_name=sender_name,
         client_name=client_name,
@@ -143,6 +153,7 @@ async def message_handler(event: Event):
         messages=msg_chain,
         ctx_slot=ctx_id,
         tmp=Temp.data.copy(),
+        bot_id=str(qq_account),
     )
 
     await Bot.process_message(session, event)
@@ -197,12 +208,14 @@ async def _(event: Event):
             target_id=target_id,
             sender_id=sender_id,
             target_from=target_group_prefix if event.detail_type == "group" else target_private_prefix,
+            is_private=event.detail_type != "group",
             sender_from=sender_prefix,
             sender_name=sender_name,
             client_name=client_name,
             reply_id=str(event.message_id),
             messages=MessageChain.assign([Plain(emoji_)]),
             ctx_slot=ctx_id,
+            bot_id=str(qq_account),
         )
 
         await Bot.process_message(session, event)
@@ -211,11 +224,11 @@ async def _(event: Event):
 @aiocqhttp_bot.on("request.friend")
 async def _(event: Event):
     sender_id = f"{sender_prefix}|{event.user_id}"
-    sender_info = await SenderInfo.get_by_sender_id(sender_id)
-    if sender_info.superuser or sender_info.trusted:
+    sender_union_info = await SenderUnionInfo.get_by_sender_id(sender_id)
+    if sender_union_info.superuser or sender_union_info.trusted:
         return {"approve": True}
-    if Config("qq_allow_approve_friend", False, table_name="bot_onebot"):
-        if sender_info.blocked:
+    if AiocqhttpConfig.qq_allow_approve_friend:
+        if sender_union_info.blocked:
             return {"approve": False}
         return {"approve": True}
     return {"approve": False}
@@ -224,59 +237,71 @@ async def _(event: Event):
 @aiocqhttp_bot.on("request.group.invite")
 async def _(event: Event):
     sender_id = f"{sender_prefix}|{event.user_id}"
-    sender_info = await SenderInfo.get_by_sender_id(sender_id)
+    sender_union_info = await SenderUnionInfo.get_by_sender_id(sender_id)
     target_id = f"{target_group_prefix}|{event.group_id}"
-    target_info = await TargetInfo.get_by_target_id(target_id)
-    if sender_info.superuser or sender_info.trusted:
+    target_union_info = await TargetUnionInfo.get_by_target_id(target_id)
+    if sender_union_info.superuser or sender_union_info.trusted:
         return {"approve": True}
-    if Config("qq_allow_approve_group_invite", False, table_name="bot_onebot"):
-        if target_info.blocked:
+    if AiocqhttpConfig.qq_allow_approve_group_invite:
+        if target_union_info.blocked:
             return {"approve": False}
         return {"approve": True}
 
 
 @aiocqhttp_bot.on_notice("group_ban")
 async def _(event: Event):
-    if enable_tos and event.sub_type == "ban" and event.user_id == int(event.self_id):
+    if enable_tos and not client_retired and event.sub_type == "ban" and event.user_id == int(event.self_id):
         sender_id = f"{sender_prefix}|{event.operator_id}"
-        sender_info = await SenderInfo.get_by_sender_id(sender_id)
+        sender_union_info = await SenderUnionInfo.get_by_sender_id(sender_id)
         target_id = f"{target_group_prefix}|{event.group_id}"
-        target_info = await TargetInfo.get_by_target_id(target_id)
+        target_union_info = await TargetUnionInfo.get_by_target_id(target_id)
         if event.duration > 0:
             await UnfriendlyActionRecords.create(
-                target_id=target_id, sender_id=sender_id, action="restrict", detail=str(event.duration)
+                target_id=target_id,
+                sender_id=sender_id,
+                target_union_id=target_union_info.union_id,
+                sender_union_id=sender_union_info.union_id,
+                action="restrict",
+                detail=str(event.duration),
             )
             Logger.info(f"Unfriendly action detected: restrict ({event.duration})")
         result = await UnfriendlyActionRecords.check_mute(target_id=target_id)
         if event.duration >= 259200:  # 3 days
             result = True
-        if result and not sender_info.superuser:
+        if result and not sender_union_info.superuser:
             Logger.info(f"Ban {sender_id} ({target_id}) by ToS: restrict")
             Logger.info(f"Block {target_id} by ToS: restrict")
             reason = Locale(default_locale).t("tos.message.reason.restrict")
             await tos_report(sender_id, target_id, reason, banned=True)
-            await target_info.edit_attr("blocked", True)
+            await target_union_info.edit_attr("blocked", True)
             await aiocqhttp_bot.call_action("set_group_leave", group_id=event.group_id)
-            await sender_info.switch_identity(trust=False)
+            await sender_union_info.switch_identity(trust=False)
             await aiocqhttp_bot.call_action("delete_friend", friend_id=event.operator_id)
 
 
 @aiocqhttp_bot.on_notice("group_decrease")
 async def _(event: Event):
-    if enable_tos and event.sub_type == "kick_me":
+    if enable_tos and not client_retired and event.sub_type == "kick_me":
         sender_id = f"{sender_prefix}|{event.operator_id}"
-        sender_info = await SenderInfo.get_by_sender_id(sender_id)
+        sender_union_info = await SenderUnionInfo.get_by_sender_id(sender_id)
         target_id = f"{target_group_prefix}|{event.group_id}"
-        target_info = await TargetInfo.get_by_target_id(target_id)
-        await UnfriendlyActionRecords.create(target_id=target_id, sender_id=sender_id, action="kick", detail="")
+        target_union_info = await TargetUnionInfo.get_by_target_id(target_id)
+        await UnfriendlyActionRecords.create(
+            target_id=target_id,
+            sender_id=sender_id,
+            target_union_id=target_union_info.union_id,
+            sender_union_id=sender_union_info.union_id,
+            action="kick",
+            detail="",
+        )
         Logger.info("Unfriendly action detected: kick")
-        if not sender_info.superuser:
+        if not sender_union_info.superuser:
             Logger.info(f"Ban {sender_id} ({target_id}) by ToS: kick")
             Logger.info(f"Block {target_id} by ToS: kick")
             reason = Locale(default_locale).t("tos.message.reason.kick")
             await tos_report(sender_id, target_id, reason, banned=True)
-            await target_info.edit_attr("blocked", True)
-            await sender_info.switch_identity(trust=False)
+            await target_union_info.edit_attr("blocked", True)
+            await sender_union_info.switch_identity(trust=False)
             await aiocqhttp_bot.call_action("delete_friend", friend_id=event.operator_id)
 
 
@@ -284,17 +309,17 @@ async def _(event: Event):
 async def _(event: Event):
     if enable_tos:
         target_id = f"{target_group_prefix}|{event.group_id}"
-        target_info = await TargetInfo.get_by_target_id(target_id, create=False)
-        if target_info and target_info.blocked:
+        target_union_info = await TargetUnionInfo.get_by_target_id(target_id, create=False)
+        if target_union_info and target_union_info.blocked:
             res = Locale(default_locale).t("tos.message.in_group_blocklist")
-            if issue_url := Config("issue_url", cfg_type=str):
+            if issue_url := CoreConfig.issue_url:
                 res += "\n" + Locale(default_locale).t("tos.message.appeal", issue_url=issue_url)
             await aiocqhttp_bot.send(event=event, message=res)
             await aiocqhttp_bot.call_action("set_group_leave", group_id=event.group_id)
 
 
-qq_host = Config("qq_host", default=qq_host_default, table_name="bot_onebot")
-if Config("enable", False, table_name="bot_onebot"):
+qq_host = AiocqhttpConfig.qq_host
+if AiocqhttpConfig.enable:
     HyperConfig.startup_timeout = 120
     host, port = qq_host.split(":")
     aiocqhttp_bot.run(host=host, port=port, debug=False)

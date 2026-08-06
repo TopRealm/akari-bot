@@ -42,9 +42,10 @@ async def bugtracker_get(msg, mojira_id: str):
             headers={"Content-Type": "application/json"},
         )
         issues = orjson.loads(get_json).get("issues", [])
-        load_json = issues[0] if issues else None
-    except IndexError:
-        return I18NContext("bugtracker.message.get_failed"), None
+        # 项目或漏洞不存在时接口返回空列表，须就地转为提示，否则空值会流入下方的字段解析。
+        if not issues:
+            return I18NContext("bugtracker.message.get_failed"), None
+        load_json = issues[0]
     except ExternalException as e:
         if str(e).startswith("500"):
             return I18NContext("bugtracker.message.error.server"), None
@@ -81,7 +82,9 @@ async def bugtracker_get(msg, mojira_id: str):
                     data["project"] = fields["project"]["name"]
                 if "resolution" in fields:
                     data["resolution"] = fields["resolution"]["name"] if fields["resolution"] else "Unresolved"
-                if "versions" in load_json["fields"]:
+                # 须判非空而非仅判键在：未关联版本的漏洞该字段为空列表，
+                # 空列表上取首尾元素会抛 IndexError
+                if fields.get("versions"):
                     versions = fields["versions"]
                     verlist = []
                     for item in versions[:]:

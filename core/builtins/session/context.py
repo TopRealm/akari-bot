@@ -7,7 +7,9 @@
 """
 
 import asyncio
+import uuid
 from abc import ABC, abstractmethod
+from copy import copy
 from typing import Any
 
 from core.builtins.message.chain import MessageChain, MessageNodes
@@ -134,7 +136,7 @@ class ContextManager(ABC):
         enable_split_image: bool = True,
     ) -> list[str]:
         """
-        发送消息到指定的会话。
+        向会话所在的场景发送消息。
 
         :param session_info: 会话信息
         :param message: 消息内容，可以是 MessageChain 或字符串
@@ -150,12 +152,60 @@ class ContextManager(ABC):
         raise NotImplementedError  # 请继承 class 后实现方法
 
     @classmethod
+    def derive_private_session(cls, session_info: SessionInfo, target_id: str, target_from: str) -> SessionInfo:
+        """
+        由当前会话派生出一份指向私聊场景的会话信息，供 :meth:`send_private_msg` 复用发送逻辑。
+
+        派生出的会话不沿用原会话的 session_id 与 message_id：前者会使上下文查找命中原场景的
+        消息实例，从而将私信回复至原场景；后者会使私信引用一条并不存在于私聊中的消息。
+
+        :param session_info: 当前会话信息
+        :param target_id: 私聊场景 ID
+        :param target_from: 私聊场景前缀
+        :return: 指向私聊场景的会话信息副本
+        """
+        private_session = copy(session_info)
+        private_session.session_id = str(uuid.uuid4())
+        private_session.target_id = target_id
+        private_session.target_from = target_from
+        private_session.message_id = None
+        private_session.reply_id = None
+        return private_session
+
+    @classmethod
+    @abstractmethod
+    async def send_private_msg(
+        cls,
+        session_info: SessionInfo,
+        user_id: str,
+        message: MessageChain | MessageNodes,
+        enable_parse_message: bool = True,
+        enable_split_image: bool = True,
+    ) -> list[str]:
+        """
+        向指定用户单独发送私聊消息。
+
+        与 :meth:`send_message` 不同，消息不会发往 ``session_info`` 所指的场景，
+        ``session_info`` 仅用于取用语言、平台能力等上下文。
+
+        实现须捕获平台侧的发送异常并返回空列表，调用方以是否取得消息 ID 判定成败。
+
+        :param session_info: 会话信息
+        :param user_id: 目标用户 ID（带平台前缀，如 ``QQ|10000``）
+        :param message: 消息内容
+        :param enable_parse_message: 是否允许解析消息
+        :param enable_split_image: 是否允许拆分图片发送
+        :return: 消息 ID 列表，为空表示发送失败（如对方未添加机器人为好友、未开启私信等）
+        """
+        raise NotImplementedError  # 请继承 class 后实现方法
+
+    @classmethod
     @abstractmethod
     async def delete_message(
         cls, session_info: SessionInfo, message_id: str | list[str], reason: str | None = None
     ) -> None:
         """
-        删除指定会话中的消息，可能需要该会话的管理员权限。
+        删除指定场景中的消息，可能需要该场景的管理员权限。
 
         :param session_info: 会话信息
         :param message_id: 消息 ID 列表（为最大兼容，请将元素转换为 str，若实现需要传入其他类型再在下方另行实现）
@@ -177,7 +227,7 @@ class ContextManager(ABC):
         cls, session_info: SessionInfo, user_id: str | list[str], duration: int | None = None, reason: str | None = None
     ) -> None:
         """
-        禁言指定会话中的成员，可能需要该会话的管理员权限。
+        禁言指定场景中的成员，可能需要该场景的管理员权限。
 
         :param session_info: 会话信息
         :param user_id: 用户 ID
@@ -198,7 +248,7 @@ class ContextManager(ABC):
     @abstractmethod
     async def unrestrict_member(cls, session_info: SessionInfo, user_id: str | list[str]) -> None:
         """
-        解除禁言指定会话中的成员，可能需要该会话的管理员权限。
+        解除禁言指定场景中的成员，可能需要该场景的管理员权限。
 
         :param session_info: 会话信息
         :param user_id: 用户 ID
@@ -217,7 +267,7 @@ class ContextManager(ABC):
     @abstractmethod
     async def kick_member(cls, session_info: SessionInfo, user_id: str | list[str], reason: str | None = None) -> None:
         """
-        踢出指定会话中的成员，可能需要该会话的管理员权限。
+        踢出指定场景中的成员，可能需要该场景的管理员权限。
 
         :param session_info: 会话信息
         :param user_id: 用户 ID
@@ -237,7 +287,7 @@ class ContextManager(ABC):
     @abstractmethod
     async def ban_member(cls, session_info: SessionInfo, user_id: str | list[str], reason: str | None = None) -> None:
         """
-        封禁指定会话中的成员，可能需要该会话的管理员权限。
+        封禁指定场景中的成员，可能需要该场景的管理员权限。
 
         :param session_info: 会话信息
         :param user_id: 用户 ID
@@ -257,7 +307,7 @@ class ContextManager(ABC):
     @abstractmethod
     async def unban_member(cls, session_info: SessionInfo, user_id: str | list[str]) -> None:
         """
-        解除封禁指定会话中的成员，可能需要该会话的管理员权限。
+        解除封禁指定场景中的成员，可能需要该场景的管理员权限。
 
         :param session_info: 会话信息
         :param user_id: 用户 ID

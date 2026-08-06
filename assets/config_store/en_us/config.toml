@@ -6,7 +6,7 @@ default_locale = "en_us" # Default language environment.
 config_version = 3 # Config version number, which will be automatically updated with the new features and generally does not need to be modified.
 
 [config]
-# The basic config section. The values ​​entered here can be displayed in the message. Please do not enter sensitive information in this section.
+# The basic config section. The values entered here can be displayed in the message. Please do not enter sensitive information in this section.
 debug = false # Whether to enable debug mode, more log information will be output when enabled.
 timezone_offset = "+8" # The bot's default timezone offset.
 allow_reload_base = false # Whether to allow reloading of the base modules.
@@ -17,13 +17,14 @@ use_secrets_random = false # Whether to use the random number generator based on
 base_superuser = ["QQ|2596322644"] # The bot's base superuser list. The values entered here will be loaded into the database when the bot starts.
 ignored_sender = ["QQ|2854196310"] # Ignored user list. Users matching this list will be ignored.
 report_targets = [] # List of reporting contexts. The value filled in here will be identified as the reporting context. (e.g., when the bot encounters a command error, the bot will send the error information to the corresponding context)
+retired_clients = [] # 已退役的客户端及其数据迁移目标，格式为“<源客户端> -> <目标客户端>”（例：“QQ -> QQBot”）。只填写源客户端时表示不提供迁移。
 command_prefix = ["~", "～"] # Command prefix. The value entered here will be recognized as the command prefix.
 confirm_command = ["是", "对", "對", "yes", "Yes", "YES", "y", "Y"] # The keyword for the confirmation command. The value entered here will be recognized as the confirmation command.
-enable_module_invalid_prompt = false # Whether to enable the prompt message when the module does not exist.
 mention_required = false # Whether to force processing of only of messages that mention the bot at the beginning of the message.
 no_confirm = false # Whether to execute the command without the sender confirming the message.
 quick_confirm = true # Whether to enable quick confirmation of message.
 enable_analytics = true # Whether to enable built-in statistics features.
+enable_bind_auto = false # 是否开启“bind auto”命令以自动配对同一场景内的其他实例。
 enable_commit_url = true # Whether to show the commit URL when displaying version information.
 enable_dirty_check = false # Whether to enable text filtering detection, requires the AccessKey ID and AccessKey Secret of Alibaba Cloud Content Security Service.
 check_use_textscan_v1 = false # Whether to use Alibaba Cloud Content Security Text Scan 1.0 legacy API.
@@ -53,7 +54,7 @@ donate_url = "http://afdian.com/a/teahouse" # Donate URL.
 help_url = "https://bot.teahouse.team" # Help document URL.
 help_page_url = "https://bot.teahouse.team/wiki/${module}" # Module help document URL.
 issue_url = "https://github.com/Teahouse-Studios/bot/issues/new/choose" # Issue feedback URL.
-locale_url = "https://www.crowdin.com/project/akari-bot" # Localized project URL.
+locale_url = "https://hosted.weblate.org/engage/akaribot" # Localized project URL.
 
 [secret]
 # The secret config section. The bot will try to intercept if the values here accidentally appears in the message sent, but be careful to prevent leakage.

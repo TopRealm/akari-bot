@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.internal import Plain, Image, Url
+from core.builtins.message.internal import Plain, Image, Url, I18NContext
 from core.builtins.types import MessageElement
 from core.component import module
 from core.i18n import Locale
@@ -74,9 +74,9 @@ async def get_weekly(with_img=False, zh_tw=False):
     img_filename = re.match(r"/w/(.*)", img.attrs["href"]) if img else None
     page = re.findall(r"(?<=<b><a href=\").*?(?=\")", str(content))
     if page and page[0] == parse.quote("/w/玻璃"):
-        msg_list = MessageChain.assign([Plain(locale.t("weekly.message.expired"))])
+        msg_list = MessageChain.assign([I18NContext("weekly.message.expired")])
     else:
-        msg_list = MessageChain.assign([Plain(locale.t("weekly.message.prompt", text=text))])
+        msg_list = MessageChain.assign([I18NContext("weekly.message.prompt", text=text)])
     imglink = None
     if img_filename:
         get_image = await (WikiLib("https://zh.minecraft.wiki/")).parse_page_info(img_filename.group(1))
@@ -86,17 +86,18 @@ async def get_weekly(with_img=False, zh_tw=False):
     iso_year, iso_week, _ = date.today().isocalendar()
 
     msg_list.append(
-        Plain(
-            locale.t(
-                "weekly.message.link",
-                img=imglink if imglink else locale.t("message.none"),
-                article=str(Url(f"https://zh.minecraft.wiki{page[0]}") if page else locale.t("message.none")),
-                link=str(
-                    Url(
-                        f"https://zh.minecraft.wiki/w/Minecraft_Wiki:{parse.quote('特色条目/Minecraft/' + str(iso_year))}#{parse.quote('第' + str(iso_week) + '周')}"
-                    )
-                ),
-            )
+        I18NContext(
+            "weekly.message.link",
+            img=MessageChain.assign(Url(imglink)) if imglink else locale.t("message.none"),
+            article=MessageChain.assign(
+                Url(f"https://zh.minecraft.wiki{page[0]}", trusted=True) if page else locale.t("message.none")
+            ),
+            link=MessageChain.assign(
+                Url(
+                    f"https://zh.minecraft.wiki/w/Minecraft_Wiki:{parse.quote('特色条目/Minecraft/' + str(iso_year))}#{parse.quote('第' + str(iso_week) + '周')}",
+                    trusted=True,
+                )
+            ),
         )
     )
     if imglink and with_img:
@@ -136,7 +137,7 @@ wky = module("weekly", developers=["Dianliang233"], support_languages=["zh_cn", 
 @wky.command("{{I18N:weekly.help}}")
 async def _(msg: Bot.MessageSession):
     weekly = await get_weekly(
-        msg.session_info.client_name in ["QQ", "TEST"], zh_tw=msg.session_info.locale.locale == "zh_tw"
+        msg.session_info.client_name in ["QQ", "TEST", "QQBot"], zh_tw=msg.session_info.locale.locale == "zh_tw"
     )
     await msg.finish(weekly)
 
@@ -145,7 +146,7 @@ async def _(msg: Bot.MessageSession):
 async def _(msg: Bot.MessageSession):
     await msg.finish(
         await get_weekly_img(
-            msg.session_info.client_name in ["QQ", "TEST"], zh_tw=msg.session_info.locale.locale == "zh_tw"
+            msg.session_info.client_name in ["QQ", "TEST", "QQBot"], zh_tw=msg.session_info.locale.locale == "zh_tw"
         )
     )
 

@@ -10,6 +10,8 @@ import filetype
 
 import bots.discord.slash as slash_modules
 from bots.discord.client import discord_bot
+from bots.discord.buttons import set_action_text_submit_handler, set_button_click_handler
+from bots.discord.interactions import handle_action_text_submit, handle_button_click
 from bots.discord.context import DiscordContextManager, DiscordFetchedContextManager
 from bots.discord.info import *
 from bots.discord.slash_context import DiscordSlashContextManager
@@ -19,8 +21,8 @@ from core.builtins.message.internal import Plain, Image, Voice
 from core.builtins.session.info import SessionInfo
 from core.builtins.utils import command_prefix
 from core.client.init import client_init
-from core.config import Config
-from core.constants.default import ignored_sender_default
+from bots.discord.config import DiscordConfig, DiscordSecretConfig
+from core.config.base import CoreConfig
 from core.logger import Logger
 from core.utils.http import download
 
@@ -28,10 +30,20 @@ Bot.register_bot(client_name=client_name)
 
 ctx_id = Bot.register_context_manager(DiscordContextManager)
 Bot.register_context_manager(DiscordFetchedContextManager, fetch_session=True)
+set_button_click_handler(lambda interaction, button: handle_button_click(interaction, button, ctx_id))
+set_action_text_submit_handler(
+    lambda interaction, command, reference, origin_message: handle_action_text_submit(
+        interaction,
+        command,
+        reference,
+        origin_message,
+        ctx_id,
+    )
+)
 
-dc_token = Config("discord_token", cfg_type=str, secret=True, table_name="bot_discord")
-ignored_sender = Config("ignored_sender", ignored_sender_default)
-mention_required = Config("mention_required", False)
+dc_token = DiscordSecretConfig.discord_token
+ignored_sender = CoreConfig.ignored_sender
+mention_required = CoreConfig.mention_required
 
 
 count = 0
@@ -125,12 +137,14 @@ async def on_message(message: discord.Message):
         sender_id=sender_id,
         sender_name=message.author.name,
         target_from=target_from,
+        is_private=target_from == target_dm_channel_prefix,
         sender_from=sender_prefix,
         client_name=client_name,
         message_id=str(message.id),
         reply_id=str(reply_id),
         messages=msg_chain,
         ctx_slot=ctx_id,
+        bot_id=discord_bot.user.id,
     )
 
     await Bot.process_message(session, message)
@@ -152,14 +166,16 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         target_id=target_id,
         sender_id=sender_id,
         target_from=target_from,
+        is_private=target_from == target_dm_channel_prefix,
         sender_from=sender_prefix,
         client_name=client_name,
         reply_id=str(payload.message_id),
         messages=MessageChain.assign([Plain(payload.emoji.name)]),
         ctx_slot=ctx_id,
+        bot_id=discord_bot.user.id,
     )
     await Bot.process_message(session, payload)
 
 
-if Config("enable", False, table_name="bot_discord"):
+if DiscordConfig.enable:
     discord_bot.run(dc_token)

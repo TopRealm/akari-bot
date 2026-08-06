@@ -7,7 +7,7 @@ from langconv.language.zh import zh_cn
 
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.internal import I18NContext, Image, Plain
+from core.builtins.message.internal import ActionText, I18NContext, Image, Plain
 from core.constants.exceptions import ConfigValueError
 from core.constants.path import cache_path
 from core.logger import Logger
@@ -15,6 +15,7 @@ from core.utils.func import is_int
 from core.utils.http import download, get_url, post_url
 from .maimaidx_mapping import *
 from .maimaidx_music import get_cover_len5_id, Music, TotalList
+from core.config.base import CoreConfig
 
 total_list = TotalList()
 
@@ -40,7 +41,7 @@ async def update_cover() -> bool:
                 Logger.debug(f"Successfully download {id}.png")
             except Exception as e:
                 if str(e).startswith("404"):
-                    if Config("debug", False):
+                    if CoreConfig.debug:
                         Logger.error(f"Failed to download {id}.png")
                     continue
                 Logger.exception()
@@ -89,7 +90,14 @@ async def update_alias() -> bool:
 
 async def get_info(music: Music, details: str | MessageChain) -> MessageChain:
     info = MessageChain.assign(Plain(f"{music.id} - {music.title}{' (DX)' if music['type'] == 'DX' else ''}"))
-    cover_path = mai_cover_path / f"{music.id}.png"
+
+    cover_id = str(music.id)
+    if int(cover_id) > 100000:
+        cover_id = str(cover_id)[2:]
+        if music["type"] == "DX":
+            cover_id = "1" + str(cover_id)
+
+    cover_path = mai_cover_path / f"{cover_id}.png"
     if cover_path.exists():
         info.append(Image(cover_path))
     else:
@@ -106,7 +114,13 @@ async def get_info(music: Music, details: str | MessageChain) -> MessageChain:
 
 async def get_alias(msg: Bot.MessageSession, sid: str) -> list:
     if not mai_alias_path.exists():
-        await msg.finish(I18NContext("maimai.message.alias.file_not_found", prefix=msg.session_info.prefixes[0]))
+        await msg.finish(
+            I18NContext(
+                "maimai.message.alias.file_not_found",
+                prefix=msg.session_info.prefixes[0],
+                cmd=ActionText(f"{msg.session_info.prefixes[0]}maimai update"),
+            )
+        )
     with open(mai_alias_path, "rb") as file:
         data = orjson.loads(file.read())
 

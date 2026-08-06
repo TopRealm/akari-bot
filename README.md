@@ -16,7 +16,7 @@ _多功能、跨平台、可自由扩展的异步聊天机器人助手_
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/Teahouse-Studios/akari-bot)](https://github.com/Teahouse-Studios/akari-bot/pulls)
 [![GitHub releases](https://img.shields.io/github/v/release/Teahouse-Studios/akari-bot
 )](https://github.com/Teahouse-Studios/akari-bot/releases)
-[![Crowdin](https://badges.crowdin.net/akari-bot/localized.svg)](https://crowdin.com/project/akari-bot)
+[![Weblate translation](https://hosted.weblate.org/widget/akaribot/svg-badge.svg)](https://hosted.weblate.org/engage/akaribot/)
 ![GitHub Repo stars](https://img.shields.io/github/stars/Teahouse-Studios/akari-bot?style=social)
 <br>
 ![Python](https://img.shields.io/badge/Python-3.12+-blue)
@@ -40,17 +40,17 @@ _多功能、跨平台、可自由扩展的异步聊天机器人助手_
 茶馆工作室和问谛居共同提供小可的公共实例。
 
 #### QQ
-##### 官方机器人
+<!--##### 官方机器人-->
 <div align="left">
   <img width="200" src="./assets/qqbot_qr_guild.png" alt="guild qr">
   <img width="200" src="./assets/qqbot_qr_group.png" alt="group qr">
 </div>
-
+<!--
 ##### 第三方协议
 由于腾讯风控问题，请[在此提交](https://github.com/Teahouse-Studios/akari-bot/issues/new?assignees=OasisAkari&labels=New&template=add_new_group.yaml&title=%5BNEW%5D%3A+)入群申请。
+-->
 
 你也可以加入我们的 QQ 公共实例测试群：[738829671](https://qm.qq.com/q/Rmuo5ORYgq)
-
 #### Discord
 
 邀请链接：<https://discord.com/oauth2/authorize?client_id=879379218209861712&scope=bot&permissions=71605695277126>
@@ -73,11 +73,11 @@ _多功能、跨平台、可自由扩展的异步聊天机器人助手_
 
 若遇到问题，可以通过 [Issue](https://github.com/Teahouse-Studios/akari-bot/issues/new) 或其他方式咨询开发者。
 
+### 本地化
+本项目的本地化内容由 Weblate 托管，你可以前往[这里](https://hosted.weblate.org/engage/akaribot)参与翻译改进。
+
 ### 贡献
 如你想为我们做出贡献，可以看看[这里](/CONTRIBUTING.md)。
-
-## Star 历史
-[![Star Chart](https://starchart.cc/Teahouse-Studios/akari-bot.svg?variant=adaptive)](https://starchart.cc/Teahouse-Studios/akari-bot)
 
 ## 相关项目
 - [`AkariBot I18N`](https://github.com/Teahouse-Studios/akari-bot-i18n)

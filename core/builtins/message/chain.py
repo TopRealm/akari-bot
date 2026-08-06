@@ -13,8 +13,8 @@ import random
 import re
 from attrs import define
 from copy import deepcopy
-from typing import Any, TYPE_CHECKING, TypeVar
-from urllib.parse import urlparse
+from typing import Any, TYPE_CHECKING
+from urllib.parse import unquote, urlparse
 
 import orjson
 
@@ -30,9 +30,10 @@ from core.builtins.message.elements import (
     ImageElement,
     VoiceElement,
     MentionElement,
+    ActionTextElement,
 )
 from core.constants import Secret, default_locale
-from core.exports import add_export, exports
+from core.exports import add_export
 from core.i18n import Locale
 from core.joke import shuffle_joke as joke
 from core.logger import Logger
@@ -58,6 +59,14 @@ class MessageChain:
 
     # 消息元素列表
     values: list[MessageElement]
+
+    @classmethod
+    def create(cls):
+        """
+        创建一个空的消息链实例。
+        """
+
+        return cls(values=[])
 
     @classmethod
     def assign(
@@ -105,16 +114,17 @@ class MessageChain:
             elements = [elements]
 
         # ========== 步骤 4: 处理字典输入 ==========
-        # 如果是字典，从字典中提取元素并进行结构化处理
+        # 单个字典即 to_list() 产出的一个元素（含 _type 判别键），整体还原为消息元素
         if isinstance(elements, dict):
-            for key in elements:
-                elements = converter.structure(elements[key], MessageElement)
+            elements = [converter.structure(elements, MessageElement)]
 
         # ========== 步骤 5: 处理列表或元组输入 ==========
         # 逐个处理元素，根据类型进行相应的转换
         if isinstance(elements, (list, tuple)):
             for e in elements:
                 # 字符串转换为 PlainElement（忽略空字符串）
+                if e is None:
+                    continue
                 if isinstance(e, str) and e:
                     values.append(PlainElement.assign(e))
                 # 字典中的元素进行结构化处理
@@ -213,7 +223,12 @@ class MessageChain:
         # 所有检查通过，消息链安全
         return True
 
-    def as_sendable(self, session_info: SessionInfo | MessageSession = None, parse_message: bool = True) -> list:
+    def as_sendable(
+        self,
+        session_info: SessionInfo | MessageSession | None = None,
+        parse_message: bool = True,
+        disable_markdown=False,
+    ) -> ConvertedMessageChain:
         """
         将消息链转换为可发送的格式。
 
@@ -226,6 +241,7 @@ class MessageChain:
 
         :param session_info: 会话信息，用于本地化和平台特定的处理
         :param parse_message: 是否解析消息中的特殊格式（如 KE 码、多语言标记等）
+        :param disable_markdown: 是否禁用 markdown 格式转换
         :return: 可发送的消息元素列表
 
         示例：
@@ -239,8 +255,9 @@ class MessageChain:
 
         # ========== 检查平台是否支持 Embed 消息 ==========
         if session_info:
-            if isinstance(session_info, exports.get("MessageSession")):
-                session_info = session_info.session_info
+            # 传入 MessageSession 时取出其 session_info；SessionInfo 自身没有该属性，原样返回。
+            # 不经 exports 判类型，以免受注册时机影响。
+            session_info = getattr(session_info, "session_info", session_info)
 
             support_embed = session_info.support_embed
 
@@ -263,12 +280,31 @@ class MessageChain:
                             x.text = session_info.locale.t_str(x.text)
                             # 解析 KE 码格式的消息
                             element_chain = match_kecode(x.text, x.disable_joke)
+                            # 指令操作是行内元素：它自身的产物、以及紧随其后的纯文本，
+                            # 都须并入上一行，否则同出一个字符串的一句话会被平台的
+                            # 换行拼接拆成数行。其余元素照旧各自追加，以免破坏
+                            # MessageChain([Plain("a"), Plain("b")]) 经 KE 码往返后
+                            # 仍应是两个元素的既有约定。
+                            inline_pending = False
                             # 递归处理解析出的元素
                             for elem in element_chain.values:
-                                elem = MessageChain.assign(elem).as_sendable(session_info, parse_message=False)
-                                if isinstance(elem, PlainElement):
-                                    elem.text = session_info.locale.t_str(elem.text)
-                                value += elem
+                                elem_ = (
+                                    MessageChain.assign(elem)
+                                    .as_sendable(session_info, parse_message=False, disable_markdown=disable_markdown)
+                                    .values
+                                )
+                                is_action_text = isinstance(elem, ActionTextElement)
+                                for el in elem_:
+                                    # 该赋值原本假定 elem 是纯文本元素，指令操作降级后
+                                    # elem_ 中也会出现纯文本，不加判定会把元素改写为字符串
+                                    if isinstance(el, PlainElement) and isinstance(elem, PlainElement):
+                                        elem.text = session_info.locale.t_str(el.text)
+                                for el in elem_:
+                                    if (is_action_text or inline_pending) and isinstance(el, PlainElement):
+                                        _append_inline(value, el)
+                                    else:
+                                        value.append(el)
+                                inline_pending = is_action_text
                             continue
                     else:
                         # 空文本，使用默认错误消息
@@ -302,21 +338,49 @@ class MessageChain:
                     if isinstance(v, MessageChain):
                         # 传入 i18n 模块后 MessageChain 会被 Template.safe_substitute 强制转义为字符串... 思考了很久怎么处理比较好，决定暂时用 kecode 处理
                         x.kwargs[k] = v.to_kecode()
+                    if isinstance(v, ActionTextElement):
+                        # 同上，参数值会被强制转为字符串。此处先解析内层再转 KE 码，
+                        # 交由随后对翻译结果的再次转换经 match_kecode() 还原为元素
+                        x.kwargs[k] = v.resolve(session_info).kecode()
 
                 # 执行多语言翻译
                 t_value = locale.t(x.key, x.fallback, x.locale_failed_prompt, **x.kwargs)
-                value += MessageChain.assign(t_value).as_sendable(session_info)
+                value += (
+                    MessageChain.assign(t_value).as_sendable(session_info, disable_markdown=disable_markdown).values
+                )
 
             # ========== 处理 URL 元素 ==========
             elif isinstance(x, URLElement):
+                # 链接须按未认证处理的两种来源：模块显式标记为不可信，或未表态而会话启用了 URLManager
+                needs_guard = bool(
+                    session_info and x.trusted is not True and (x.trusted is False or session_info.use_url_manager)
+                )
+                if needs_guard and session_info.support_markdown and not disable_markdown:
+                    title = session_info.locale.t("message.url.untrusted")
+                    value.append(PlainElement.assign(f"```{title}\n{x.original_url}\n```", disable_joke=True))
+                    continue
+
                 # 应用 URL 跳板（如果需要）
-                if session_info and (session_info.use_url_manager and x.applied_mm is None):
-                    x = URLElement.assign(x.url, use_mm=True, md_format_name=x.md_format_name)
+                if session_info and x.trusted is None and session_info.use_url_manager:
+                    x = URLElement.assign(x.url, trusted=False, md_format_name=x.md_format_name)
                 # 应用 Markdown 格式（如果需要）
-                if session_info and session_info.use_url_md_format and not x.applied_md_format:
+                if (
+                    session_info
+                    and (session_info.use_url_md_format and not x.applied_md_format)
+                    and not disable_markdown
+                ):
                     x = URLElement.assign(x.url, md_format=True, md_format_name=x.md_format_name)
 
                 value.append(PlainElement.assign(x.url, disable_joke=True))
+
+            # ========== 处理指令操作元素 ==========
+            elif isinstance(x, ActionTextElement):
+                # 内层的多语言元素只有在此处才能确定会话语言，故转换阶段一次性解析
+                x = x.resolve(session_info)
+                if session_info and session_info.support_action_text and not disable_markdown and x.text.text:
+                    value.append(x)
+                else:
+                    _append_inline(value, x.to_plain(session_info))
 
             # ========== 其他元素类型 ==========
             else:
@@ -332,7 +396,7 @@ class MessageChain:
             if isinstance(x, PlainElement) and not x.disable_joke:
                 x.text = joke(x.text)
 
-        return value
+        return ConvertedMessageChain.assign(value)
 
     def to_str(
         self, text_only=True, element_filter: tuple[MessageElement, ...] | None = None, connector: str = "\n"
@@ -340,7 +404,7 @@ class MessageChain:
         """
         将消息链转换为字符串。
 
-        将消息链中的元素转换为纯文本字符串，可用于日志记录、文本输出等场景。
+        将消息链中的元素转换为纯文本字符串，可用于日志记录、文本输出等用途。
 
         :param text_only: 是否仅转换文本元素为字符串，默认为 True
                          True: 只包含 PlainElement 的文本内容
@@ -390,7 +454,7 @@ class MessageChain:
             [{'_type': 'PlainElement', 'text': 'Hello', 'disable_joke': False}]
         ```
         """
-        return [converter.unstructure(x, MessageElement) for x in self.values]
+        return [converter.unstructure(x, MessageElement) for x in self.values if x is not None]
 
     def to_kecode(self) -> str:
         _t = ""
@@ -414,15 +478,33 @@ class MessageChain:
             > chain = MessageChain.from_list(data)
         ```
         """
-        converted = []
-        for x in lst:
-            for elem in x:
-                converted.append(converter.structure(elem, MessageElement))
+        # 列表中每一项都是一个完整的元素字典，须整体交给 converter 还原，
+        # 逐键遍历只会把键名当作元素传入
+        converted = [converter.structure(x, MessageElement) for x in lst]
         return deepcopy(cls(converted))
+
+    @staticmethod
+    def _normalize(element):
+        """
+        将单个入参归一化为消息元素。
+
+        :param element: 待归一化的对象。
+        :return: 对应的消息元素；空字符串与 None 返回 None，由调用方跳过。
+        """
+        if element is None:
+            return None
+        if isinstance(element, str):
+            return PlainElement.assign(element) if element else None
+        if isinstance(element, BaseElement):
+            return element
+        Logger.error(f"Unexpected message type: {element}")
+        return None
 
     def append(self, element):
         """
         添加一个消息元素到消息链末尾。
+
+        入参为字符串时转作文本元素，空字符串与 None 一律跳过。
 
         :param element: 要添加的消息元素
 
@@ -432,7 +514,9 @@ class MessageChain:
             > chain.append(PlainElement.assign("World"))
         ```
         """
-        self.values.append(element)
+        normalized = self._normalize(element)
+        if normalized is not None:
+            self.values.append(normalized)
 
     def remove(self, element):
         """
@@ -453,6 +537,8 @@ class MessageChain:
         """
         在指定位置插入一个消息元素。
 
+        入参为字符串时转作文本元素，空字符串与 None 一律跳过。
+
         :param index: 插入位置的索引
         :param element: 要插入的消息元素
 
@@ -462,7 +548,9 @@ class MessageChain:
             > chain.insert(0, PlainElement.assign("Hello"))
         ```
         """
-        self.values.insert(index, element)
+        normalized = self._normalize(element)
+        if normalized is not None:
+            self.values.insert(index, normalized)
 
     def copy(self):
         """
@@ -479,6 +567,15 @@ class MessageChain:
         ```
         """
         return MessageChain.assign(self.values.copy())
+
+    def contains(self, types: type[MessageElement] | tuple[MessageElement]) -> bool:
+        return any(isinstance(x, types) for x in self.values)
+
+    def only(self, types: type[MessageElement] | tuple[MessageElement]) -> bool:
+        return all(isinstance(x, types) for x in self.values)
+
+    def extend(self, other: MessageChain):
+        return self.__iadd__(other)
 
     def __str__(self):
         """返回消息链的字符串表示（用于调试）"""
@@ -506,6 +603,8 @@ class MessageChain:
             return MessageChain.assign(self.values + other.values)
         if isinstance(other, list):
             return MessageChain.assign(self.values + other)
+        if isinstance(other, MessageElement):
+            return MessageChain.assign(self.values + [other])
         raise TypeError(f'Unsupported operand type(s) for +: "MessageChain" and "{type(other).__name__}"')
 
     def __radd__(self, other):
@@ -520,6 +619,8 @@ class MessageChain:
             return MessageChain.assign(other.values + self.values)
         if isinstance(other, list):
             return MessageChain.assign(other + self.values)
+        if isinstance(other, MessageElement):
+            return MessageChain.assign(self.values + [other])
         raise TypeError(f'Unsupported operand type(s) for +: "{type(other).__name__}" and "MessageChain"')
 
     def __iadd__(self, other):
@@ -535,10 +636,23 @@ class MessageChain:
         if isinstance(other, MessageChain):
             self.values += other.values
         elif isinstance(other, list):
-            self.values += other
+            # 列表中的裸字符串一并归一化，与 assign() 的行为保持一致
+            self.values += [e for e in (self._normalize(x) for x in other) if e is not None]
+        elif isinstance(other, MessageElement):
+            self.values += [other]
         else:
             raise TypeError(f'Unsupported operand type(s) for +=: "MessageChain" and "{type(other).__name__}"')
         return self
+
+    def __contains__(self, item):
+        for x in self.values:
+            if isinstance(x, item):
+                return True
+        return False
+
+
+class ConvertedMessageChain(MessageChain):
+    pass
 
 
 @define
@@ -724,20 +838,22 @@ class MessageNodes:
         return all(chain.is_safe for chain in self.values)
 
 
-Chainable = TypeVar(
-    "Chainable",
-    MessageChain,
-    I18NMessageChain,
-    PlatformMessageChain,
-    str,
-    list[str],
-    list[MessageElement],
-    MessageElement,
-    MessageNodes,
+# 可作为消息发送的入参类型。仅用于约束参数，不存在输入与输出的类型绑定，
+# 故取联合类型而非 TypeVar：后者是取值受限的类型变量，会拒绝 MessageChain | MessageNodes
+# 这类联合，使 get_message_chain() 的结果无法回传给 send_message()。
+Chainable = (
+    MessageChain
+    | I18NMessageChain
+    | PlatformMessageChain
+    | str
+    | list[str]
+    | list[MessageElement]
+    | MessageElement
+    | MessageNodes
 )
 
 
-def get_message_chain(session: SessionInfo, chain: Chainable) -> MessageChain:
+def get_message_chain(session: SessionInfo, chain: Chainable) -> MessageChain | MessageNodes:
     """
     根据会话信息获取合适的消息链。
 
@@ -751,7 +867,7 @@ def get_message_chain(session: SessionInfo, chain: Chainable) -> MessageChain:
 
     :param session: 会话信息，包含平台、语言等配置
     :param chain: 可链接的消息对象（支持多种类型）
-    :return: 处理后的 MessageChain 实例
+    :return: 处理后的 MessageChain 实例；传入合并转发消息时原样返回 MessageNodes
     :raises TypeError: 如果传入不支持的链类型
 
     示例：
@@ -763,29 +879,32 @@ def get_message_chain(session: SessionInfo, chain: Chainable) -> MessageChain:
         > result = get_message_chain(session, platform_chain)
     ```
     """
+    # 本函数的职责即是把多种入参归一化，过程中类型会逐步收敛，故以 Any 承接
+    resolved: Any = chain
+
     # ========== 处理平台消息链 ==========
-    if isinstance(chain, PlatformMessageChain):
+    if isinstance(resolved, PlatformMessageChain):
         # 根据会话的平台选择对应的消息链，如果没有则使用默认
-        chain = chain.values.get(session.target_from, chain.values.get("default", MessageChain.assign("")))
+        resolved = resolved.values.get(session.target_from, resolved.values.get("default", MessageChain.assign("")))
 
     # ========== 处理多语言消息链 ==========
-    if isinstance(chain, I18NMessageChain):
+    if isinstance(resolved, I18NMessageChain):
         # 根据会话的语言设置选择对应的消息链，如果没有则使用默认
-        chain = chain.values.get(session.locale.locale, chain.values.get("default", MessageChain.assign("")))
+        resolved = resolved.values.get(session.locale.locale, resolved.values.get("default", MessageChain.assign("")))
 
     # ========== 处理基本类型 ==========
-    if isinstance(chain, (str, list, MessageElement)):
+    if isinstance(resolved, (str, list, MessageElement)):
         # 字符串、列表或单个元素，转换为消息链
-        chain = MessageChain.assign(chain)
+        resolved = MessageChain.assign(resolved)
 
     # ========== 验证最终类型 ==========
-    if isinstance(chain, (MessageChain, MessageNodes)):
-        return chain
+    if isinstance(resolved, (MessageChain, MessageNodes)):
+        return resolved
 
     # 不支持的类型，抛出异常
     raise TypeError(
         f"Unsupported chain type: {
-            type(chain).__name__
+            type(resolved).__name__
         }, expected MessageChain, MessageNodes, I18NMessageChain, or PlatformMessageChain."
     )
 
@@ -847,6 +966,23 @@ def _extract_kecode_blocks(text):
     return result
 
 
+def _append_inline(value: list, element: PlainElement) -> None:
+    """
+    将纯文本元素并入上一个纯文本元素，保持行内语义。
+
+    平台适配器多以换行拼接消息链中的各个元素，若不合并，一句话中的行内元素
+    会被拆到下一行。需要换行时，在前一个纯文本元素的末尾显式写入换行符即可，
+    与普通文本的行为一致。
+
+    :param value: 已转换的元素列表，就地修改。
+    :param element: 待并入的纯文本元素。
+    """
+    if value and isinstance(value[-1], PlainElement):
+        value[-1].text += element.text
+    else:
+        value.append(element)
+
+
 def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
     """
     解析 KE 码格式的文本并转换为消息链。
@@ -860,6 +996,7 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
     - `[KE:voice,path=...]`: 语音
     - `[KE:i18n,i18nkey=...,param1=val1,...]`: 多语言文本
     - `[KE:mention,userid=...]`: 提及用户
+    - `[KE:action_text,text=...,show=...,reference=0]`: 指令操作
 
     :param text: 包含 KE 码的文本字符串
     :param disable_joke: 是否禁用玩笑功能（默认为 False）
@@ -932,7 +1069,9 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
 
             # ========= 纯文本 =========
             if element_type == "plain":
-                text_value = parsed_params.get("text", "")
+                # 写入侧已 urlencode，此处解码还原。手写的 KE 码不含百分号转义时，
+                # 解码为恒等变换，故不影响既有的手写用法
+                text_value = unquote(parsed_params.get("text", ""))
 
                 local_disable_joke = convert_bool(parsed_params.get("disable_joke"), disable_joke)
 
@@ -962,12 +1101,7 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
                 path = parsed_params.get("path")
 
                 if path:
-                    parse_url = urlparse(path)
-
-                    if parse_url[0] == "file" or url_pattern.match(parse_url[1]):
-                        elements.append(VoiceElement.assign(path))
-                    else:
-                        elements.append(VoiceElement.assign(path))
+                    elements.append(VoiceElement.assign(path))
 
             # ========= 多语言 =========
             elif element_type == "i18n":
@@ -999,6 +1133,31 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
 
                 if userid:
                     elements.append(MentionElement.assign(userid))
+            elif element_type == "url":
+                # 不复用形参 text：覆写会污染其后各块的解析
+                url_value = parsed_params.get("text")
+
+                if url_value:
+                    trusted_param = parsed_params.get("trusted")
+                    trusted = None if trusted_param is None else trusted_param == "1"
+                    elements.append(URLElement.assign(unquote(url_value), trusted=trusted))
+
+            # ========= 指令操作 =========
+            elif element_type == "action_text":
+                action_text_value = parsed_params.get("text")
+
+                if action_text_value:
+                    action_show_value = parsed_params.get("show")
+
+                    elements.append(
+                        ActionTextElement.assign(
+                            unquote(action_text_value),
+                            unquote(action_show_value) if action_show_value is not None else None,
+                            convert_bool(parsed_params.get("reference"), False),
+                            convert_bool(parsed_params.get("show_on_fallback"), True),
+                            convert_bool(parsed_params.get("quote_on_fallback"), False),
+                        )
+                    )
 
         except Exception:
             elements.append(PlainElement.assign(e, disable_joke=disable_joke))

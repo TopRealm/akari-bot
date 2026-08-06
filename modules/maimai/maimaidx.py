@@ -1,3 +1,4 @@
+from core.builtins.message.internal import ActionText
 from core.builtins.message.internal import Image as BImage
 from core.component import module
 from core.logger import Logger
@@ -28,7 +29,7 @@ mai = module(
     "base <constant> [<constant_max>] [-p <page>] {{I18N:maimai.help.base}}",
     options_desc={"-p": "{I18N:maimai.help.option.p}"},
 )
-async def _(msg: Bot.MessageSession, constant: float, constant_max: float = None):
+async def _(msg: Bot.MessageSession, constant: float, constant_max: float | None = None):
     result_set = []
     if constant <= 0:
         await msg.finish(I18NContext("maimai.message.level_invalid"))
@@ -252,7 +253,11 @@ async def _(msg: Bot.MessageSession, id_or_alias: str):
                         Plain(f"{s.get('id', '')} - {s.get('title', '')}{' (DX)' if s.get('type') == 'DX' else ''}")
                     )
             msg_chain.append(
-                I18NContext("maimai.message.disambiguation.chart.prompt", prefix=msg.session_info.prefixes[0])
+                I18NContext(
+                    "maimai.message.disambiguation.chart.prompt",
+                    prefix=msg.session_info.prefixes[0],
+                    cmd=ActionText(f"{msg.session_info.prefixes[0]}maimai chart "),
+                )
             )
             await msg.finish(msg_chain)
         else:
@@ -377,7 +382,11 @@ async def _(msg: Bot.MessageSession, id_or_alias: str):
                         Plain(f"{s.get('id', '')} - {s.get('title', '')}{' (DX)' if s.get('type') == 'DX' else ''}")
                     )
             msg_chain.append(
-                I18NContext("maimai.message.disambiguation.song.prompt", prefix=msg.session_info.prefixes[0])
+                I18NContext(
+                    "maimai.message.disambiguation.song.prompt",
+                    prefix=msg.session_info.prefixes[0],
+                    cmd=ActionText(f"{msg.session_info.prefixes[0]}maimai song "),
+                )
             )
             await msg.finish(msg_chain)
         else:
@@ -421,7 +430,7 @@ async def _(msg: Bot.MessageSession, id_or_alias: str):
 
 
 @mai.command("random <diff+level> [<dx_type>] {{I18N:maimai.help.random.filter}}")
-async def _(msg: Bot.MessageSession, dx_type: str = None):
+async def _(msg: Bot.MessageSession, dx_type: str | None = None):
     condit = msg.parsed_msg["<diff+level>"]
     level = ""
     diff = ""
@@ -484,7 +493,11 @@ async def _(msg: Bot.MessageSession, id_or_alias: str, diff: str):
                         Plain(f"{s.get('id', '')} - {s.get('title', '')}{' (DX)' if s.get('type') == 'DX' else ''}")
                     )
             msg_chain.append(
-                I18NContext("maimai.message.disambiguation.scoreline.prompt", prefix=msg.session_info.prefixes[0])
+                I18NContext(
+                    "maimai.message.disambiguation.scoreline.prompt",
+                    prefix=msg.session_info.prefixes[0],
+                    cmd=ActionText(f"{msg.session_info.prefixes[0]}maimai scoreline "),
+                )
             )
             await msg.finish(msg_chain)
         else:
@@ -536,13 +549,13 @@ async def _(msg: Bot.MessageSession, base: float, score: float):
 @mai.command("bind <username> {{I18N:maimai.help.bind.lx}}")
 async def _(msg: Bot.MessageSession, username: str):
     if await get_record(msg, {"username": username}, use_cache=False):
-        await DivingProberBindInfo.set_bind_info(sender_id=msg.session_info.sender_id, username=username)
+        await DivingProberBindInfo.set_bind_info(union_id=msg.session_info.sender_union_id, username=username)
         await msg.finish(str(I18NContext("maimai.message.bind.success")) + username)
 
 
 @mai.command("unbind {{I18N:maimai.help.unbind}}")
 async def _(msg: Bot.MessageSession):
-    await DivingProberBindInfo.remove_bind_info(sender_id=msg.session_info.sender_id)
+    await DivingProberBindInfo.remove_bind_info(union_id=msg.session_info.sender_union_id)
     await msg.finish(I18NContext("maimai.message.unbind.success"))
 
 
@@ -576,7 +589,11 @@ async def query_song_score(msg, query):
                         Plain(f"{s.get('id', '')} - {s.get('title', '')}{' (DX)' if s.get('type') == 'DX' else ''}")
                     )
             msg_chain.append(
-                I18NContext("maimai.message.disambiguation.score.prompt", prefix=msg.session_info.prefixes[0])
+                I18NContext(
+                    "maimai.message.disambiguation.score.prompt",
+                    prefix=msg.session_info.prefixes[0],
+                    cmd=ActionText(f"{msg.session_info.prefixes[0]}maimai score "),
+                )
             )
             await msg.finish(msg_chain)
         else:

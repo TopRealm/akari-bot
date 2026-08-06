@@ -4,20 +4,32 @@ from datetime import datetime, timedelta
 import discord
 from discord import Message
 
+from bots.discord.buttons import build_discord_button_view
 from bots.discord.client import discord_bot
-from bots.discord.features import Features
-from bots.discord.info import client_name, target_channel_prefix
-from bots.discord.utils import get_channel_id, get_sender_id, convert_embed
-from core.builtins.message.chain import MessageChain, MessageNodes, match_atcode
-from core.builtins.message.elements import PlainElement, ImageElement, VoiceElement, MentionElement, EmbedElement
+from bots.discord.features import features as discord_features
+from bots.discord.info import target_channel_prefix, target_dm_channel_prefix
+from bots.discord.message_builder import build_discord_payloads, execute_discord_payloads
+from bots.discord.utils import get_channel_id, get_sender_id
+from core.builtins.message.chain import MessageChain, MessageNodes
 from core.builtins.session.context import ContextManager
+from core.builtins.session.features import Features
 from core.builtins.session.info import SessionInfo
 from core.logger import Logger
+from core.utils.button_runtime import get_session_button_data
+
+
+def resolve_discord_reference(ctx, quote: bool):
+    """取得 Discord 普通消息或交互所引用的平台消息。"""
+    if not quote or ctx is None:
+        return None
+    if isinstance(ctx, Message):
+        return ctx
+    return getattr(ctx, "message", None)
 
 
 class DiscordContextManager(ContextManager):
-    context: dict[str, Message] = {}
-    features: Features | None = Features()
+    context: dict[str, Message | discord.Interaction] = {}
+    features: Features = discord_features
 
     @classmethod
     async def check_native_permission(cls, session_info: SessionInfo) -> bool:
@@ -25,7 +37,7 @@ class DiscordContextManager(ContextManager):
         #     raise ValueError("Session not found in context")
         # 这里可以添加权限检查的逻辑
 
-        ctx: Message = cls.context.get(session_info.session_id)
+        ctx: Message | discord.Interaction | None = cls.context.get(session_info.session_id)
 
         Logger.debug(f"Checking permissions for session: {session_info.session_id}")
 
@@ -34,7 +46,7 @@ class DiscordContextManager(ContextManager):
             author = await channel.guild.fetch_member(int(get_sender_id(session_info)))
         else:
             channel = ctx.channel
-            author = ctx.author
+            author = ctx.user if hasattr(ctx, "user") else ctx.author
         try:
             if channel.permissions_for(author).administrator or isinstance(channel, discord.DMChannel):
                 return True
@@ -54,7 +66,7 @@ class DiscordContextManager(ContextManager):
 
         # if session_info.session_id not in cls.context:
         #     raise ValueError("Session not found in context")
-        ctx: Message = cls.context.get(session_info.session_id)
+        ctx: Message | discord.Interaction | None = cls.context.get(session_info.session_id)
         if ctx:
             channel = ctx.channel
         else:
@@ -62,51 +74,56 @@ class DiscordContextManager(ContextManager):
 
         if isinstance(message, MessageNodes):
             Logger.error("This session does not support message nodes, check if bug exists.")
+            return []
 
-        msg_ids = []
-        for x in message.as_sendable(session_info, parse_message=enable_parse_message):
-            if isinstance(x, PlainElement):
-                if enable_parse_message:
-                    x.text = match_atcode(x.text, client_name, "<@{uid}>")
-                send_ = await channel.send(
-                    x.text,
-                    reference=(ctx if quote and not msg_ids and ctx else None),
-                )
-                Logger.info(f"[Bot] -> [{session_info.target_id}]: {x.text}")
-                msg_ids.append(str(send_.id))
-            elif isinstance(x, ImageElement):
-                send_ = await channel.send(
-                    file=discord.File(await x.get()),
-                    reference=(ctx if quote and not msg_ids and ctx else None),
-                )
-                Logger.info(f"[Bot] -> [{session_info.target_id}]: Image: {str(x)}")
-                msg_ids.append(str(send_.id))
-            elif isinstance(x, VoiceElement):
-                send_ = await channel.send(
-                    file=discord.File(x.path),
-                    reference=(ctx if quote and not msg_ids and ctx else None),
-                )
-                Logger.info(f"[Bot] -> [{session_info.target_id}]: Voice: {str(x)}")
-                msg_ids.append(str(send_.id))
-            elif isinstance(x, MentionElement):
-                if x.client == client_name and session_info.target_from == target_channel_prefix:
-                    send_ = await channel.send(
-                        f"<@{x.id}>",
-                        reference=(ctx if quote and not msg_ids and ctx else None),
-                    )
-                    Logger.info(f"[Bot] -> [{session_info.target_id}]: Mention: {x.client}|{str(x.id)}")
-                    msg_ids.append(str(send_.id))
-            elif isinstance(x, EmbedElement):
-                em, files = await convert_embed(x, session_info)
-                send_ = await channel.send(
-                    embed=em,
-                    reference=(ctx if quote and not msg_ids and ctx else None),
-                    files=files,
-                )
-                Logger.info(f"[Bot] -> [{session_info.target_id}]: Embed: {str(x)}")
-                msg_ids.append(str(send_.id))
+        payloads = await build_discord_payloads(session_info, message, enable_parse_message)
+        action_texts = payloads[-1].action_texts if payloads else []
+        button_data = get_session_button_data(session_info)
+        view = build_discord_button_view(
+            button_data,
+            session_info.sender_id,
+            action_texts=action_texts,
+            modal_title=session_info.locale.t("message.action_text.modal.title"),
+            input_label=session_info.locale.t("message.action_text.modal.input"),
+            select_placeholder=session_info.locale.t("message.action_text.select"),
+        )
+        reference = resolve_discord_reference(ctx, quote)
+        sent_messages = await execute_discord_payloads(channel, payloads, reference=reference, view=view)
+        for sent in sent_messages:
+            Logger.info(f"[Bot] -> [{session_info.target_id}]: Aggregated Discord message {sent.id}")
+        return [str(sent.id) for sent in sent_messages]
 
-        return msg_ids
+    @classmethod
+    async def send_private_msg(
+        cls,
+        session_info: SessionInfo,
+        user_id: str,
+        message: MessageChain | MessageNodes,
+        enable_parse_message: bool = True,
+        enable_split_image: bool = True,
+    ) -> list[str]:
+        uid = user_id.split("|")[-1]
+        if not uid.isdigit():
+            Logger.warning(f"Invalid user id {user_id}, cannot send private message.")
+            return []
+
+        try:
+            user = await discord_bot.fetch_user(int(uid))
+            # 私信频道须先建立才具有 ID，对方关闭私信时 create_dm 会抛出 Forbidden
+            dm_channel = user.dm_channel or await user.create_dm()
+            # 显式指定基类：Slash 子类只能回应交互，无法向任意频道发送消息
+            return await DiscordContextManager.send_message(
+                cls.derive_private_session(
+                    session_info, f"{target_dm_channel_prefix}|{dm_channel.id}", target_dm_channel_prefix
+                ),
+                message,
+                quote=False,
+                enable_parse_message=enable_parse_message,
+                enable_split_image=enable_split_image,
+            )
+        except Exception:
+            Logger.exception(f"Failed to send private message to {user_id}: ")
+            return []
 
     @classmethod
     async def delete_message(
@@ -125,7 +142,7 @@ class DiscordContextManager(ContextManager):
                 channel = await discord_bot.fetch_channel(int(get_channel_id(session_info)))
                 message = await channel.fetch_message(int(msg_id))
                 if message:
-                    await message.support_delete(reason=reason)
+                    await message.delete(reason=reason)
                     Logger.info(f"Deleted message {msg_id} in session {session_info.session_id}")
             except discord.NotFound:
                 Logger.warning(f"Message {msg_id} not found in session {session_info.session_id}")
@@ -281,12 +298,13 @@ class DiscordContextManager(ContextManager):
             ctx = cls.context[session_info.session_id]
             if ctx:
                 async with ctx.channel.typing():
+                    # session_info.tmp["session_typed"] = 'y'
                     Logger.debug(f"Start typing in session: {session_info.session_id}")
                     # 这里可以添加开始输入状态的逻辑
-                    flag = asyncio.Event()
-                    cls.typing_flags[session_info.session_id] = flag
-                    await flag.wait()
-                    del cls.typing_flags[session_info.session_id]
+                    # flag = asyncio.Event()
+                    # cls.typing_flags[session_info.session_id] = flag
+                    # await flag.wait()
+                    # del cls.typing_flags[session_info.session_id]
 
             # 这里可以添加开始输入状态的逻辑
 
@@ -297,7 +315,7 @@ class DiscordContextManager(ContextManager):
         # if session_info.session_id not in cls.context:
         #     raise ValueError("Session not found in context")
         if session_info.session_id in cls.typing_flags:
-            cls.typing_flags[session_info.session_id].set()
+            # cls.typing_flags[session_info.session_id].set()
             # 这里可以添加结束输入状态的逻辑
             Logger.debug(f"End typing in session: {session_info.session_id}")
 

@@ -20,6 +20,7 @@ async def test_version(tester: Tester):
 async def test_help(tester: Tester):
     """help 命令测试"""
     await tester.integrate("~help", Contains("基础模块"), "help 应显示基础模块列表")
+    await tester.integrate("~help help", Contains("--image"), "help 帮助应展示强制图片选项")
     await tester.integrate("~help version", Contains("version"), "help version 应显示版本帮助")
     await tester.integrate("~help version", Contains("版本号"), "help version 应包含版本号描述")
 
@@ -93,6 +94,9 @@ async def test_whoami(tester: Tester):
     """whoami 命令测试"""
     await tester.integrate("~whoami", Contains("ID"), "whoami 应显示用户 ID")
     await tester.integrate("~whoami", Contains("TEST|0"), "whoami 应显示 TEST|0")
+    await tester.integrate("~whoami", Contains("账号组"), "whoami 应显示所属账号组")
+    await tester.integrate("~whoami", Contains("场景组"), "whoami 应显示所属场景组")
+    await tester.integrate("~whoami", Contains("TEST|Console|0"), "whoami 应列出场景组内已绑定的场景")
 
     return tester
 
