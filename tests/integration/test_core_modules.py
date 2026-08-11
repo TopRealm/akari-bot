@@ -94,7 +94,7 @@ async def test_whoami(tester: Tester):
     """whoami 命令测试"""
     await tester.integrate("~whoami", Contains("ID"), "whoami 应显示用户 ID")
     await tester.integrate("~whoami", Contains("TEST|0"), "whoami 应显示 TEST|0")
-    await tester.integrate("~whoami", Contains("账号组"), "whoami 应显示所属账号组")
+    await tester.integrate("~whoami", Contains("用户组"), "whoami 应显示所属用户组")
     await tester.integrate("~whoami", Contains("场景组"), "whoami 应显示所属场景组")
     await tester.integrate("~whoami", Contains("TEST|Console|0"), "whoami 应列出场景组内已绑定的场景")
 
@@ -105,6 +105,7 @@ async def test_whoami(tester: Tester):
 async def test_locale(tester: Tester):
     """locale 命令测试"""
     await tester.integrate("~locale", Contains("语言"), "locale 应显示语言信息")
+    await tester.integrate("~locale", Contains("支持的语言列表"), "locale 应显示语言列表标题")
     await tester.integrate("~locale", Contains("简体中文"), "locale 应显示简体中文")
 
     return tester

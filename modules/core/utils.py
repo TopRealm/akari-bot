@@ -2,13 +2,11 @@ import platform
 import time
 
 import psutil
-from attrs import fields as attrs_fields
 from cpuinfo import get_cpu_info
 
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
 from core.builtins.message.internal import ActionText, Plain, FormattedTime, I18NContext, Url
-from core.builtins.session.features import Features
 from core.component import module
 from core.config.base import CoreConfig
 from core.database.models import SenderUnionBind, SenderUnionInfo
@@ -213,9 +211,22 @@ async def _(msg: Bot.MessageSession):
 locale = module("locale", base=True, desc="{I18N:core.help.locale.desc}", alias="lang", doc=True)
 
 
-@locale.command()
-async def _(msg: Bot.MessageSession):
-    available_lang = "{I18N:message.delimiter}".join(get_available_locales())
+def build_locale_list(msg: Bot.MessageSession) -> list:
+    """构造逐行显示的可用语言列表。"""
+    locales = [(lang, Locale(lang).t("language")) for lang in get_available_locales()]
+    if not msg.session_info.support_action_text:
+        return [I18NContext("core.message.locale.langlist", langlist="\n".join(name for _, name in locales))]
+
+    prefix = msg.session_info.prefixes[0]
+    parts = []
+    for index, (lang, name) in enumerate(locales):
+        parts.append(ActionText(f"{prefix}locale {lang}", show=name))
+        parts.append(Plain("\n" if index + 1 < len(locales) else " ", disable_joke=True))
+    return [I18NContext("core.message.locale.langlist", langlist=MessageChain.assign(parts))]
+
+
+def build_locale_overview(msg: Bot.MessageSession, locale_url: str | None) -> list:
+    """构造语言命令的概览消息。"""
     res = [
         I18NContext("core.message.locale.prompt", lang="{I18N:language}"),
         I18NContext(
@@ -223,12 +234,21 @@ async def _(msg: Bot.MessageSession):
             prefix=msg.session_info.prefixes[0],
             cmd=ActionText(f"{msg.session_info.prefixes[0]}locale "),
         ),
-        I18NContext("core.message.locale.langlist", langlist=available_lang),
+        *build_locale_list(msg),
     ]
+    if locale_url:
+        res.append(
+            I18NContext(
+                "core.message.locale.contribute",
+                url=MessageChain.assign(Url(locale_url, trusted=True)),
+            )
+        )
+    return res
 
-    if locale_url := CoreConfig.locale_url:
-        res.append(I18NContext("core.message.locale.contribute", url=locale_url))
-    await msg.finish(res)
+
+@locale.command()
+async def _(msg: Bot.MessageSession):
+    await msg.finish(build_locale_overview(msg, CoreConfig.locale_url))
 
 
 @locale.command("[<lang>] {{I18N:core.help.locale.set}}", required_admin=True)
@@ -236,13 +256,7 @@ async def _(msg: Bot.MessageSession, lang: str):
     if lang in get_available_locales() and await msg.session_info.target_union_info.edit_attr("locale", lang):
         await msg.finish(Locale(lang).t("message.success"))
     else:
-        available_lang = "{I18N:message.delimiter}".join(get_available_locales())
-        await msg.finish(
-            [
-                I18NContext("core.message.locale.set.invalid"),
-                I18NContext("core.message.locale.langlist", langlist=available_lang),
-            ]
-        )
+        await msg.finish([I18NContext("core.message.locale.set.invalid"), *build_locale_list(msg)])
 
 
 @locale.command("reload", required_superuser=True)
@@ -285,46 +299,6 @@ async def _(msg: Bot.MessageSession):
         msgchain.append(I18NContext("core.message.whoami.superuser"))
 
     await msg.finish(msgchain)
-
-
-features = module("features", required_superuser=True, base=True, doc=True)
-
-
-@features.command("{{I18N:core.help.features}}")
-async def _(msg: Bot.MessageSession):
-    # 主动获取的会话不经过平台消息入口，能力标志只能由保活信号带来，
-    # 因而可能与当前会话不一致；两列并排正是为了让这种不一致一眼可见。
-    fetched = await Bot.fetch_target(msg.session_info.target_id)
-
-    locale = msg.session_info.locale
-    yes = locale.t("message.yes")
-    no = locale.t("message.no")
-    unknown = locale.t("message.unknown")
-
-    lines = []
-    diff_count = 0
-    for field in attrs_fields(Features):
-        current = getattr(msg.session_info, field.name)
-        if fetched:
-            fetched_value = getattr(fetched, field.name)
-            differs = current != fetched_value
-            diff_count += differs
-            fetched_text = yes if fetched_value else no
-        else:
-            differs = False
-            fetched_text = unknown
-        # 差异项加星号标出，聊天窗口里没有颜色可用
-        lines.append(f"{'*' if differs else ''}{field.name}: {yes if current else no} / {fetched_text}")
-
-    result = [I18NContext("core.message.features.prompt", target=msg.session_info.target_id, disable_joke=True)]
-    if not fetched:
-        result.append(I18NContext("core.message.features.fetch.failed"))
-    # 特性名是代码标识符，不能参与文本替换
-    result.append(Plain("\n".join(lines), disable_joke=True))
-    if diff_count:
-        result.append(I18NContext("core.message.features.diff", count=diff_count))
-
-    await msg.finish(result)
 
 
 mute = module("mute", base=True, doc=True, required_admin=True)

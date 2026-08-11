@@ -28,6 +28,15 @@ use_font_mirror = CoreConfig.use_font_mirror
 hlp = module("help", base=True, doc=True)
 
 
+def split_subscription_modules(module_list: dict, names: list[str]) -> tuple[list[str], list[str]]:
+    """按模块的 RSS 标记拆分普通模块与订阅模块，并保持原有顺序。"""
+    regular = []
+    subscription = []
+    for name in names:
+        (subscription if module_list[name].rss else regular).append(name)
+    return regular, subscription
+
+
 def build_clickable_modules(msg: Bot.MessageSession, groups: list[tuple[str, list[str]]]) -> list:
     """
     把若干组模块名构造成可点击的消息链片段。
@@ -293,7 +302,11 @@ def get_help_button_data(msg: Bot.MessageSession) -> list[dict[str, str]]:
 
 
 @hlp.command(
-    "<module> [--legacy] {{I18N:core.help.help.detail}}", options_desc={"--legacy": "{I18N:help.option.legacy}"}
+    "<module> [--legacy] [--image] {{I18N:core.help.help.detail}}",
+    options_desc={
+        "--legacy": "{I18N:help.option.legacy}",
+        "--image": "{I18N:help.option.image}",
+    },
 )
 async def _(msg: Bot.MessageSession, module: str):
     is_base_superuser = msg.session_info.sender_id in Bot.base_superuser_list
@@ -302,7 +315,8 @@ async def _(msg: Bot.MessageSession, module: str):
         target_from=msg.session_info.target_from, client_name=msg.session_info.client_name
     )
     alias = ModulesManager.modules_aliases
-    force_legacy = msg.parsed_msg.get("--legacy", False)
+    force_image = msg.parsed_msg.get("--image", False)
+    force_legacy = msg.parsed_msg.get("--legacy", False) and not force_image
 
     if msg.parsed_msg:
         mdocs = []
@@ -398,7 +412,12 @@ async def _(msg: Bot.MessageSession, module: str):
                 wiki_msg = ""
 
             # 表格版优先于图片版：命令可点击填入，且与模块列表的排法一致
-            if not force_legacy and msg.session_info.support_markdown and msg.session_info.support_action_text:
+            if (
+                not force_image
+                and not force_legacy
+                and msg.session_info.support_markdown
+                and msg.session_info.support_action_text
+            ):
                 table = build_command_table(msg, help_.return_json_help_doc(), regex_rows)
                 if table:
                     detail = []
@@ -551,19 +570,25 @@ async def help_overview(msg: Bot.MessageSession):
             else:
                 module_.append(key)
         module_ = [m for m in module_ if m in target_enabled_list]
+        module_, subscription = split_subscription_modules(module_list, module_)
 
         if use_table:
-            # 基础与扩展同处一张表，以一行区隔行分开；表格以纯文本收尾，无须 end_inline_run()
+            # 各类模块同处一张表，以一行区隔行分开；表格以纯文本收尾，无须 end_inline_run()
             help_msg = MessageChain.assign(
                 build_module_table(
                     msg,
                     [
                         ("core.message.help.table.base", essential),
                         ("core.message.help.table.external", module_),
+                        ("core.message.help.table.subscription", subscription),
                     ],
                 )
             )
             help_msg += I18NContext("core.message.help.mdtable")
+            if msg.session_info.client_name == "QQBot" and not (
+                msg.session_info.support_rss and msg.session_info.read_all_messages
+            ):
+                help_msg += I18NContext("core.message.help.qqbot.limited")
             # 其余三条提示改由底部按钮承担。
             await msg.finish(help_msg, button_data=get_help_button_data(msg), force_markdown=True)
         if use_clickable:
@@ -573,16 +598,20 @@ async def help_overview(msg: Bot.MessageSession):
                     [
                         ("core.message.help.legacy.base", essential),
                         ("core.message.help.legacy.external", module_),
+                        ("core.message.help.legacy.subscription", subscription),
                     ],
                 )
             )
             end_inline_run(help_msg)
         else:
-            help_msg = MessageChain.assign(I18NContext("core.message.help.legacy.base"))
+            help_msg = MessageChain.assign([I18NContext("core.message.help.legacy.base")])
             help_msg.append(Plain(" | ".join(essential), disable_joke=True))
             if module_:
                 help_msg.append(I18NContext("core.message.help.legacy.external"))
                 help_msg.append(Plain(" | ".join(module_), disable_joke=True))
+            if subscription:
+                help_msg.append(I18NContext("core.message.help.legacy.subscription"))
+                help_msg.append(Plain(" | ".join(subscription), disable_joke=True))
         help_msg.append(
             I18NContext(
                 "core.message.help.detail",
@@ -608,9 +637,9 @@ async def help_overview(msg: Bot.MessageSession):
         await msg.finish(help_msg, button_data=get_setup_button_data(msg))
 
 
-async def modules_list_help(msg: Bot.MessageSession, legacy):
+async def modules_list_help(msg: Bot.MessageSession, legacy, force_image=False):
     # 与 ~help 同理：表格不可用时优先保留图片，图片生成失败后再降级到文字版
-    use_table = not legacy and msg.session_info.support_markdown_table
+    use_table = not force_image and not legacy and msg.session_info.support_markdown_table
     use_clickable = not use_table and not legacy and msg.session_info.support_action_text
 
     legacy_help = True
@@ -647,22 +676,45 @@ async def modules_list_help(msg: Bot.MessageSession, legacy):
             ):
                 continue
             module_.append(module_list[x].module_name)
-        if not module_:
+        module_, subscription = split_subscription_modules(module_list, module_)
+        if not module_ and not subscription:
             help_msg = MessageChain.assign(I18NContext("core.message.help.legacy.availables.none"))
         elif use_table:
             # 与 ~help 同款表格，收尾同样是纯文本
-            help_msg = MessageChain.assign(build_module_table(msg, [("core.message.help.table.title", module_)]))
+            help_msg = MessageChain.assign(
+                build_module_table(
+                    msg,
+                    [
+                        ("core.message.help.table.title", module_),
+                        ("core.message.help.table.subscription", subscription),
+                    ],
+                )
+            )
             help_msg += I18NContext("core.message.help.mdtable")
+            if msg.session_info.client_name == "QQBot" and not (
+                msg.session_info.support_rss and msg.session_info.read_all_messages
+            ):
+                help_msg += I18NContext("core.message.help.qqbot.limited")
             await msg.finish(help_msg, button_data=get_help_button_data(msg), force_markdown=True)
         elif use_clickable:
             help_msg = MessageChain.assign(
-                build_clickable_modules(msg, [("core.message.help.legacy.availables", module_)])
+                build_clickable_modules(
+                    msg,
+                    [
+                        ("core.message.help.legacy.availables", module_),
+                        ("core.message.help.legacy.subscription", subscription),
+                    ],
+                )
             )
             end_inline_run(help_msg)
         else:
-            help_msg = MessageChain.assign(
-                [I18NContext("core.message.help.legacy.availables"), Plain(" | ".join(module_), disable_joke=True)]
-            )
+            help_msg = MessageChain.assign([])
+            if module_:
+                help_msg.append(I18NContext("core.message.help.legacy.availables"))
+                help_msg.append(Plain(" | ".join(module_), disable_joke=True))
+            if subscription:
+                help_msg.append(I18NContext("core.message.help.legacy.subscription"))
+                help_msg.append(Plain(" | ".join(subscription), disable_joke=True))
         help_msg.append(
             I18NContext(
                 "core.message.help.detail",
@@ -725,6 +777,20 @@ async def help_generator(
     if not show_dev_modules:
         module_list = {k: v for k, v in module_.items() if k not in dev_module_list}
 
+    module_groups = [
+        ("core.message.help.table.base", "base", {k: v for k, v in module_list.items() if v.base}),
+        (
+            "core.message.help.table.external",
+            "external",
+            {k: v for k, v in module_list.items() if not v.base and not v.rss},
+        ),
+        (
+            "core.message.help.table.subscription",
+            "subscription",
+            {k: v for k, v in module_list.items() if not v.base and v.rss},
+        ),
+    ]
+
     html_content = await env.get_template("module_list.html").render_async(
         msg=msg,
         locale=msg.session_info.locale,
@@ -733,6 +799,7 @@ async def help_generator(
         is_superuser=is_superuser,
         len=len,
         module_list=module_list,
+        module_groups=module_groups,
         show_disabled_modules=show_disabled_modules,
         target_enabled_list=target_enabled_list,
         use_font_mirror=use_font_mirror,

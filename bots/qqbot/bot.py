@@ -7,7 +7,7 @@ from botpy.message import C2CMessage, DirectMessage, GroupMessage, Message
 
 from bots.qqbot.context import QQBotContextManager, QQBotFetchedContextManager, permission_cache
 from bots.qqbot.info import *
-from bots.qqbot.features import group_disable_read_all_message_features, resolve_features
+from bots.qqbot.features import group_disable_read_all_message_features, resolve_features, guild_features
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
 from core.builtins.message.internal import Plain
@@ -20,6 +20,7 @@ from core.constants.default import confirm_command_default
 from core.logger import Logger
 
 Bot.register_bot(client_name=client_name)
+Logger.rename(client_name)
 ctx_id = Bot.register_context_manager(QQBotContextManager)
 Bot.register_context_manager(QQBotFetchedContextManager, fetch_session=True)
 
@@ -35,7 +36,7 @@ class MyClient(botpy.Client):
     async def on_ready(self):
         global initialized
         if not initialized:
-            await client_init(target_prefix_list, sender_prefix_list)
+            await client_init(target_prefix_list, sender_prefix_list, rename_logger=False)
             asyncio.create_task(QQBotFetchedContextManager.process_tasks())
             initialized = True
 
@@ -72,7 +73,7 @@ class MyClient(botpy.Client):
             bot_id=qqbot_openid,
         )
 
-        await Bot.process_message(session, message, resolve_features(session))
+        await Bot.process_message(session, message, guild_features)
 
     @staticmethod
     async def on_message_create(message: Message):
@@ -114,7 +115,7 @@ class MyClient(botpy.Client):
             tmp={"message_type": "guild_direct"},
         )
 
-        await Bot.process_message(session, message, resolve_features(session))
+        await Bot.process_message(session, message, guild_features)
 
     @staticmethod
     async def on_message_group_create(message: GroupMessage):
@@ -227,7 +228,7 @@ class MyClient(botpy.Client):
             bot_id=qqbot_openid,
         )
 
-        await Bot.process_message(session, message, resolve_features(session))
+        await Bot.process_message(session, message, guild_features)
 
     @staticmethod
     async def on_c2c_message_create(message: C2CMessage):
@@ -263,7 +264,7 @@ class MyClient(botpy.Client):
     @staticmethod
     async def on_interaction_create(interaction: Interaction):
         Logger.debug(interaction)
-        await client.api.on_interaction_result(interaction.id, 0)
+        await interaction.acknowledge()
         if interaction.chat_type == 0:
             target_id = f"{target_guild_prefix}|{interaction.guild_id}|{interaction.channel_id}"
             sender_id = f"{sender_tiny_prefix}|{interaction.user_openid}"
@@ -319,8 +320,8 @@ intents.interaction = True
 if QQBotConfig.qq_private_bot:
     intents.guild_messages = True
 
-client = MyClient(intents=intents, bot_log=None)
+client = MyClient(intents=intents, bot_log=None, loguru_logger=Logger.log)
+QQBotContextManager.client = client
 
 if QQBotConfig.enable:
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(client.start(appid=qqbot_appid, secret=qqbot_secret))
+    client.run(appid=qqbot_appid, secret=qqbot_secret)

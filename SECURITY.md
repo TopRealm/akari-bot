@@ -40,22 +40,26 @@ The following areas are explicitly excluded from our security response and will 
 
 We take the security of our project seriously. If you believe you have found a security vulnerability, please report it to us using one of the following methods. **DO NOT open a public issue for security vulnerabilities.**
 
-### 1. Email (Preferred)
-You can report vulnerabilities directly via email. You can find the maintainers' contact email address in the `pyproject.toml` file located in the root of this repository.
+### 1. Instant Messaging (QQ)
+For immediate discussion, you may contact the developers directly via **QQ Direct Message** for a more immediate discussion regarding the vulnerability. Note that sensitive technical details should still ideally be sent via more secure way.
+
+### 2. Email
+You can report vulnerabilities directly via email to the core team members:
+
+- **Project Founder:** OasisAkari <oasisakari@gmail.com>
+- **Active Contributor:** DoroWolf <dorowolf314@gmail.com>
 
 Please include the following information in your report:
-
 - Description of the vulnerability
 - Steps to reproduce (PoC)
 - Potential impact
 - Suggested fix (if any)
 
-### 2. Instant Messaging (QQ)
-For immediate discussion, you may contact the developers directly via **QQ Direct Message** for a more immediate discussion regarding the vulnerability. Note that sensitive technical details should still ideally be sent via more secure channel.
+> **Note:** The maintainers do not check email frequently. If possible, please drop us a quick message via instant messaging after sending your email to ensure it is noticed.
 
 ### What to Expect
-
 - **Acknowledgement:** You will receive an acknowledgement of your report within 24–72 hours.
+  - Please note that response times may occasionally be delayed due to *force majeure* factors beyond our control.
 - **Validation**: We will investigate and notify you if the finding is valid.
 - **Disclosure:** We ask that you do not disclose the vulnerability publicly until we have had the opportunity to analyze and fix the issue. 
 - **Safe Harbor:** As long as you act in good faith, do not attempt to access other users' data, and do not disrupt our service, we will not pursue legal action against your research.

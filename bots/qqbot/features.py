@@ -25,7 +25,7 @@ features = Features(
     support_reaction=False,
     support_quote=True,
     support_rss=True,
-    support_typing=False,
+    support_typing=True,
     support_wait=True,
     support_handle_message_nodes=qq_use_markdown,
     support_private_msg=True,
@@ -43,6 +43,15 @@ group_disable_read_all_message_features = evolve(
     features,
     support_rss=False,
     read_all_messages=False,
+)
+
+guild_features = evolve(
+    features,
+    support_markdown=False,
+    support_markdown_table=False,
+    support_action_text=False,
+    support_button=False,
+    use_url_md_format=False,
 )
 
 
