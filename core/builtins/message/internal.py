@@ -13,11 +13,17 @@ from .elements import *
 # 纯文本元素 - 用于发送简单的文本消息
 Plain = plain = PlainElement.assign
 
+# Markdown 文本元素 - 支持平台保留格式，不支持的平台自动降级为普通文本
+Markdown = markdown = MarkdownElement.assign
+
 # 图片元素 - 用于发送图片消息
 Image = image = ImageElement.assign
 
 # 语音元素 - 用于发送语音消息
-Voice = voice = VoiceElement.assign
+Audio = audio = AudioElement.assign
+
+# 视频元素 - 用于发送视频消息
+Video = video = VideoElement.assign
 
 # 嵌入式内容元素 - 用于发送卡片、富文本等嵌入式内容
 Embed = embed = EmbedElement.assign
@@ -43,10 +49,17 @@ Raw = raw = RawElement.assign
 # 指令操作元素 - 用于嵌入可点击的命令入口，点击后文本填入输入框
 ActionText = action_text = ActionTextElement.assign
 
+# 单个按钮元素 - 可直接加入消息链并由发送阶段自动排布
+Button = button = ButtonElement.assign
+
+# 按钮区域元素 - 用于显式指定按钮行布局
+ButtonFrame = button_frame = ButtonFrameElement.assign
+
 __all__ = [
     "Plain",
+    "Markdown",
     "Image",
-    "Voice",
+    "Audio",
     "Embed",
     "EmbedField",
     "Url",
@@ -55,9 +68,13 @@ __all__ = [
     "Mention",
     "Raw",
     "ActionText",
+    "Button",
+    "ButtonRows",
+    "ButtonFrame",
     "plain",
+    "markdown",
     "image",
-    "voice",
+    "audio",
     "embed",
     "embed_field",
     "url",
@@ -66,4 +83,6 @@ __all__ = [
     "mention",
     "raw",
     "action_text",
+    "button",
+    "button_frame",
 ]

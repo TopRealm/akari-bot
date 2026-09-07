@@ -12,7 +12,7 @@ from core.alive import Alive
 from core.builtins.message.chain import *
 from core.builtins.session.context import ContextManager
 from core.builtins.session.features import Features
-from core.builtins.session.info import SessionInfo, FetchedSessionInfo, ModuleHookContext
+from core.builtins.session.info import EventInfo, SessionInfo, FetchedSessionInfo, ModuleHookContext
 from core.builtins.session.internal import MessageSession, FetchedMessageSession
 from core.builtins.session.lock import ExecutionLockList
 from core.builtins.temp import *
@@ -27,9 +27,8 @@ from core.database.models import (
     TargetUnionInfo,
 )
 from core.exports import add_export, exports
-from core.loader import ModulesManager
 from core.logger import Logger
-from core.retired import filter_retired_targets
+from core.utils.retired import filter_retired_targets
 from core.utils.func import convert_list
 from core.utils.session import inject_features
 
@@ -59,6 +58,8 @@ class Bot:
     # 模块钩子上下文类型 - 用于模块钩子函数的参数传递
     ModuleHookContext = ModuleHookContext
 
+    EventInfo = EventInfo
+
     # 执行锁列表 - 防止同一用户并发执行命令
     ExecutionLockList = ExecutionLockList
 
@@ -76,6 +77,10 @@ class Bot:
 
     # 主动获取消息会话的上下文管理器索引
     fetched_session_ctx_slot = 0
+
+    # 平台 SDK 的消息回调不可被 Server 处理耗时阻塞，因此消息以后台任务投递；
+    # 显式持有任务既避免异常无人取回，也便于平台关闭时统一取消。
+    _message_tasks: set[asyncio.Task[None]] = set()
 
     # 超级用户列表 - 拥有最高权限的用户 ID 列表
     base_superuser_list = CoreConfig.base_superuser
@@ -112,20 +117,49 @@ class Bot:
             """内部异步处理函数 - 管理消息处理的生命周期"""
             # 添加上下文到管理器（存储 session_id 和对应的上下文对象）
             ctx_manager.add_context(session_info, ctx)
+            try:
+                # 获取消息队列客户端并发送消息给服务器处理
+                queue_client: "JobQueueClient" = exports["JobQueueClient"]
+                await queue_client.send_message_to_server(session_info)
 
-            # 获取消息队列客户端并发送消息给服务器处理
-            queue_client: "JobQueueClient" = exports["JobQueueClient"]
+                # 等待 1 秒后清理上下文（防止删除过快导致的错误）
+                await asyncio.sleep(1)
+            finally:
+                # 队列异常或任务被取消时也必须释放平台 SDK 消息对象。
+                ctx_manager.del_context(session_info)
 
-            await queue_client.send_message_to_server(session_info)
+        # 创建异步任务处理消息，并在完成时取回异常、移出有界任务集合。
+        task = asyncio.create_task(_process_msg(), name=f"process-message-{session_info.session_id or 'unknown'}")
+        cls._message_tasks.add(task)
 
-            # 等待 1 秒后清理上下文（防止删除过快导致的错误）
-            await asyncio.sleep(1)
+        def _message_task_done(done: asyncio.Task[None]) -> None:
+            cls._message_tasks.discard(done)
+            try:
+                done.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                Logger.exception(f"Failed to process message {session_info.session_id or 'unknown'} in background.")
 
-            # 从管理器中删除上下文
-            ctx_manager.del_context(session_info)
+        task.add_done_callback(_message_task_done)
 
-        # 创建异步任务处理消息
-        asyncio.create_task(_process_msg())
+    @classmethod
+    async def cancel_pending_messages(cls) -> None:
+        """取消并等待当前平台仍在投递的消息任务。"""
+        tasks = list(cls._message_tasks)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    @classmethod
+    async def process_event(cls, event_info: EventInfo):
+        """将平台事件发送到服务器并交给已绑定该事件的模块处理。"""
+        if not isinstance(event_info, EventInfo):
+            raise TypeError("event_info must be an EventInfo")
+
+        queue_client: "JobQueueClient" = exports["JobQueueClient"]
+        return await queue_client.send_event_to_server(event_info)
 
     @staticmethod
     async def post_global_message(
@@ -418,8 +452,6 @@ class Bot:
         target: SessionInfo,
         message: Chainable,
         disable_secret_check: bool = False,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ):
         """
         发送直接消息到场景。
@@ -427,8 +459,6 @@ class Bot:
         :param target: 会话信息或场景 ID
         :param message: 消息内容
         :param disable_secret_check: 是否禁用敏感内容检查
-        :param enable_parse_message: 是否允许解析消息（平台兼容）
-        :param enable_split_image: 是否允许拆分图片（平台兼容）
         """
         # 如果传入的是场景 ID 字符串，先抓取会话
         if isinstance(target, str):
@@ -452,8 +482,6 @@ class Bot:
         await target.send_direct_message(
             message_chain=message,
             disable_secret_check=disable_secret_check,
-            enable_parse_message=enable_parse_message,
-            enable_split_image=enable_split_image,
         )
 
     @classmethod
@@ -462,8 +490,6 @@ class Bot:
         union_id: str | list[str],
         message: Chainable | Callable[[FetchedSessionInfo], Awaitable[Chainable | None]],
         disable_secret_check: bool = False,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ) -> None:
         """
         向一个场景组绑定的会话发送消息，同一条消息通道只发一次。
@@ -479,8 +505,6 @@ class Bot:
         :param union_id: 场景组的 union ID，可一次传入多个。
         :param message: 消息内容，或接受队首会话、返回消息内容的异步工厂，工厂返回 None 表示不发送。
         :param disable_secret_check: 是否禁用敏感内容检查。
-        :param enable_parse_message: 是否允许解析消息（平台兼容）。
-        :param enable_split_image: 是否允许拆分图片（平台兼容）。
         """
         # 退役客户端停止一切主动推送，滤除与场景组展开一并由 fetch_union_target_list 承担
         for session in await cls.pick_channel_heads(await cls.fetch_union_target_list(union_id)):
@@ -492,8 +516,6 @@ class Bot:
                 session,
                 chain,
                 disable_secret_check=disable_secret_check,
-                enable_parse_message=enable_parse_message,
-                enable_split_image=enable_split_image,
             )
 
     @classmethod
@@ -502,8 +524,6 @@ class Bot:
         session_info: SessionInfo,
         message: Chainable,
         user_id: str | None = None,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ) -> list[str]:
         """
         向指定用户单独发送私聊消息。
@@ -513,8 +533,6 @@ class Bot:
         :param session_info: 会话信息
         :param message: 消息内容
         :param user_id: 目标用户 ID（带平台前缀），留空则发给该会话的用户
-        :param enable_parse_message: 是否允许解析消息（平台兼容）
-        :param enable_split_image: 是否允许拆分图片（平台兼容）
         :return: 消息 ID 列表，为空表示发送失败
         :raises TypeError: 如果 session_info 不是 SessionInfo 类型
         """
@@ -537,8 +555,6 @@ class Bot:
             session_info,
             user_id,
             message,
-            enable_parse_message=enable_parse_message,
-            enable_split_image=enable_split_image,
         )
         return return_val.get("message_id") or []
 
@@ -582,6 +598,8 @@ class Bot:
             :return: 钩子函数的返回值
             :raises ValueError: 如果模块或钩子名称无效
             """
+            from core.loader import ModulesManager
+
             if args is None:
                 args = {}
 

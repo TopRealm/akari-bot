@@ -1,11 +1,12 @@
+import asyncio
 from datetime import datetime, timedelta
 
-from aiogram import types
 from aiogram.types import ChatPermissions
 
-from bots.telegram.buttons import build_telegram_button_markup, get_telegram_context_chat_and_user
+from bots.telegram.buttons import build_telegram_button_markup
 from bots.telegram.action_text import can_use_inline_action_text
 from bots.telegram.client import aiogram_bot
+from bots.telegram.context_snapshot import TelegramContextSnapshot
 from bots.telegram.features import features as telegram_features
 from bots.telegram.info import client_name
 from bots.telegram.message_builder import (
@@ -18,11 +19,10 @@ from core.builtins.session.context import ContextManager
 from core.builtins.session.features import Features
 from core.builtins.session.info import SessionInfo
 from core.logger import Logger
-from core.utils.button_runtime import get_session_button_data
 
 
 class TelegramContextManager(ContextManager):
-    context: dict[str, types.Message | types.CallbackQuery] = {}
+    context: dict[str, TelegramContextSnapshot] = {}
     features: Features = telegram_features
 
     @classmethod
@@ -30,16 +30,19 @@ class TelegramContextManager(ContextManager):
         # if session_info.session_id not in cls.context:
         #     raise ValueError("Session not found in context")
         # 这里可以添加权限检查的逻辑
-        ctx: types.Message | types.CallbackQuery | None = cls.context.get(session_info.session_id)
+        ctx = cls.context.get(session_info.session_id)
         if not ctx:
             chat = await aiogram_bot.get_chat(session_info.get_common_target_id())
             user_id = int(session_info.sender_id.split("|")[-1])
+            chat_id = chat.id
+            chat_type = str(getattr(chat.type, "value", chat.type))
         else:
-            chat, user = get_telegram_context_chat_and_user(ctx)
-            user_id = user.id if user else None
-        if chat.type == "private":
+            chat_id = ctx.chat_id
+            chat_type = ctx.chat_type
+            user_id = ctx.user_id
+        if chat_type == "private":
             return True
-        admins = [member.user.id for member in await aiogram_bot.get_chat_administrators(chat.id)]
+        admins = [member.user.id for member in await aiogram_bot.get_chat_administrators(chat_id)]
         return user_id in admins
 
     @classmethod
@@ -48,8 +51,25 @@ class TelegramContextManager(ContextManager):
         session_info: SessionInfo,
         message: MessageChain | MessageNodes,
         quote: bool = True,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
+    ) -> list[str]:
+        try:
+            return await cls._send_message(
+                session_info,
+                message,
+                quote=quote,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            Logger.exception(f"Failed to send Telegram message to {session_info.target_id}: ")
+            return []
+
+    @classmethod
+    async def _send_message(
+        cls,
+        session_info: SessionInfo,
+        message: MessageChain | MessageNodes,
+        quote: bool = True,
     ) -> list[str]:
         if isinstance(message, MessageNodes):
             Logger.error("This session does not support message nodes, check if bug exists.")
@@ -58,10 +78,7 @@ class TelegramContextManager(ContextManager):
         content = await collect_telegram_content(
             session_info,
             message,
-            enable_parse_message=enable_parse_message,
-            enable_split_image=enable_split_image,
         )
-        button_data = get_session_button_data(session_info)
         supports_inline_queries = True
         if content.action_texts:
             try:
@@ -73,7 +90,7 @@ class TelegramContextManager(ContextManager):
                 Logger.exception("Failed to detect Telegram Inline Mode support, using copy buttons: ")
                 supports_inline_queries = False
         markup = build_telegram_button_markup(
-            button_data,
+            content.button_rows,
             session_info.sender_id,
             action_texts=content.action_texts,
             supports_inline_queries=supports_inline_queries,
@@ -97,8 +114,6 @@ class TelegramContextManager(ContextManager):
         session_info: SessionInfo,
         user_id: str,
         message: MessageChain | MessageNodes,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ) -> list[str]:
         # Telegram 中用户的私聊 chat_id 即其用户 ID，可直接作为私聊场景发送
         uid = user_id.split("|")[-1]
@@ -107,8 +122,6 @@ class TelegramContextManager(ContextManager):
                 cls.derive_private_session(session_info, f"{client_name}|Private|{uid}", f"{client_name}|Private"),
                 message,
                 quote=False,
-                enable_parse_message=enable_parse_message,
-                enable_split_image=enable_split_image,
             )
             return [str(msg_id) for msg_id in msg_ids]
         except Exception:

@@ -2,10 +2,10 @@ from core.builtins.session.features import Features
 
 features = Features(
     support_image=True,
-    support_voice=True,
+    support_audio=True,
+    support_video=True,
     support_mention=True,
     support_embed=False,
-    support_forward=False,
     support_delete=True,
     support_manage=True,
     support_markdown=False,

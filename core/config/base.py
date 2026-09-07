@@ -12,6 +12,9 @@ from core.constants.default import (
     ignored_sender_default,
     issue_url_default,
     locale_url_default,
+    qq_test_group_url_default,
+    regex_disable_prefix_default,
+    repo_url_default,
 )
 from core.constants.version import config_version as config_version_default
 
@@ -31,9 +34,12 @@ class CoreConfig:
     timezone_offset: str = "+8"
     allow_reload_base: bool = False
     allow_request_private_ip: bool = False
-    slower_schedule: bool = False
+    schedule_interval_multiplier: float = 1.0
+    use_emote: bool = False
     use_font_mirror: bool = False
     use_secrets_random: bool = False
+    ffmpeg_path: str = ""
+    media_compression_threshold: float = 10
 
     # 身份与权限
     base_superuser: list = base_superuser_default
@@ -43,6 +49,7 @@ class CoreConfig:
 
     # 命令交互
     command_prefix: list = command_prefix_default
+    regex_disable_prefix: list = regex_disable_prefix_default
     confirm_command: list = confirm_command_default
     mention_required: bool = False
     no_confirm: bool = False
@@ -91,6 +98,8 @@ class CoreConfig:
     help_page_url: str = help_page_url_default
     issue_url: str = issue_url_default
     locale_url: str = locale_url_default
+    qq_test_group_url: str = qq_test_group_url_default
+    repo_url: str = repo_url_default
 
 
 # 密钥项写在 config.toml 的 [secret] 表内，故表名为 config、以 secret 标志区分，
@@ -113,6 +122,7 @@ class WebRenderConfig:
     browser_executable_path: str = ""
     remote_only: bool = False
     remote_web_render_url: str = ""
+    headless: bool = True
 
 
 @on_config("s3")
@@ -123,6 +133,11 @@ class S3Config:
     s3_public_endpoint: str = ""
     s3_internal_endpoint: str = ""
     s3_temp_max_count: int = 20
+    s3_connect_timeout: float = 30
+    s3_read_timeout: float = 30
+    s3_operation_timeout: float = 60
+    s3_max_attempts: int = 2
+    s3_max_workers: int = 4
 
 
 @on_config("s3", secret=True)

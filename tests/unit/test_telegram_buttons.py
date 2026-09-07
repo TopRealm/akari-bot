@@ -15,15 +15,16 @@ from bots.telegram.action_text import (
     can_use_inline_action_text,
     is_own_inline_message,
 )
-from bots.telegram.features import features
+from bots.telegram.context_snapshot import TelegramContextSnapshot
 from core.builtins.message.internal import ActionText
 from core.tester import Tester, func_case
+from core.utils.button import build_button_rows
 from core.utils.button_runtime import BUTTON_TOKEN_PREFIX, _clear_button_registry
 
 
 def _markup():
     _clear_button_registry()
-    return build_telegram_button_markup([{"A": "~a", "B": "~b"}, {"C": "~c"}], "Telegram|User|1")
+    return build_telegram_button_markup(build_button_rows([{"A": "~a", "B": "~b"}, {"C": "~c"}]), "Telegram|User|1")
 
 
 def _test_markup_layout_and_tokens():
@@ -36,6 +37,35 @@ def _test_markup_layout_and_tokens():
     )
 
 
+def _test_link_buttons_use_native_urls():
+    _clear_button_registry()
+    markup = build_telegram_button_markup(
+        build_button_rows([{"Docs": "https://example.com", "Local": "http://localhost", "Help": "~help"}]),
+        "Telegram|User|1",
+    )
+    docs, local, help_button = markup.inline_keyboard[0]
+    return (
+        docs.url == "https://example.com"
+        and docs.callback_data is None
+        and local.url == "http://localhost"
+        and local.callback_data is None
+        and help_button.url is None
+        and help_button.callback_data.startswith(BUTTON_TOKEN_PREFIX)
+    )
+
+
+def _test_removing_callback_keeps_link_button():
+    _clear_button_registry()
+    markup = build_telegram_button_markup(
+        build_button_rows([{"Docs": "https://example.com", "Help": "~help"}]),
+        "Telegram|User|1",
+    )
+    updated = remove_selected_button(markup, markup.inline_keyboard[0][1].callback_data)
+    return [[button.text for button in row] for row in updated.inline_keyboard] == [
+        ["Docs"]
+    ] and updated.inline_keyboard[0][0].url == "https://example.com"
+
+
 def _test_removes_only_selected_and_empty_row():
     markup = _markup()
     selected = markup.inline_keyboard[1][0].callback_data
@@ -44,13 +74,9 @@ def _test_removes_only_selected_and_empty_row():
 
 
 def _test_removing_last_button_returns_none():
-    markup = build_telegram_button_markup([{"A": "~a"}], "Telegram|User|1")
+    markup = build_telegram_button_markup(build_button_rows([{"A": "~a"}]), "Telegram|User|1")
     selected = markup.inline_keyboard[0][0].callback_data
     return remove_selected_button(markup, selected) is None
-
-
-def _test_feature_enabled():
-    return features.support_button is True and features.support_action_text is True
 
 
 def _test_action_text_uses_inline_query():
@@ -109,6 +135,15 @@ def _test_callback_native_permission_uses_clicking_user():
     return resolved_chat is chat and resolved_user is user
 
 
+def _test_context_snapshot_keeps_only_permission_fields():
+    callback = SimpleNamespace(
+        from_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(chat=SimpleNamespace(id=20, type="group")),
+    )
+    snapshot = TelegramContextSnapshot.from_context(callback)
+    return snapshot == TelegramContextSnapshot(chat_id=20, chat_type="group", user_id=1)
+
+
 async def _test_successful_callback_routes_message():
     from bots.telegram.interactions import handle_button_callback
 
@@ -136,6 +171,7 @@ async def _test_successful_callback_routes_message():
         await handle_button_callback(callback)
     kwargs = assign.await_args.kwargs
     updated: InlineKeyboardMarkup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+    routed_context = process.await_args.args[1]
     return (
         callback.answer.await_count == 1
         and [[button.text for button in row] for row in updated.inline_keyboard] == [["B"], ["C"]]
@@ -144,6 +180,7 @@ async def _test_successful_callback_routes_message():
         and kwargs["reply_id"] == "10"
         and kwargs["messages"].to_str() == "~a"
         and process.await_count == 1
+        and routed_context == TelegramContextSnapshot(chat_id=20, chat_type="group", user_id=1)
     )
 
 
@@ -203,9 +240,10 @@ async def _test_inline_query_handler_answers_personally_without_cache():
 async def test_telegram_buttons(tester: Tester):
     """Telegram 按钮组件。"""
     await tester.test(_test_markup_layout_and_tokens, "按钮布局与 token")
+    await tester.test(_test_link_buttons_use_native_urls, "链接使用原生 URL 按钮")
+    await tester.test(_test_removing_callback_keeps_link_button, "移除回调按钮时保留链接")
     await tester.test(_test_removes_only_selected_and_empty_row, "仅移除当前按钮并清理空行")
     await tester.test(_test_removing_last_button_returns_none, "移除最后按钮后清空键盘")
-    await tester.test(_test_feature_enabled, "平台声明按钮能力")
     await tester.test(_test_action_text_uses_inline_query, "ActionText 使用当前聊天 Inline Query")
     await tester.test(_test_action_text_falls_back_to_copy, "未启用 Inline Mode 时复制命令")
     await tester.test(_test_inline_query_result_sends_edited_text, "Inline Query 结果发送编辑后文本")
@@ -217,4 +255,5 @@ async def test_telegram_buttons(tester: Tester):
     await tester.test(_test_forbidden_callback_does_not_route_message, "无权限点击不回流消息")
     await tester.test(_test_unrelated_callback_is_ignored, "忽略非按钮回调")
     await tester.test(_test_inline_query_handler_answers_personally_without_cache, "Inline Query 不缓存且仅用户可见")
+    await tester.test(_test_context_snapshot_keeps_only_permission_fields, "Telegram 上下文只保留权限字段")
     return tester

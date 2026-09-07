@@ -16,9 +16,9 @@ readme = "README.md"
 requires-python = ">=3.12.0,<4.0.0"
 dependencies = [
     # akari-bot-service
-    "akari-bot-i18n==0.0.4",
-    "akari-bot-webrender==0.5.14",
-    "akari-bot-webui==0.4.0",
+    "akari-bot-i18n==0.1.2",
+    "akari-bot-webrender==0.6.2",
+    "akari-bot-webui==0.4.3",
     # lib
     "coverage>=7.9.1,<8.0.0",
     "cryptography>=50.0.0,<50.1.0",
@@ -30,7 +30,7 @@ dependencies = [
     "pywin32>=312,<313; platform_system == 'Windows'",
     # bots
     "aiocqhttp>=1.4.3,<2.0.0",
-    "aiogram==3.29.1",
+    "aiogram==3.31.0",
     "argon2-cffi>=25.0.0,<26.0.0",
     "fastapi>=0.120.0,<1.0.0",
     "ffmpy>=1.0.0,<2.0.0",
@@ -39,7 +39,7 @@ dependencies = [
     "py-cord>=2.7.2",
     "pyjwt[crypto]>=2.8.0,<3.0.0",
     "pyotp>=2.9.0,<3.0.0",
-    "qq-botpy-sdk>=2.0.0",
+    "qq-botpy-sdk==2.0.3",
     "slowapi>=0.1.9,<1.0.0",
     "urllib3>=2.6.3",
     "uvicorn[standard]>=0.38.0,<1.0.0",
@@ -68,6 +68,7 @@ dependencies = [
     "boto3>=1.35.0,<2.0.0",
     "ff3>=1.0.2,<2.0.0",
     "psutil>=7.0.0,<8.0.0",
+    "regex>=2026.5.9,<2027.0.0",
     "tabulate>=0.9.0,<1.0.0",
     # core.scheduler
     "APScheduler>=3.9.1-post.0,<4.0.0.0",
@@ -83,9 +84,9 @@ dependencies = [
     "google-play-scraper>=1.2.2,<2.0.0",
     "gql>=4.0.0,<5.0.0",
     "langconv @ git+https://github.com/Teahouse-Studios/langconv.py.git",
-    "mcstatus>=13.1.0,<13.2.0",
-    "numpy<2.5.2",
-    "openai>=2.0.0,<3.0.0",
+    "mcstatus>=14.1.0,<14.2.0",
+    "numpy<2.5.3",
+    "openai>=3.6.0,<3.7.0",
     "pandas>=3.0.0,<4.0.0",
     "pint>=0.25.0,<1.0.0",
     "python-whois>=0.9.0,<1.0.0",
@@ -95,6 +96,7 @@ dependencies = [
     "webcolors>=25.0.0,<26.0.0",
     "wikitextparser>=1.0.3",
     "wolframalpha>=5.0.0,<6.0.0",
+    # uncategorized
 ]
 
 [project.urls]

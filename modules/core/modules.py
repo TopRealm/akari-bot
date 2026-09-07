@@ -14,6 +14,7 @@ from .help import modules_list_help
 UNSUPPORTED_PROMPTS = {
     "rss": "core.message.module.enable.unsupported_rss",
     "regex": "core.message.module.enable.unsupported_regex",
+    "event": "core.message.module.enable.unsupported_event",
 }
 
 m = module(
@@ -30,7 +31,14 @@ m = module(
 )
 
 
-@m.command(["reload <module> ...", "load <module> ...", "unload <module> ..."], required_superuser=True)
+@m.command(
+    [
+        "reload <module> ... {{I18N:core.help.module.reload}}",
+        "load <module> ... {{I18N:core.help.module.load}}",
+        "unload <module> ... {{I18N:core.help.module.unload}}",
+    ],
+    required_superuser=True,
+)
 @m.command(
     "list [--legacy] [--image] {{I18N:core.help.module.list}}",
     options_desc={
@@ -63,7 +71,7 @@ async def config_modules(msg: Bot.MessageSession):
     modules_ = ModulesManager.return_modules_list(
         target_from=msg.session_info.target_from, client_name=msg.session_info.client_name
     )
-    enabled_modules_list = deepcopy(msg.session_info.target_union_info.modules)
+    enabled_modules_list = deepcopy(msg.session_info.enabled_modules or [])
     wait_config = [msg.parsed_msg.get("<module>")] + msg.parsed_msg.get("...", [])
     wait_config_list = []
     for module_ in wait_config:
@@ -97,7 +105,7 @@ async def config_modules(msg: Bot.MessageSession):
                         msglist.append(I18NContext("parser.module.unloaded", module=module_))
                     elif modules_[module_].required_superuser and not is_superuser:
                         msglist.append(I18NContext("parser.superuser.permission.denied"))
-                    elif modules_[module_].base:
+                    elif modules_[module_].base or not msg.session_info.require_enable_modules:
                         msglist.append(I18NContext("core.message.module.enable.already", module=module_))
                     elif reason := modules_[module_].unsupported_reason(msg.session_info):
                         msglist.append(I18NContext(UNSUPPORTED_PROMPTS[reason]))
@@ -114,6 +122,8 @@ async def config_modules(msg: Bot.MessageSession):
                     msglist.append(I18NContext("core.message.module.enable.already", module=x))
                 else:
                     msglist.append(I18NContext("core.message.module.enable.success", module=x))
+                    if modules_[x].event:
+                        msglist.append(I18NContext("core.message.module.enable.event_permissions"))
                     support_lang = modules_[x].support_languages
                     if support_lang:
                         if msg.session_info.locale.locale not in support_lang:
@@ -156,6 +166,8 @@ async def config_modules(msg: Bot.MessageSession):
                         msglist.append(I18NContext("parser.superuser.permission.denied"))
                     elif modules_[module_].base:
                         msglist.append(I18NContext("core.message.module.disable.base", module=module_))
+                    elif not msg.session_info.require_enable_modules:
+                        msglist.append(I18NContext("core.message.module.disable.failed", module=module_))
                     else:
                         disable_list.append(module_)
 

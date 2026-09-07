@@ -8,11 +8,11 @@ from core.database.models import (
     UNION_SCOPE_SENDER,
     UNION_SCOPE_TARGET,
     SenderUnionInfo,
-    TargetUnionInfo,
     TargetUnionBind,
+    TargetUnionInfo,
 )
-from core.retired import RETIRED_SOURCES, RETIRED_TARGETS, enqueue_notice, is_merge_route_allowed
-from core.union_merge import (
+from core.utils.retired import RETIRED_SOURCES, RETIRED_TARGETS, enqueue_notice, is_merge_route_allowed
+from core.utils.union_merge import (
     BIND_CODE_EXPIRED,
     apply_sender_merge,
     apply_target_merge,
@@ -22,6 +22,7 @@ from core.union_merge import (
     merge_target_unions,
     plan_sender_merge,
     plan_target_merge,
+    reserve_sender_merge,
     take_code,
     target_lines,
 )
@@ -54,16 +55,31 @@ async def _unify_channel(initiator_target_id: str, current_target_id: str) -> in
     若日后取消退役、两个机器人回到共作状态，不同通道会让通道认领的快路径判定「通道内仅有自身」
     而双双放行，同一条命令因此被响应两次；统一通道是那条回退路径唯一的保险。
 
-    通道号取发起方的现有编号，发起方缺少绑定行时退回 1。
+    通道号取发起方的现有编号。两个场景原本所在的完整通道都会保留等价关系，
+    避免只移动端点而把同通道的第三个平台入口拆开。若迁移码存活期间发起方绑定
+    已被删除，则把仍存在的兑换方安全移到通道 1；两侧均不存在时也按旧契约返回 1。
 
     :param initiator_target_id: 发起方的场景 ID。
     :param current_target_id: 兑换方的场景 ID。
     :return: 统一后的通道号。
     """
-    initiator_bind = await TargetUnionBind.get_or_none(target_id=initiator_target_id)
-    channel_id = initiator_bind.channel_id if initiator_bind else 1
-    await TargetUnionBind.filter(target_id__in=[initiator_target_id, current_target_id]).update(channel_id=channel_id)
-    return channel_id
+    channel_id = await TargetUnionInfo.unify_channels(initiator_target_id, current_target_id)
+    if channel_id is not None:
+        return channel_id
+
+    binds = await TargetUnionBind.filter(target_id__in=[initiator_target_id, current_target_id])
+    by_id = {bind.target_id: bind for bind in binds}
+    initiator_bind = by_id.get(initiator_target_id)
+    current_bind = by_id.get(current_target_id)
+    if initiator_bind and current_bind:
+        # 两行都存在却无法统一，说明迁移后的 Target Union 拓扑与调用约定不符；
+        # 此时不能把其中一侧静默移到其它通道，避免掩盖未完成的 Union 合并。
+        raise RuntimeError("Unable to unify migrated target channels.")
+
+    fallback_channel = initiator_bind.channel_id if initiator_bind else 1
+    if current_bind and current_bind.channel_id != fallback_channel:
+        return await TargetUnionInfo.reassign_channel(current_target_id, fallback_channel) or fallback_channel
+    return fallback_channel
 
 
 m = module(
@@ -72,11 +88,11 @@ m = module(
     doc=True,
     suppress_invalid_prompt=True,
     load=bool(CoreConfig.retired_clients),
-    desc="{I18N:core.merge.help.desc}",
+    desc="{I18N:core.help.merge.desc}",
 )
 
 
-@m.command("{{I18N:core.merge.help}}", available_for=RETIRED_SOURCES)
+@m.command("{{I18N:core.help.merge}}", available_for=RETIRED_SOURCES)
 async def _(msg: Bot.MessageSession):
     session_info = msg.session_info
     # 迁移码须记下签发方的客户端与场景：前者用于兑换时校验迁移去处，
@@ -84,20 +100,20 @@ async def _(msg: Bot.MessageSession):
     origin = {"source_client": session_info.client_name, "holder_target_id": session_info.target_id}
 
     if session_info.is_private:
-        # 私聊里「这个账号」与「这段私聊」是同一回事，两者一并迁移，
+        # 私聊中的用户身份与私聊场景属于同一数据边界，应一并迁移，
         # 否则用户的个人数据仍留在退役实例上。
         await issue_code(
             msg,
             _sender_merge_codes,
             session_info.sender_union_info.union_id,
             session_info.sender_id,
-            "core.merge.message.start.private.prompt",
+            "core.message.merge.start.private.prompt",
             extra={
                 "target_union_id": session_info.target_union_info.union_id,
                 "is_private": True,
                 **origin,
             },
-            code_key="core.merge.message.code",
+            code_key="core.message.merge.code",
             command="merge token",
         )
     # 场景迁移会改动整个场景的数据，需要管理员权限；私聊则无此顾虑，故在此处而非命令级校验。
@@ -108,9 +124,9 @@ async def _(msg: Bot.MessageSession):
         _target_merge_codes,
         session_info.target_union_info.union_id,
         session_info.target_id,
-        "core.merge.message.start.prompt",
+        "core.message.merge.start.prompt",
         extra={"is_private": False, **origin},
-        code_key="core.merge.message.code",
+        code_key="core.message.merge.code",
         command="merge token",
     )
 
@@ -134,7 +150,7 @@ async def _merge_private(msg: Bot.MessageSession, entry: dict) -> None:
     if not sender_initiator or not target_initiator:
         await msg.finish(
             I18NContext(
-                "core.merge.message.code.invalid",
+                "core.message.merge.code.invalid",
                 prefix=session_info.prefixes[0],
                 cmd=ActionText(f"{session_info.prefixes[0]}merge"),
             )
@@ -151,23 +167,28 @@ async def _merge_private(msg: Bot.MessageSession, entry: dict) -> None:
         else None
     )
     if not sender_plan and not target_plan:
-        await msg.finish(I18NContext("core.merge.message.same"))
+        await msg.finish(I18NContext("core.message.merge.same"))
 
-    lines = [I18NContext("core.merge.message.private.confirm")]
+    lines = [I18NContext("core.message.merge.private.confirm")]
     for plan in (sender_plan, target_plan):
         if plan:
             lines += plan["lines"]
     if not await msg.wait_confirm(lines):
         await msg.finish()
 
-    # 冲突选择按域分别询问，两域的模块表互不相交，各自的选择不会互相影响。
-    sender_keep = await choose_conflicts(msg, sender_plan["conflicts"]) if sender_plan else set()
+    # 场景侧选择须在建立 sender barrier 前完成；普通 wait_confirm 会释放执行
+    # lease。sender barrier 建立后，其冲突选择则保持 lease，直到合并写入结束。
     target_keep = await choose_conflicts(msg, target_plan["conflicts"]) if target_plan else set()
+    if sender_plan:
+        sender_plan = await reserve_sender_merge(msg, sender_plan)
+    sender_keep = (
+        await choose_conflicts(msg, sender_plan["conflicts"], preserve_execution_lock=True) if sender_plan else set()
+    )
 
-    merged_sender = await apply_sender_merge(sender_plan, sender_keep) if sender_plan else sender_current
+    merged_sender = await apply_sender_merge(sender_plan, sender_keep, msg) if sender_plan else sender_current
     merged_target = await apply_target_merge(target_plan, target_keep) if target_plan else target_current
     if not merged_sender or not merged_target:
-        await msg.finish(I18NContext("core.merge.message.private.failed"))
+        await msg.finish(I18NContext("core.message.merge.private.failed"))
 
     await _unify_channel(entry["holder_target_id"], session_info.target_id)
     await session_info.refresh_info()
@@ -176,25 +197,25 @@ async def _merge_private(msg: Bot.MessageSession, entry: dict) -> None:
     target_ids = await merged_target.list_bound_ids()
     await msg.finish(
         [
-            I18NContext("core.merge.message.self.success", id=merged_sender.union_id, disable_joke=True),
-            I18NContext("core.bind.message.self.info.bound", count=len(sender_ids)),
+            I18NContext("core.message.merge.self.success", id=merged_sender.union_id, disable_joke=True),
+            I18NContext("core.message.bind.self.info.bound", count=len(sender_ids)),
         ]
         + id_lines(sender_ids)
         + [
-            I18NContext("core.merge.message.target.success", id=merged_target.union_id, disable_joke=True),
-            I18NContext("core.bind.message.target.info.bound", count=len(target_ids)),
+            I18NContext("core.message.merge.target.success", id=merged_target.union_id, disable_joke=True),
+            I18NContext("core.message.bind.target.info.bound", count=len(target_ids)),
         ]
         + await target_lines(msg, merged_target.union_id, target_ids)
     )
 
 
-@m.command("token <code> {{I18N:core.merge.help.token}}", available_for=RETIRED_TARGETS)
+@m.command("token <code> {{I18N:core.help.merge.token}}", available_for=RETIRED_TARGETS)
 async def _(msg: Bot.MessageSession, code: str):
     taken = _take_merge_code(code)
     if not taken:
         await msg.finish(
             I18NContext(
-                "core.merge.message.code.invalid",
+                "core.message.merge.code.invalid",
                 prefix=msg.session_info.prefixes[0],
                 cmd=ActionText(f"{msg.session_info.prefixes[0]}merge"),
             )
@@ -204,12 +225,12 @@ async def _(msg: Bot.MessageSession, code: str):
     # 迁移码只能在其所属迁移关系的目标平台兑换。命令级 available_for 只能表明本平台是
     # 某条关系的目标，配置多条关系时挡不住拿甲关系的码来乙关系的目标兑换。
     if not is_merge_route_allowed(entry.get("source_client"), msg.session_info.client_name):
-        await msg.finish(I18NContext("core.merge.message.route.mismatch"))
+        await msg.finish(I18NContext("core.message.merge.route.mismatch"))
 
     # 迁移码的签发与使用须处于同类场景：私聊码带着发起方的场景组，若在群里兑换，
     # 会把一段私聊的数据并进群场景；群码在私聊里兑换同理。
     if entry["is_private"] != msg.session_info.is_private:
-        await msg.finish(I18NContext("core.merge.message.scene.mismatch"))
+        await msg.finish(I18NContext("core.message.merge.scene.mismatch"))
 
     if scope == UNION_SCOPE_SENDER:
         await _merge_private(msg, entry)
@@ -220,18 +241,18 @@ async def _(msg: Bot.MessageSession, code: str):
 
     current = msg.session_info.target_union_info
     if entry["union_id"] == current.union_id:
-        await msg.finish(I18NContext("core.merge.message.same"))
+        await msg.finish(I18NContext("core.message.merge.same"))
     initiator = await TargetUnionInfo.get_or_none(union_id=entry["union_id"])
     if not initiator:
         await msg.finish(
             I18NContext(
-                "core.merge.message.code.invalid",
+                "core.message.merge.code.invalid",
                 prefix=msg.session_info.prefixes[0],
                 cmd=ActionText(f"{msg.session_info.prefixes[0]}merge"),
             )
         )
 
-    merged = await merge_target_unions(msg, initiator, current, "core.merge.message.target.confirm.inherit")
+    merged = await merge_target_unions(msg, initiator, current, "core.message.merge.target.confirm.inherit")
     if not merged:
         await msg.finish()
 
@@ -241,11 +262,11 @@ async def _(msg: Bot.MessageSession, code: str):
     bound_ids = await merged.list_bound_ids()
     await msg.finish(
         [
-            I18NContext("core.merge.message.target.success", id=merged.union_id, disable_joke=True),
-            I18NContext("core.bind.message.target.info.bound", count=len(bound_ids)),
+            I18NContext("core.message.merge.target.success", id=merged.union_id, disable_joke=True),
+            I18NContext("core.message.bind.target.info.bound", count=len(bound_ids)),
         ]
         + await target_lines(msg, merged.union_id, bound_ids)
-        + [I18NContext("core.merge.message.channel.unified", channel=channel_id)]
+        + [I18NContext("core.message.merge.channel.unified", channel=channel_id)]
     )
 
 

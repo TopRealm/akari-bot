@@ -3,9 +3,9 @@ from simpleeval import simple_eval
 from core.builtins.bot import Bot
 from core.builtins.message.internal import I18NContext, Plain
 from core.component import module
-from core.game import PlayState, GAME_EXPIRED
-from core.utils.func import is_int
+from core.utils.game import PlayState, GAME_EXPIRED
 from core.utils.petal import cost_petal, gained_petal, lost_petal
+from core.utils.func import is_int
 from core.utils.random import Random
 
 no_solution_lst = [
@@ -156,8 +156,8 @@ def find_solution(numbers):
 
 
 tf = module(
-    "twenty_four",
-    alias=["twentyfour", "24"],
+    "twenty-four",
+    alias=["twenty_four", "twentyfour", "24"],
     desc="{I18N:twenty_four.help.desc}",
     developers=["DoroWolf"],
     doc=True,

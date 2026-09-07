@@ -18,6 +18,7 @@ import inspect
 import re
 import time
 import traceback
+from pathlib import Path
 from string import Template as stringTemplate
 from types import UnionType
 from typing import TYPE_CHECKING, Union, get_args, get_origin
@@ -25,7 +26,7 @@ from typing import TYPE_CHECKING, Union, get_args, get_origin
 from rapidfuzz import process
 
 from core.builtins.message.chain import MessageChain, match_kecode
-from core.builtins.message.internal import ActionText, Plain, I18NContext
+from core.builtins.message.internal import ActionText, Image, Plain, I18NContext
 from core.builtins.parser.args import ArgumentPattern, Template as argsTemplate, templates_to_str
 from core.builtins.parser.command import CommandParser
 from core.builtins.session.lock import ExecutionLockList
@@ -42,21 +43,24 @@ from core.constants.exceptions import (
     WaitCancelException,
 )
 from core.constants.info import Info
+from core.constants.path import assets_path
 from core.database.models import AnalyticsData, SenderUnionInfo, TargetUnionBind
 from core.exports import exports
 from core.loader import ModulesManager
 from core.logger import Logger
-from core.retired import (
+from core.utils.retired import (
     is_module_allowed_when_retired,
     is_retired_client,
+    is_retired_target,
     is_yielding_retired_session,
     should_yield_channel,
 )
-from core.tos import TOS_TEMPBAN_TIME, temp_ban_counter, abuse_warn_target, remove_temp_ban
+from core.utils.tos import TOS_TEMPBAN_TIME, temp_ban_counter, abuse_warn_target, remove_temp_ban
 from core.types import Module, Param
 from core.types.module.component_meta import CommandMeta
 from core.utils.container import ExpiringTempDict, TokenBucket
 from core.utils.func import normalize_space
+from core.utils.random import Random
 
 if TYPE_CHECKING:
     from core.builtins.bot import Bot
@@ -79,6 +83,11 @@ report_targets = CoreConfig.report_targets
 
 # Bug 报告的 URL
 bug_report_url = CoreConfig.bug_report_url
+
+# 命令输入与执行异常提示所使用的公共表情资源
+COMMON_EMOTE_DIR = assets_path / "emotes" / "common"
+INVALID_COMMAND_EMOTES = tuple(sorted((COMMON_EMOTE_DIR / "invalid").glob("*.gif")))
+BUG_EMOTES = tuple(sorted((COMMON_EMOTE_DIR / "bug").glob("*.gif")))
 
 # ========== 错字检查的分数阈值 ==========
 # 这些阈值用于模糊匹配（当用户输入可能有错字时）
@@ -133,6 +142,26 @@ channel_claim_cache = ExpiringTempDict()
 regex_once_cache: set[tuple[str, int, str]] = set()
 
 
+def _sender_scope_key(msg: "Bot.MessageSession") -> str | None:
+    """返回会话内需要按绑定身份共享的内存状态键。"""
+    return msg.session_info.sender_union_id or msg.session_info.sender_id
+
+
+def should_skip_regex(trigger_msg: str) -> bool:
+    prefixes = tuple(prefix for prefix in CoreConfig.regex_disable_prefix if isinstance(prefix, str) and prefix)
+    return trigger_msg.startswith(prefixes)
+
+
+async def _send_common_emote(msg: "Bot.MessageSession", emotes: tuple[Path, ...]) -> None:
+    """按配置单独发送一条随机公共表情消息。"""
+    if not CoreConfig.use_emote or not msg.session_info.support_image or not emotes:
+        return
+    try:
+        await msg.send_message(Image(Random.choice(emotes)), quote=False)
+    except SendMessageFailed:
+        Logger.warning(f"Failed to send common emote in session {msg.session_info.session_id}.")
+
+
 async def parser(msg: "Bot.MessageSession"):
     """
     消息处理的主入口函数。
@@ -164,12 +193,24 @@ async def parser(msg: "Bot.MessageSession"):
     if msg.session_info.sender_id in ignored_sender:
         return
 
+    # 同一现实场景中的其它机器人输出既不能进入命令／正则，也不能抢先完成
+    # wait_anyone 等等待任务；过滤必须发生在 SessionTaskManager.check() 之前。
+    if msg.session_info.sender_id in msg.session_info.target_union_info.list_peer_bots(msg.session_info.target_id):
+        Logger.debug(f"Ignored message from another client: {msg.session_info.sender_id}")
+        return
+
     try:
-        # ========== 步骤 1: 检查任务队列 ==========
+        # ========== 步骤 1: 入站权限检查 ==========
+
+        if msg.session_info.sender_union_info.blocked and not (
+            msg.session_info.sender_union_info.trusted or msg.session_info.sender_union_info.superuser
+        ):
+            return
+        if msg.session_info.sender_union_id in msg.session_info.banned_users and not msg.check_super_user():
+            return
+
+        # ========== 步骤 2: 检查任务队列 ==========
         # 检查是否有等待此消息的任务（如等待用户回复）
-        # 等待任务按消息通道建键，同通道内的场景共享。退役场景若在此抢先命中，存活场景挂起的
-        # 等待便由它的消息触发，模块拿到的结果也随之出自退役平台。故此处须与通道认领同判据，
-        # 且早于任务检查：认领只拦命令与正则两条路径，拦不到等待。
         if not await is_yielding_retired_session(
             msg.session_info.target_id,
             msg.session_info.target_union_id,
@@ -187,21 +228,9 @@ async def parser(msg: "Bot.MessageSession"):
         if len(msg.trigger_msg) == 0:
             return
 
-        # 屏蔽同一个现实场景里其它机器人发的消息，避免把对方的输出当成用户输入去执行
-        if msg.session_info.sender_id in msg.session_info.target_union_info.list_peer_bots(msg.session_info.target_id):
-            Logger.debug("Ignored message from other clients: " + msg.trigger_msg)
-            return
-
-        # ========== 步骤 2: 权限检查 ==========
-        # 检查用户是否被被机器人屏蔽（机器人黑名单）
-        if msg.session_info.sender_union_info.blocked and not (
-            msg.session_info.sender_union_info.trusted or msg.session_info.sender_union_info.superuser
-        ):
-            return
-
-        # 检查用户是否在场景的屏蔽用户列表中（场景黑名单，按 union 记录，换绑同一 union 的其他账号同样受限）
-        if msg.session_info.sender_union_id in msg.session_info.banned_users and not msg.session_info.superuser:
-            return
+        # 如果消息中有需要过滤的词，直接返回
+        # if contain_badwords(msg.trigger_msg):
+        #     return
 
         # ========== 步骤 3: 命令匹配 ==========
         # 检查消息是否以命令前缀开头
@@ -213,7 +242,7 @@ async def parser(msg: "Bot.MessageSession"):
             command_first_word = await _process_command(msg, modules, disable_prefix, in_prefix_list)
 
             # 退役客户端仅保留白名单模块。此处须早于通道认领：若退役场景先认领再因退役不执行，
-            # 同通道的其他场景会因避让而放弃处理，该场景内将无人响应。
+            # 同通道的其他场景会因避让而放弃处理，该场景内将无客户端响应。
             if (
                 is_retired_client(msg.session_info.client_name)
                 and not is_module_allowed_when_retired(command_first_word)
@@ -221,12 +250,19 @@ async def parser(msg: "Bot.MessageSession"):
             ):
                 return
 
-            # 执行前先认领消息通道，同通道内已有场景认领则避让，_process_command 会去掉 trigger_msg 的前缀
-            if await _claim_channel_message(msg):
+            routed_command_available = None
+            if command_first_word in modules and is_module_allowed_when_retired(command_first_word):
+                routed_command_available = _command_available_for_current_session(
+                    msg, modules[command_first_word], command_first_word
+                )
+
+            # 执行前先认领消息通道，同通道内已有场景认领则避让，_process_command 会去掉 trigger_msg 的前缀。
+            # 退役迁移命令按子命令分流， merge 由源退役端处理，merge token 由目标端处理。
+            if await _claim_channel_message(msg, routed_command_available=routed_command_available):
                 return
 
             if command_first_word:
-                if not try_acquire_execution_lock(msg):
+                if not await try_acquire_execution_lock(msg):
                     await msg.send_message(I18NContext("parser.command.running.prompt"))
                     return
 
@@ -253,6 +289,7 @@ async def parser(msg: "Bot.MessageSession"):
                             cmd=ActionText(f"{msg.session_info.prefixes[0]}help"),
                         )
                     )
+                    await _send_common_emote(msg, INVALID_COMMAND_EMOTES)
             elif msg.session_info.invalid_module_prompt_enabled:
                 await msg.send_message(
                     I18NContext(
@@ -261,15 +298,17 @@ async def parser(msg: "Bot.MessageSession"):
                         cmd=ActionText(f"{msg.session_info.prefixes[0]}help"),
                     )
                 )
-
+                await _send_common_emote(msg, INVALID_COMMAND_EMOTES)
             return msg
 
         # 检查正则
+        if should_skip_regex(msg.trigger_msg):
+            return msg
         if msg.session_info.muted:
             return
         if msg.session_info.use_running_mention:
             if msg.trigger_msg.lower().find(msg.session_info.bot_name.lower()) != -1:
-                if ExecutionLockList.check(msg):
+                if await ExecutionLockList.is_locked(msg):
                     return await msg.send_message(I18NContext("parser.command.running.prompt2"))
 
         await _execute_regex(msg, modules, identify_str)
@@ -281,11 +320,32 @@ async def parser(msg: "Bot.MessageSession"):
     except Exception:
         Logger.exception()
     finally:
-        ExecutionLockList.remove(msg)
-        Info.message_parsed += 1
+        try:
+            await msg.release_execution_resources()
+        finally:
+            # wait_* 的回复会话会共享根命令的 ExecutionState，但没有最终
+            # 清理所有权。它仍可在 continuation 内主动 sleep／wait，从而
+            # 释放和重获同一 lease；这里只能由原始 parser 释放最终 lease，
+            if getattr(msg, "_execution_state_owner", True):
+                ExecutionLockList.remove(msg)
+            Info.message_parsed += 1
 
 
-async def _claim_channel_message(msg: "Bot.MessageSession", display: str | None = None) -> bool:
+def _command_available_for_current_session(msg: "Bot.MessageSession", module: Module, command_first_word: str) -> bool:
+    """判断当前客户端能否解析一个按平台分流的具体命令。"""
+    command_parser = CommandParser(
+        module, msg=msg, module_name=command_first_word, command_prefixes=msg.session_info.prefixes
+    )
+    try:
+        parsed = command_parser.parse(msg.trigger_msg)
+    except InvalidCommandFormatError:
+        return False
+    return bool(parsed and parsed[0])
+
+
+async def _claim_channel_message(
+    msg: "Bot.MessageSession", display: str | None = None, routed_command_available: bool | None = None
+) -> bool:
     """
     认领一条消息，并判断它是否已被同一消息通道内的另一个场景处理。
 
@@ -294,6 +354,7 @@ async def _claim_channel_message(msg: "Bot.MessageSession", display: str | None 
 
     :param msg: 消息会话。
     :param display: 参与判定的文本，留空则取命令文本。
+    :param routed_command_available: 当前客户端能否执行按平台分流的退役迁移命令；其它命令为 None。
     :return: True 表示已被其它场景认领，当前场景应当避让。
     """
     union_id = msg.session_info.target_union_id
@@ -302,12 +363,20 @@ async def _claim_channel_message(msg: "Bot.MessageSession", display: str | None 
     channel_id = msg.session_info.target_channel_id
 
     channels = await TargetUnionBind.list_channels(union_id)
-    # 通道内仅有自身时不存在重复执行的可能，绝大多数场景经由此快路径返回。
+    # 通道内仅有自身时不存在重复执行的可能。
     if sum(1 for cid in channels.values() if cid == channel_id) <= 1:
         return False
 
-    # 退役场景不执行白名单之外的命令，由它认领会导致同通道的其他场景避让而无人响应。
-    if should_yield_channel(msg.session_info.target_id, channels, channel_id):
+    channel_targets = [target_id for target_id, cid in channels.items() if cid == channel_id]
+    mixed_retired_channel = any(is_retired_target(target_id) for target_id in channel_targets) and any(
+        not is_retired_target(target_id) for target_id in channel_targets
+    )
+    if mixed_retired_channel and routed_command_available is False:
+        Logger.debug(f"Context {msg.session_info.target_id} yielded an unavailable routed command.")
+        return True
+
+    # 退役场景不执行白名单之外的命令，白名单迁移命令已在上方按具体子命令选定执行端
+    if routed_command_available is not True and should_yield_channel(msg.session_info.target_id, channels, channel_id):
         Logger.debug(f"Retired context {msg.session_info.target_id} yielded the channel.")
         return True
 
@@ -316,13 +385,11 @@ async def _claim_channel_message(msg: "Bot.MessageSession", display: str | None 
     token = f"{union_id}|{channel_id}|{hashlib.sha256(display.encode('utf-8')).hexdigest()}"
     now = time.time()
 
-    # 以下查表与写入之间不得出现 await：在单线程事件循环下该段方为原子操作，认领才不会被并发打断。
+    # 以下查表与写入之间不得出现 await，在单线程事件循环下该段方为原子操作。
     claimed = channel_claim_cache.get(token)
     claimed_at = claimed.get("timestamp") if claimed else None
     claimed_by = claimed.get("target_id") if claimed else None
-    # 认领方须与自身不同方可判定为重复。认领键只由通道与内容组成，不含发起方，
-    # 若不加这一判据，用户在时间窗内重复发送同样的内容会撞上自己上一条留下的认领，该条消息将无人响应。
-    # 此情形照常落至下方改写认领记录，同通道的其它场景因而仍按最新一次到达的时间避让。
+
     if claimed_at and claimed_by != msg.session_info.target_id and abs(now - claimed_at) <= CHANNEL_DEDUP_WINDOW:
         Logger.debug(f"Ignored duplicate message claimed by {claimed_by}: {display}")
         return True
@@ -553,9 +620,10 @@ async def _check_superuser_or_authorized(msg: "Bot.MessageSession", module_name:
     """
     if msg.check_super_user():
         return True
+    related_module_names = ModulesManager.get_module_and_alias_first_words(module_name) or [module_name]
     auth_list = msg.session_info.sender_union_info.sender_data.get("module_auth", [])
     for entry in auth_list:
-        if entry.get("module") == module_name:
+        if entry.get("module") in related_module_names:
             authorizer = await SenderUnionInfo.get_by_sender_id(entry["authorized_by"], create=False)
             if authorizer and authorizer.superuser:
                 return True
@@ -718,6 +786,7 @@ async def _execute_module(msg: "Bot.MessageSession", modules, command_first_word
                         cmd=ActionText(f"{msg.session_info.prefixes[0]}help {command_first_word}"),
                     )
                 )
+                await _send_common_emote(msg, INVALID_COMMAND_EMOTES)
     except SendMessageFailed:
         await _process_send_message_failed(msg)
 
@@ -820,7 +889,7 @@ def regex_module_enabled(
     return bool(enabled_modules) and module_name in enabled_modules
 
 
-def try_acquire_execution_lock(msg: "Bot.MessageSession") -> bool:
+async def try_acquire_execution_lock(msg: "Bot.MessageSession") -> bool:
     """
     尝试为当前会话获取执行锁。
 
@@ -830,10 +899,7 @@ def try_acquire_execution_lock(msg: "Bot.MessageSession") -> bool:
     :param msg: 消息会话。
     :return: 是否成功获取。
     """
-    if ExecutionLockList.check(msg):
-        return False
-    ExecutionLockList.add(msg)
-    return True
+    return await ExecutionLockList.acquire(msg)
 
 
 def regex_func_available(rfunc, target_from: str, client_name: str) -> bool:
@@ -1031,7 +1097,7 @@ async def _execute_regex(msg: "Bot.MessageSession", modules, identify_str):
 
                             # 正则由消息内容隐式触发，锁被占用时静默跳过；
                             # 此处若发出提示并 return，还会连带中断后续模块的正则遍历。
-                            if not try_acquire_execution_lock(msg):
+                            if not await try_acquire_execution_lock(msg):
                                 continue
 
                             # 标记须在调用处理函数之前落下：处理函数为协程，其执行期间同一场景的
@@ -1118,15 +1184,16 @@ async def _check_target_cooldown(msg: "Bot.MessageSession"):
         return
 
     # 获取该场景的冷却记录
-    target_record = target_cooldown_counter[msg.session_info.target_id]
+    target_record = target_cooldown_counter[msg.session_info.channel_key]
 
     # 获取该用户的冷却记录
-    sender_record = target_record.get(msg.session_info.sender_id)
+    sender_key = _sender_scope_key(msg)
+    sender_record = target_record.get(sender_key)
 
     # 如果不存在，则创建并跳过冷却提示
     if not sender_record:
         sender_record = ExpiringTempDict(data={"notified": False}, exp=cooldown_time, root=False)
-        target_record[msg.session_info.sender_id] = sender_record
+        target_record[sender_key] = sender_record
         return
 
     # 检查是否还在冷却期内
@@ -1162,14 +1229,15 @@ async def _tos_temp_ban(msg: "Bot.MessageSession"):
     :raises SessionFinished: 如果用户被封禁，终止会话
     """
     # 获取用户的封禁信息
-    ban_info = temp_ban_counter.get(msg.session_info.sender_id)
+    sender_key = _sender_scope_key(msg)
+    ban_info = temp_ban_counter.get(sender_key)
 
     if ban_info and not ban_info.is_expired():
         # 用户在封禁期内
 
         # 超级用户可以自动解除封禁
         if msg.check_super_user():
-            await remove_temp_ban(msg.session_info.sender_id)
+            await remove_temp_ban(sender_key)
             return None
 
         # 计算剩余封禁时间
@@ -1210,7 +1278,8 @@ async def _tos_msg_counter(msg: "Bot.MessageSession", command: str):
     """
     # ========== 单命令频率检查 ==========
     # 检查同一命令的使用频率
-    bucket_same = buckets_same[msg.session_info.sender_id][command]
+    sender_key = _sender_scope_key(msg)
+    bucket_same = buckets_same[sender_key][command]
     if "bucket" not in bucket_same:
         # 初始化令牌桶：容量 10，每 300 秒恢复满
         bucket_same["bucket"] = TokenBucket(10, 300)
@@ -1221,7 +1290,7 @@ async def _tos_msg_counter(msg: "Bot.MessageSession", command: str):
 
     # ========== 全局命令频率检查 ==========
     # 检查所有命令的总体使用频率
-    bucket_all = buckets_all[msg.session_info.sender_id]
+    bucket_all = buckets_all[sender_key]
     if "bucket" not in bucket_all:
         # 初始化令牌桶：容量 20，每 300 秒恢复满
         bucket_all["bucket"] = TokenBucket(20, 300)
@@ -1405,12 +1474,14 @@ async def _execute_module_command(msg: "Bot.MessageSession", module, command_fir
                     cmd=ActionText(f"{msg.session_info.prefixes[0]}help {command_first_word}"),
                 )
             )
+            await _send_common_emote(msg, INVALID_COMMAND_EMOTES)
             return
         except Exception as e:
             raise e
     except InvalidHelpDocTypeError:
         Logger.exception()
         await msg.send_message(I18NContext("error.module.helpdoc_invalid", module=command_first_word))
+        await _send_common_emote(msg, BUG_EMOTES)
         return
     finally:
         if _typing:
@@ -1432,7 +1503,7 @@ async def _process_tos_abuse_warning(msg: "Bot.MessageSession", e: AbuseWarning)
     """
     if enable_tos and CoreConfig.tos_warning_counts >= 1 and not msg.check_super_user():
         await abuse_warn_target(msg, str(e))
-        temp_ban_counter[msg.session_info.sender_id] = {"count": 1, "ts": time.time()}
+        temp_ban_counter[_sender_scope_key(msg)] = {"count": 1, "ts": time.time()}
     else:
         err_msg_chain = MessageChain.assign(I18NContext("error.message.prompt"))
         err_msg_chain.append(Plain(msg.session_info.locale.t_str(str(e))))
@@ -1470,6 +1541,7 @@ async def _process_noreport_exception(msg: "Bot.MessageSession", e: NoReportExce
     err_msg_chain.append(I18NContext("error.message.prompt.noreport"))
     await msg.handle_error_signal()
     await msg.send_message(err_msg_chain)
+    await _send_common_emote(msg, BUG_EMOTES)
 
 
 async def _process_external_exception(msg: "Bot.MessageSession", e: Exception):
@@ -1491,6 +1563,7 @@ async def _process_external_exception(msg: "Bot.MessageSession", e: Exception):
         err_msg_chain.append(I18NContext("error.message.prompt.address", url=bug_report_url))
     await msg.handle_error_signal()
     await msg.send_message(err_msg_chain)
+    await _send_common_emote(msg, BUG_EMOTES)
 
 
 async def _process_exception(msg: "Bot.MessageSession", e: Exception):
@@ -1527,7 +1600,7 @@ async def _process_exception(msg: "Bot.MessageSession", e: Exception):
     # 触发错误信号并发送消息
     await msg.handle_error_signal()
     await msg.send_message(err_msg_chain)
-
+    await _send_common_emote(msg, BUG_EMOTES)
     # ========== 发送错误报告给管理员 ==========
     if report_targets:
         # 上报场景按场景组配置，展开后同一现实场景的多个平台入口只应由其中一个收到回传
@@ -1537,9 +1610,8 @@ async def _process_exception(msg: "Bot.MessageSession", e: Exception):
                 f,
                 [
                     I18NContext("error.message.report", command=msg.trigger_msg),
-                    Plain(tb.strip(), disable_joke=True),
+                    Plain(tb.strip(), disable_joke=True, allow_parse=False),
                 ],
-                enable_parse_message=False,
                 disable_secret_check=True,
             )
 
@@ -1638,7 +1710,8 @@ async def _command_typo_check(msg: "Bot.MessageSession", modules, command_first_
     is_superuser = msg.check_super_user()
 
     # ========== 步骤 2: 收集用户可用的模块列表 ==========
-    available_modules = []
+    available_modules: dict[str, str] = {}
+    available_module_targets: dict[str, list[str]] = {}
     for x in modules:
         # 筛选条件：基础模块或已启用的模块
         if modules[x].base or (x in msg.session_info.enabled_modules):
@@ -1654,11 +1727,19 @@ async def _command_typo_check(msg: "Bot.MessageSession", modules, command_first_
             # 跳过当前平台没有可用命令的模块（如仅含 regex 的模块，不能作为命令调用）
             if not modules[x].command_list.get(msg.session_info.target_from):
                 continue
-            available_modules.append(x)
+            available_modules[x] = x
+            available_module_targets[x] = [x]
+            for alias, target in ModulesManager.modules_aliases.items():
+                if target.split(maxsplit=1)[0] == x:
+                    alias_first_word = alias.split(maxsplit=1)[0]
+                    available_modules.setdefault(alias_first_word, x)
+                    available_module_targets.setdefault(alias_first_word, target.split())
 
     # ========== 步骤 3: 模块名相似度匹配 ==========
     # 使用 rapidfuzz 找出最接近的模块名
-    match_close_module: list = __get_close_matches(command_first_word, available_modules, 1, typo_check_module_score)
+    match_close_module: list = __get_close_matches(
+        command_first_word, list(available_modules), 1, typo_check_module_score
+    )
 
     if match_close_module:
         # 找到了相似的模块
@@ -1680,7 +1761,10 @@ async def _command_typo_check(msg: "Bot.MessageSession", modules, command_first_
                 match_close_module = []
 
     if match_close_module:
-        module: Module = modules[match_close_module[0]]
+        matched_module_name = match_close_module[0]
+        matched_real_module_name = available_modules[matched_module_name]
+        matched_module_target = available_module_targets[matched_module_name]
+        module: Module = modules[matched_real_module_name]
 
         # ========== 步骤 4: 检查模块是否有命令模板 ==========
         none_template = True
@@ -1689,7 +1773,8 @@ async def _command_typo_check(msg: "Bot.MessageSession", modules, command_first_
                 none_template = False
                 break
 
-        command_split = msg.trigger_msg.split(" ")
+        input_command_split = msg.trigger_msg.split(" ")
+        command_split = matched_module_target + input_command_split[1:]
         len_command_split = len(command_split)
 
         # ========== 步骤 5: 命令参数匹配（仅对有模板的模块）==========
@@ -1753,7 +1838,7 @@ async def _command_typo_check(msg: "Bot.MessageSession", modules, command_first_
                 m_split_options = filter(None, re.split(r"(\[.*?\])", match_split))
                 old_command_split = command_split.copy()
                 del old_command_split[0]  # 删除模块名
-                new_command_split = [match_close_module[0]]
+                new_command_split = [matched_real_module_name]
                 for m_ in m_split_options:
                     if m_.startswith("["):  # 如果是可选参数
                         m_split = m_.split(" ")  # 切割可选参数中的空格（说明存在多个子必须参数）
@@ -1796,27 +1881,34 @@ async def _command_typo_check(msg: "Bot.MessageSession", modules, command_first_
                             else:
                                 new_command_split.append(mm)
                 new_command_display = " ".join(new_command_split)
+                if matched_module_name != matched_real_module_name:
+                    target_prefix = " ".join(matched_module_target)
+                    display_suffix = new_command_display[len(target_prefix) :].lstrip()
+                    new_command_display = matched_module_name + (f" {display_suffix}" if display_suffix else "")
                 result = await _typo_confirm(
-                    msg, new_command_display, new_command_split[0], " ".join(new_command_split)
+                    msg,
+                    new_command_display,
+                    matched_real_module_name,
+                    " ".join(new_command_split),
                 )
                 if result:
                     return result
             else:
                 if len_command_split - 1 == 1:
-                    new_command_display = f"{match_close_module[0]} {' '.join(command_split[1:])}"
+                    new_command_display = f"{matched_module_name} {' '.join(input_command_split[1:])}"
                     result = await _typo_confirm(
                         msg,
                         new_command_display,
-                        match_close_module[0],
-                        " ".join([match_close_module[0]] + command_split[1:]),
+                        matched_real_module_name,
+                        " ".join([matched_real_module_name] + command_split[1:]),
                     )
                     if result:
                         return result
         else:
-            new_trigger_msg = match_close_module[0] + (
+            new_trigger_msg = matched_real_module_name + (
                 " " + " ".join(command_split[1:]) if len(command_split) > 1 else ""
             )
-            result = await _typo_confirm(msg, new_trigger_msg, match_close_module[0], new_trigger_msg)
+            result = await _typo_confirm(msg, new_trigger_msg, matched_real_module_name, new_trigger_msg)
             if result:
                 return result
     return None, None, False

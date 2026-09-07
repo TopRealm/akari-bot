@@ -153,6 +153,8 @@ class CommandParser:
         format_args = templates_to_str(self._filtered_args, with_desc=True)
 
         args_lst = []
+        if not format_args and "" in self.args and not self.origin_template.doc:
+            args_lst.append(f"{self.command_prefixes[0]}{self.module_name}")
         for x in format_args:
             x = locale.t_str(x, locale_failed_prompt=False)
             x = f"{self.command_prefixes[0]}{self.module_name} {x}"
@@ -217,6 +219,9 @@ class CommandParser:
         format_args = templates_to_str(self._filtered_args, with_desc=True)
 
         args_list = []
+
+        if not format_args and "" in self.args and not self.origin_template.doc:
+            args_list.append({"args": f"{self.command_prefixes[0]}{self.module_name}", "desc": ""})
 
         # ========== 步骤 2: 解析命令和描述 ==========
         for x in format_args:
@@ -291,7 +296,12 @@ class CommandParser:
         try:
             # 使用 shlex 分割命令，支持引号和转义序列
             # 例如: "search 'multi word' -t recent" -> ["search", "multi word", "-t", "recent"]
-            split_command = shlex.split(command)
+            lexer = shlex.shlex(command, posix=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            # 关闭 shlex 默认的转义字符
+            lexer.escape = ""
+            split_command = list(lexer)
         except ValueError:
             # 如果 shlex 分割失败（如引号不匹配），使用简单的空格分割
             split_command = command.split(" ")

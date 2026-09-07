@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.internal import ActionText, Embed, Image, Mention, Plain, Voice
+from core.builtins.message.internal import ActionText, Button, Embed, Image, Mention, Plain, Audio
 from core.builtins.session.info import SessionInfo
 from core.i18n import Locale
 from core.tester import Tester, func_case
@@ -25,9 +25,10 @@ def _session():
         sender_from="Discord|Client",
         locale=Locale("zh_cn"),
         support_image=True,
-        support_voice=True,
+        support_audio=True,
         support_mention=True,
         support_embed=True,
+        support_button=True,
     )
 
 
@@ -47,6 +48,14 @@ async def _test_plain_atcode_is_converted():
     return payloads[0].content == "hello <@2>"
 
 
+async def _test_plain_allow_parse_skips_atcode():
+    payloads = await build_discord_payloads(
+        _session(),
+        MessageChain.assign(Plain("hello <AT:Discord|2>", allow_parse=False)),
+    )
+    return payloads[0].content == "hello <AT:Discord|2>"
+
+
 async def _test_action_text_keeps_inline_fallback_and_metadata():
     session = _session()
     session.support_action_text = True
@@ -59,9 +68,30 @@ async def _test_action_text_keeps_inline_fallback_and_metadata():
     )
 
 
+async def _test_button_rows_are_collected():
+    payloads = await build_discord_payloads(
+        _session(),
+        MessageChain.assign([Plain("hello"), Button("Docs", "https://example.com"), Button("Help", "~help")]),
+    )
+    rows = payloads[-1].button_rows
+    return payloads[0].content == "hello" and [(button.show, button.value) for button in rows[0].buttons] == [
+        ("Docs", "https://example.com"),
+        ("Help", "~help"),
+    ]
+
+
+async def _test_button_only_message_gets_placeholder():
+    payloads = await build_discord_payloads(_session(), MessageChain.assign(Button("Help", "~help")))
+    return (
+        len(payloads) == 1
+        and payloads[0].content == "\u200b"
+        and payloads[0].button_rows[0].buttons[0] == Button("Help", "~help")
+    )
+
+
 async def _test_mixed_elements_fit_one_payload():
     chain = MessageChain.assign(
-        [Plain("hello"), Mention("Discord|2"), Image("image.png"), Voice("voice.ogg"), Embed(title="card")]
+        [Plain("hello"), Mention("Discord|2"), Image("image.png"), Audio("audio.ogg"), Embed(title="card")]
     )
     fake_file = SimpleNamespace(filename="direct.bin")
     fake_embed = SimpleNamespace()
@@ -133,6 +163,17 @@ async def _test_execute_uses_reference_first_and_view_last():
     )
 
 
+async def _test_execute_preserves_messages_before_send_failure():
+    first = SimpleNamespace(id=1)
+    channel = SimpleNamespace(send=AsyncMock(side_effect=[first, RuntimeError("send failed")]))
+    payloads = [DiscordPayload(content="one"), DiscordPayload(content="two")]
+    try:
+        messages = await execute_discord_payloads(channel, payloads)
+    except Exception:
+        return False
+    return messages == [first] and channel.send.await_count == 2
+
+
 def _test_interaction_reference_uses_component_message():
     from bots.discord.context import resolve_discord_reference
 
@@ -147,11 +188,15 @@ async def test_discord_message_builder(tester: Tester):
     await tester.test(_test_text_splits_at_2000, "文本按 2000 字符拆分")
     await tester.test(_test_text_prefers_newline, "文本优先在换行处分段")
     await tester.test(_test_plain_atcode_is_converted, "Plain 中的提及转换为 Discord 格式")
+    await tester.test(_test_plain_allow_parse_skips_atcode, "Plain.allow_parse=False 保留 Discord 提及文本")
     await tester.test(_test_action_text_keeps_inline_fallback_and_metadata, "ActionText 保持行内降级并收集交互信息")
+    await tester.test(_test_button_rows_are_collected, "ButtonElement 收集按钮行")
+    await tester.test(_test_button_only_message_gets_placeholder, "纯按钮消息补充不可见正文")
     await tester.test(_test_mixed_elements_fit_one_payload, "混合元素合并为一个负载")
     await tester.test(_test_file_limit_creates_second_payload, "附件超过 10 个时拆包")
     await tester.test(_test_embed_limit_creates_second_payload, "Embed 超过 10 个时拆包")
     await tester.test(_test_embed_attachment_stays_with_embed, "Embed 附件与 Embed 保持同包")
     await tester.test(_test_execute_uses_reference_first_and_view_last, "引用仅首条且按钮仅末条")
+    await tester.test(_test_execute_preserves_messages_before_send_failure, "后续发送失败时保留已发送消息")
     await tester.test(_test_interaction_reference_uses_component_message, "Interaction 引用原按钮消息")
     return tester

@@ -1,4 +1,3 @@
-import asyncio
 import re
 import urllib.parse
 
@@ -6,14 +5,15 @@ import filetype
 
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.internal import I18NContext, Image, Voice, Url
+from core.builtins.message.internal import ButtonFrame, I18NContext, Image, Audio, Video, Url
 from core.component import module
-from core.dirty_check import check
+from core.utils.dirty_check import check
 from core.logger import Logger
 from core.utils.func import is_int
 from core.utils.http import download
 from core.utils.image import svg_render
 from core.utils.image_table import image_table_render, ImageTable
+from core.utils.button import build_button_rows
 from .database.models import WikiTargetInfo
 from .utils.mapping import generate_screenshot_v2_blocklist
 from .utils.screenshot_image import (
@@ -22,22 +22,20 @@ from .utils.screenshot_image import (
 )
 from .utils.utils import check_svg
 from .utils.wikilib import WikiLib
-from .wiki import query_pages
-
-import uuid
+from .wiki import _build_forum_callback, _build_section_callback, _start_background_with_release, query_pages
 
 wiki_inline = module(
-    "wiki_inline",
-    desc="{I18N:wiki.help.wiki_inline.desc}",
+    "wiki-inline",
+    desc="{I18N:wiki.help.wiki-inline.desc}",
     doc=True,
     recommend_modules=["wiki"],
-    alias="wiki_regex",
+    alias=["wiki_inline", "wiki_regex"],
     developers=["OasisAkari"],
     regex=True,
 )
 
 
-@wiki_inline.regex(r"\[\[(.*?)\]\]", flags=re.I, mode="A", desc="{I18N:wiki.help.wiki_inline.page}")
+@wiki_inline.regex(r"\[\[(.*?)\]\]", flags=re.I, mode="A", desc="{I18N:wiki.help.wiki-inline.page}")
 async def _(msg: Bot.MessageSession):
     query_list = []
     for x in msg.matched_msg:
@@ -47,7 +45,7 @@ async def _(msg: Bot.MessageSession):
         await query_pages(msg, query_list[:5], inline_mode=True)
 
 
-@wiki_inline.regex(r"\{\{(.*?)\}\}", flags=re.I, mode="A", desc="{I18N:wiki.help.wiki_inline.template}")
+@wiki_inline.regex(r"\{\{(.*?)\}\}", flags=re.I, mode="A", desc="{I18N:wiki.help.wiki-inline.template}")
 async def _(msg: Bot.MessageSession):
     query_list = []
     for x in msg.matched_msg:
@@ -58,7 +56,7 @@ async def _(msg: Bot.MessageSession):
 
 
 @wiki_inline.regex(
-    r"≺(.*?)≻|⧼(.*?)⧽", flags=re.I, mode="A", show_typing=False, desc="{I18N:wiki.help.wiki_inline.mediawiki}"
+    r"≺(.*?)≻|⧼(.*?)⧽", flags=re.I, mode="A", show_typing=False, desc="{I18N:wiki.help.wiki-inline.mediawiki}"
 )
 async def _(msg: Bot.MessageSession):
     query_list = []
@@ -76,12 +74,12 @@ async def _(msg: Bot.MessageSession):
     mode="A",
     show_typing=False,
     logging=False,
-    desc="{I18N:wiki.help.wiki_inline.url}",
+    desc="{I18N:wiki.help.wiki-inline.url}",
 )
 async def _(msg: Bot.MessageSession):
     match_msg = msg.matched_msg
 
-    async def bgtask(query_list):
+    async def _run_bgtask(query_list):
         Logger.info(query_list)
         for q in query_list:
             img_send = False
@@ -93,13 +91,13 @@ async def _(msg: Bot.MessageSession):
                 get_page = None
                 if is_int(get_id):
                     get_page = await wiki_.parse_page_info(pageid=int(get_id), session=msg)
-                    if not q[qq].in_allowlist and msg.session_info.use_url_manager:
+                    if not q[qq].is_allowed and msg.session_info.use_url_manager:
                         for result in await check(get_page.title, session=msg):
                             if not result["status"]:
                                 return
                 elif get_title != "":
                     title = urllib.parse.unquote(get_title)
-                    if not q[qq].in_allowlist and msg.session_info.use_url_manager:
+                    if not q[qq].is_allowed and msg.session_info.use_url_manager:
                         for result in await check(title, session=msg):
                             if not result["status"]:
                                 return
@@ -122,7 +120,7 @@ async def _(msg: Bot.MessageSession):
                                     await msg.send_message(
                                         [
                                             I18NContext(
-                                                "wiki.message.wiki_inline.flies",
+                                                "wiki.message.wiki-inline.flies",
                                                 file=MessageChain.assign(Url(get_page.file)),
                                             ),
                                             Image(dl),
@@ -137,23 +135,42 @@ async def _(msg: Bot.MessageSession):
                                 "mp3",
                                 "wav",
                             ]:
-                                if msg.session_info.support_voice:
+                                if msg.session_info.support_audio:
                                     await msg.send_message(
                                         [
                                             I18NContext(
-                                                "wiki.message.wiki_inline.flies",
+                                                "wiki.message.wiki-inline.flies",
                                                 file=MessageChain.assign(Url(get_page.file)),
                                             ),
-                                            Voice(dl),
+                                            Audio(dl),
                                         ],
                                         quote=False,
                                     )
+                        elif guess_type.extension in [
+                            "mp4",
+                            "mkv",
+                            "avi",
+                            "mov",
+                            "flv",
+                            "webm",
+                        ]:
+                            if msg.session_info.support_video:
+                                await msg.send_message(
+                                    [
+                                        I18NContext(
+                                            "wiki.message.wiki-inline.flies",
+                                            file=MessageChain.assign(Url(get_page.file)),
+                                        ),
+                                        Video(dl),
+                                    ],
+                                    quote=False,
+                                )
                         elif check_svg(dl):
                             rd = await svg_render(dl)
                             if msg.session_info.support_image and rd:
                                 chain = [
                                     I18NContext(
-                                        "wiki.message.wiki_inline.flies",
+                                        "wiki.message.wiki-inline.flies",
                                         file=MessageChain.assign(Url(get_page.file)),
                                     ),
                                 ] + rd
@@ -163,24 +180,18 @@ async def _(msg: Bot.MessageSession):
                         if (
                             get_page.status
                             and get_page.title
-                            and (wiki_.wiki_info.in_allowlist or not msg.session_info.use_url_manager)
+                            and (wiki_.wiki_info.is_allowed or not msg.session_info.use_url_manager)
                         ):
                             if wiki_.wiki_info.realurl not in generate_screenshot_v2_blocklist:
-                                is_disambiguation = False
-                                if get_page.templates:
-                                    is_disambiguation = (
-                                        "Template:Disambiguation" in get_page.templates
-                                        or "Template:Version disambiguation" in get_page.templates
-                                    )
                                 content_mode = (
                                     get_page.has_template_doc
                                     or get_page.title.split(":")[0] in ["User"]
-                                    or is_disambiguation
+                                    or get_page.is_disambiguation
                                     or get_page.is_forum_topic
                                 )
                                 get_infobox = await generate_screenshot_v2(
                                     qq,
-                                    allow_special_page=(q[qq].in_allowlist or not msg.session_info.use_url_manager),
+                                    allow_special_page=(q[qq].is_allowed or not msg.session_info.use_url_manager),
                                     content_mode=content_mode,
                                     locale=msg.session_info.locale.locale,
                                 )
@@ -199,7 +210,7 @@ async def _(msg: Bot.MessageSession):
                         if (
                             (
                                 get_page.invalid_section
-                                and (wiki_.wiki_info.in_allowlist or not msg.session_info.use_url_manager)
+                                and (wiki_.wiki_info.is_allowed or not msg.session_info.use_url_manager)
                             )
                             or (get_page.is_talk_page and not get_page.selected_section)
                             and Bot.Info.web_render_status
@@ -207,11 +218,9 @@ async def _(msg: Bot.MessageSession):
                             i_msg_lst = []
                             if get_page.sections:
                                 button_data_ = []
-                                callback_id = None
                                 if msg.session_info.support_button:
-                                    callback_id = str(uuid.uuid4())
                                     for i in range(len(get_page.sections)):
-                                        button_data_.append({str(i + 1): f"<q:{callback_id}>{str(i + 1)}"})
+                                        button_data_.append({str(i + 1): str(i + 1)})
                                 Logger.debug(button_data_)
                                 button_data = []
                                 rb = {}
@@ -232,7 +241,7 @@ async def _(msg: Bot.MessageSession):
                                         "wiki.message.invalid_section.prompt"
                                         if get_page.invalid_section
                                         and (
-                                            get_page.info.in_allowlist
+                                            get_page.info.is_allowed
                                             or not (
                                                 isinstance(msg, Bot.MessageSession) and msg.session_info.use_url_manager
                                             )
@@ -246,8 +255,8 @@ async def _(msg: Bot.MessageSession):
                                         ImageTable(
                                             session_data,
                                             [
-                                                msg.session_info.locale.t("wiki.message.table.header.id"),
-                                                msg.session_info.locale.t("wiki.message.table.header.section"),
+                                                msg.t("wiki.message.table.header.id"),
+                                                msg.t("wiki.message.table.header.section"),
                                             ],
                                         )
                                     )
@@ -262,21 +271,9 @@ async def _(msg: Bot.MessageSession):
                                             I18NContext("wiki.message.invalid_section.select.button.limit")
                                         )
 
-                                async def _callback(msg: Bot.MessageSession):
-                                    display = msg.as_display(text_only=True)
-                                    if is_int(display):
-                                        display = int(display)
-                                        if display <= len(get_page.sections):
-                                            get_page.selected_section = str(display - 1)
-                                            await query_pages(
-                                                msg,
-                                                title=get_page.title + "#" + get_page.sections[display - 1],
-                                                start_wiki_api=get_page.info.api,
-                                            )
-
-                                await msg.send_message(
-                                    i_msg_lst, callback=_callback, button_data=button_data, callback_id=callback_id
-                                )
+                                if button_data:
+                                    i_msg_lst.append(ButtonFrame(build_button_rows(button_data)))
+                                await msg.send_message(i_msg_lst, callback=_build_section_callback(get_page))
                             else:
                                 await msg.send_message(I18NContext("wiki.message.invalid_section"))
                         if get_page.is_forum:
@@ -285,9 +282,6 @@ async def _(msg: Bot.MessageSession):
                             img_table_headers = ["#"]
                             button_data = []
 
-                            callback_id = None
-                            if msg.session_info.support_button:
-                                callback_id = str(uuid.uuid4())
                             for x in forum_data:
                                 if x == "#":
                                     img_table_headers += forum_data[x]["data"]
@@ -297,7 +291,7 @@ async def _(msg: Bot.MessageSession):
                             bi = 1
                             for b in forum_data:
                                 if b != "#":
-                                    rb.update({b: f"<q:{callback_id}>{b}"})
+                                    rb.update({b: b})
                                     if len(rb.keys()) >= 5:
                                         button_data.append(rb.copy())
                                         rb.clear()
@@ -319,18 +313,9 @@ async def _(msg: Bot.MessageSession):
                                 if len(forum_data) > 25:
                                     i_msg_lst.append(I18NContext("wiki.message.invalid_section.select.button.limit"))
 
-                            async def _callback(msg: Bot.MessageSession):
-                                display = msg.as_display(text_only=True)
-                                if is_int(display) and int(display) <= len(forum_data) - 1:
-                                    await query_pages(
-                                        msg,
-                                        title=forum_data[display]["text"],
-                                        start_wiki_api=get_page.info.api,
-                                    )
-
-                            await msg.send_message(
-                                i_msg_lst, callback=_callback, button_data=button_data, callback_id=callback_id
-                            )
+                            if button_data:
+                                i_msg_lst.append(ButtonFrame(build_button_rows(button_data)))
+                            await msg.send_message(i_msg_lst, callback=_build_forum_callback(get_page))
             if len(query_list) == 1 and img_send:
                 return
             if msg.session_info.support_image:
@@ -347,7 +332,7 @@ async def _(msg: Bot.MessageSession):
                             section_.append(qs)
                     if section_:
                         s = urllib.parse.unquote("".join(section_)[1:])
-                        if q[qq].realurl and (q[qq].in_allowlist or not msg.session_info.use_url_manager):
+                        if q[qq].realurl and (q[qq].is_allowed or not msg.session_info.use_url_manager):
                             if q[qq].realurl in generate_screenshot_v2_blocklist:
                                 get_section = await generate_screenshot_v1(q[qq].realurl, qq, headers, section=s)
                             else:
@@ -359,7 +344,6 @@ async def _(msg: Bot.MessageSession):
                                 for img in get_section:
                                     imgs.append(Image(img))
                                 await msg.send_message(imgs, quote=False)
-        await msg.release()
 
     _query_list = []
     target = await WikiTargetInfo.get_by_target_id(msg.session_info.target_id)
@@ -376,6 +360,9 @@ async def _(msg: Bot.MessageSession):
             Logger.exception("Error occurred while checking wiki info for query: ")
 
     if _query_list:
-        await msg.hold()
-        asyncio.create_task(bgtask(_query_list))
-    # await bgtask()
+        await _start_background_with_release(
+            msg,
+            lambda: _run_bgtask(tuple(_query_list)),
+            name="wiki-inline-background",
+        )
+    # await _run_bgtask()

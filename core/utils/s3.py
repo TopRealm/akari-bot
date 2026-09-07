@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from functools import partial
+from inspect import isawaitable
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -40,13 +43,20 @@ class S3StorageAPI:
         public_endpoint: str | None = None,
         internal_endpoint: str | None = None,
         temp_max_count: int = DEFAULT_TEMP_MAX_COUNT,
+        connect_timeout: float = 5,
+        read_timeout: float = 15,
+        operation_timeout: float = 40,
+        max_attempts: int = 2,
+        max_workers: int = 4,
     ):
         self._endpoint = endpoint_url.rstrip("/")
         self.bucket = bucket
         self._public_endpoint = (public_endpoint or endpoint_url).rstrip("/")
         self._internal_endpoint = (internal_endpoint or endpoint_url).rstrip("/")
         self.temp_max_count = temp_max_count
+        self.operation_timeout = max(float(operation_timeout), 0.1)
         self._manifest_locks: dict[str, asyncio.Lock] = {}
+        self._executor = ThreadPoolExecutor(max_workers=max(int(max_workers), 1), thread_name_prefix="akari-s3")
 
         self._client = boto3.client(
             "s3",
@@ -54,22 +64,27 @@ class S3StorageAPI:
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=region,
-            config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+            config=BotoConfig(
+                signature_version="s3v4",
+                connect_timeout=max(float(connect_timeout), 0.1),
+                read_timeout=max(float(read_timeout), 0.1),
+                retries={"total_max_attempts": max(int(max_attempts), 1), "mode": "standard"},
+                s3={"addressing_style": "path"},
+            ),
         )
-        self._ensure_folders()
         Logger.info(f"[S3] Initialized storage client for bucket: {bucket}")
 
-    def _ensure_folders(self):
-        for prefix in (self.PERSIST_PREFIX, self.TEMP_PREFIX):
-            key = f"{prefix}/"
-            try:
-                self._client.put_object(Bucket=self.bucket, Key=key, Body=b"")
-            except ClientError as e:
-                Logger.warning(f"[S3] Failed to ensure folder {key}: {e}")
-
-    @staticmethod
-    async def _run_sync(func, *args, **kwargs):
-        return await asyncio.to_thread(func, *args, **kwargs)
+    async def _run_sync(self, func, *args, **kwargs):
+        """在 S3 专用线程池执行同步 SDK 调用，并限制调用方的最长等待时间。"""
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(self._executor, partial(func, *args, **kwargs))
+        try:
+            async with asyncio.timeout(self.operation_timeout):
+                return await future
+        except TimeoutError:
+            name = getattr(func, "__name__", type(func).__name__)
+            Logger.error(f"[S3] Operation {name} timed out after {self.operation_timeout:g}s.")
+            raise
 
     async def upload_persist(self, file_path: str | Path, object_key: str | None = None, expires: int = 3600) -> dict:
         """上传文件到 persist 文件夹。自动计算文件 hash 并嵌入文件名，若已有同 hash 文件则跳过上传直接返回链接。
@@ -79,7 +94,7 @@ class S3StorageAPI:
         :param expires: 预签名链接有效期（秒）。
         :return: 包含 key、internal_url、public_url 的字典。
         """
-        file_hash = self._compute_hash(file_path)
+        file_hash = await self._run_sync(self._compute_hash, file_path)
         key = self._build_key(self.PERSIST_PREFIX, file_path, object_key, file_hash)
         if await self._key_exists(key):
             Logger.info(f"[S3] Deduplicated persist (hash {file_hash}): {key}")
@@ -107,7 +122,7 @@ class S3StorageAPI:
         :param expires: 预签名链接有效期（秒）。
         :return: 包含 key、internal_url、public_url 的字典。
         """
-        file_hash = self._compute_hash(file_path)
+        file_hash = await self._run_sync(self._compute_hash, file_path)
         key = self._build_key(self.TEMP_PREFIX, file_path, object_key, file_hash)
         if await self._key_exists(key):
             Logger.info(f"[S3] Deduplicated temp (hash {file_hash}): {key}")
@@ -129,7 +144,8 @@ class S3StorageAPI:
 
             await self._update_manifest(self.TEMP_PREFIX, _append)
 
-        asyncio.create_task(_bg())
+        task = asyncio.create_task(_bg(), name=f"s3-temp-manifest-{file_hash}")
+        task.add_done_callback(self._log_background_failure)
         Logger.info(f"[S3] Uploaded temp: {key}")
         return await self._build_result(key, expires)
 
@@ -153,8 +169,10 @@ class S3StorageAPI:
             resp = self._client.get_object(Bucket=self.bucket, Key=self._manifest_key(prefix))
             body = resp["Body"].read()
             return orjson.loads(body)
-        except ClientError:
-            return []
+        except ClientError as e:
+            if self._is_not_found_error(e):
+                return []
+            raise
 
     async def _read_manifest(self, prefix: str) -> list[dict]:
         return await self._run_sync(self._read_manifest_sync, prefix)
@@ -169,16 +187,16 @@ class S3StorageAPI:
     async def _update_manifest(self, prefix: str, updater):
         """在锁保护下读取 manifest、执行 updater(files)、写回（防止并发覆盖）。
 
-        updater 可为同步或异步函数，若为异步则 await 其执行结果。
+        updater 可为同步或异步函数；返回新列表时写入新列表，返回 None 时保留原地修改后的列表。
         """
-        import inspect
-
         lock = self._manifest_locks.setdefault(prefix, asyncio.Lock())
         async with lock:
             files = await self._read_manifest(prefix)
             result = updater(files)
-            if inspect.isawaitable(result):
-                await result
+            if isawaitable(result):
+                result = await result
+            if result is not None:
+                files = result
             await self._write_manifest(prefix, files)
 
     async def get_presigned_url(self, object_key: str, expires: int = 3600, internal: bool = True) -> str:
@@ -249,13 +267,31 @@ class S3StorageAPI:
 
     # --- internal helpers ---
 
+    @staticmethod
+    def _log_background_failure(task: asyncio.Task):
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            Logger.exception("[S3] Failed to update temporary-file manifest: ")
+
     async def _key_exists(self, key: str) -> bool:
         """检查指定 key 是否已存在于桶中（使用 head_object）。"""
         try:
             await self._run_sync(self._client.head_object, Bucket=self.bucket, Key=key)
             return True
-        except ClientError:
-            return False
+        except ClientError as e:
+            if self._is_not_found_error(e):
+                return False
+            raise
+
+    @staticmethod
+    def _is_not_found_error(error: ClientError) -> bool:
+        response = error.response
+        code = str(response.get("Error", {}).get("Code", ""))
+        status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        return code in {"404", "NoSuchKey", "NotFound"} or status == 404
 
     @staticmethod
     def _compute_hash(file_path: str | Path) -> str:
@@ -322,6 +358,11 @@ if s3_access_key and s3_secret_key and endpoint_url and bucket and region:
         public_endpoint=S3Config.s3_public_endpoint,
         internal_endpoint=S3Config.s3_internal_endpoint,
         temp_max_count=S3Config.s3_temp_max_count,
+        connect_timeout=S3Config.s3_connect_timeout,
+        read_timeout=S3Config.s3_read_timeout,
+        operation_timeout=S3Config.s3_operation_timeout,
+        max_attempts=S3Config.s3_max_attempts,
+        max_workers=S3Config.s3_max_workers,
     )
 else:
     Logger.warning("[S3] S3 configuration is incomplete. S3Storage will not be initialized.")

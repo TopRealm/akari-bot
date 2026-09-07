@@ -26,8 +26,11 @@ class Features:
     # 图像消息支持 - 会话是否支持发送和接收图片消息
     support_image: bool = False
 
-    # 语音消息支持 - 会话是否支持发送和接收语音消息
-    support_voice: bool = False
+    # 音频消息支持 - 会话是否支持发送和接收音频消息
+    support_audio: bool = False
+
+    # 视频消息支持 - 会话是否支持发送和接收视频消息
+    support_video: bool = False
 
     # 提及功能支持 - 会话是否支持 @ 提及功能（如 `@<用户名>`）
     support_mention: bool = False
@@ -35,14 +38,14 @@ class Features:
     # 嵌入式内容支持 - 会话是否支持发送嵌入式内容（如卡片、富文本）
     support_embed: bool = False
 
-    # 消息转发支持 - 会话是否支持转发消息功能
-    support_forward: bool = False
-
     # 消息删除支持 - 会话是否支持删除已发送的消息
     support_delete: bool = False
 
     # 权限管理支持 - 会话是否支持权限管理功能（如禁言、踢出）
     support_manage: bool = False
+
+    # 权限组管理支持 - 会话是否支持为成员授予或移除平台原生权限组／角色
+    support_permission_group: bool = False
 
     # Markdown 语法支持 - 会话是否支持 Markdown 格式化文本
     support_markdown: bool = False

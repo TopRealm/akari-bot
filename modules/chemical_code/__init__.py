@@ -3,19 +3,16 @@ import io
 import re
 import time
 
-from PIL import Image as PImage
-from rdkit import Chem
-from rdkit.Chem import AllChem, Draw, rdMolDescriptors
 from tenacity import retry, stop_after_attempt
 
 from core.builtins.bot import Bot
 from core.builtins.message.internal import Image, I18NContext
 from core.component import module
-from core.game import PlayState, GAME_EXPIRED
+from core.utils.game import PlayState, GAME_EXPIRED
 from core.logger import Logger
+from core.utils.petal import gained_petal
 from core.utils.cache import random_cache_path
 from core.utils.http import get_url
-from core.utils.petal import gained_petal
 from core.utils.random import Random
 from .coloring import element_colors
 
@@ -166,6 +163,9 @@ def parse_elements(formula: str) -> dict:
 
 @retry(stop=stop_after_attempt(3), reraise=True)
 async def search_pubchem(id: int | None = None):
+    from rdkit import Chem
+    from rdkit.Chem import rdMolDescriptors
+
     if id:
         answer_id = id
     else:
@@ -173,36 +173,44 @@ async def search_pubchem(id: int | None = None):
     answer_id = str(answer_id)
     Logger.info(f"PubChem CID: {answer_id}")
     get = await get_url(f"{pubchem_link}/compound/cid/{answer_id}/property/SMILES/JSON", 200, fmt="json")
-    if get:
-        properties = get.get("PropertyTable", {}).get("Properties", [])
-        if not properties:
-            raise ValueError
-        compound_info = properties[0]
-        smiles = compound_info.get("SMILES", "")
-        mol = Chem.MolFromSmiles(smiles)
-        formula = rdMolDescriptors.CalcMolFormula(mol)
-        elements = parse_elements(formula)
-        return {
-            "id": answer_id,
-            "answer": formula,
-            "smiles": smiles,
-            "elements": elements,
-        }
+    if not get:
+        raise ValueError(f"PubChem CID {answer_id} returned no data")
+    properties = get.get("PropertyTable", {}).get("Properties", [])
+    if not properties:
+        raise ValueError(f"PubChem CID {answer_id} has no properties")
+    compound_info = properties[0]
+    smiles = compound_info.get("SMILES", "")
+    if not smiles:
+        raise ValueError(f"PubChem CID {answer_id} has no SMILES")
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None or mol.GetNumAtoms() == 0:
+        raise ValueError(f"PubChem CID {answer_id} has no valid molecular structure")
+    formula = rdMolDescriptors.CalcMolFormula(mol)
+    if not formula:
+        raise ValueError(f"PubChem CID {answer_id} has no molecular formula")
+    elements = parse_elements(formula)
+    return {
+        "id": answer_id,
+        "answer": formula,
+        "smiles": smiles,
+        "elements": elements,
+    }
 
 
 ccode = module(
-    "chemical_code",
+    "chemical-code",
     developers=["OasisAkari", "DoroWolf"],
     desc="{I18N:chemical_code.help.desc}",
     doc=True,
     alias={
-        "cc": "chemical_code",
-        "cca": "chemical_code captcha",
-        "chemicalcode": "chemical_code",
-        "chemical_captcha": "chemical_code captcha",
-        "chemicalcaptcha": "chemical_code captcha",
-        "ccode": "chemical_code",
-        "ccaptcha": "chemical_code captcha",
+        "chemical_code": "chemical-code",
+        "cc": "chemical-code",
+        "cca": "chemical-code captcha",
+        "chemicalcode": "chemical-code",
+        "chemical_captcha": "chemical-code captcha",
+        "chemicalcaptcha": "chemical-code captcha",
+        "ccode": "chemical-code",
+        "ccaptcha": "chemical-code captcha",
     },
 )
 
@@ -241,6 +249,10 @@ async def _(msg: Bot.MessageSession, pcid: int):
 
 
 async def chemical_code(msg: Bot.MessageSession, id: int | None = None, random_mode=True, captcha_mode=False):
+    from PIL import Image as PImage
+    from rdkit import Chem
+    from rdkit.Chem import AllChem, Draw
+
     play_state = PlayState("chemical_code", msg)
     if play_state.check():
         await msg.finish(I18NContext("game.message.running"))

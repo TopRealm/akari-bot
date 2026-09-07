@@ -1,18 +1,19 @@
-import asyncio
 import re
 
 from khl import Bot as khlBot, EventTypes, Event, Message, MessageTypes
 
 from bots.kook.client import bot
-from bots.kook.context import KOOKContextManager, KOOKFetchedContextManager
+from bots.kook.config import KookConfig
+from bots.kook.context import KOOKContextManager, KOOKFetchedContextManager, KOOKReactionContext
+from bots.kook.events import guild_member_joined, guild_member_left
 from bots.kook.info import *
+from bots.kook.lifecycle import run_bot
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.internal import Plain, Image, Voice
+from core.builtins.message.internal import Plain, Image, Audio, Video
 from core.builtins.session.info import SessionInfo
 from core.builtins.utils import command_prefix
 from core.client.init import client_init
-from bots.kook.config import KookConfig
 from core.config.base import CoreConfig
 
 Bot.register_bot(client_name=client_name)
@@ -35,7 +36,9 @@ async def to_message_chain(message: Message):
     elif message.type == MessageTypes.IMG:
         lst.append(Image(message.content))
     elif message.type == MessageTypes.AUDIO:
-        lst.append(Voice(message.content))
+        lst.append(Audio(message.content))
+    elif message.type == MessageTypes.VIDEO:
+        lst.append(Video(message.content))
     return MessageChain.assign(lst)
 
 
@@ -90,52 +93,121 @@ async def msg_handler(message: Message):
 @bot.on_event(EventTypes.ADDED_REACTION)
 async def add_reaction(b: khlBot, event: Event):
     body = event.extra.get("body", {})
-    if body.get("user_id") == b.client.me.id:
+    user_id = body.get("user_id")
+    channel_id = body.get("channel_id")
+    origin_message_id = body.get("msg_id")
+    emoji = body.get("emoji", {}).get("id")
+    if user_id is None or channel_id is None or origin_message_id is None or not emoji:
         return
-    sender_id = f"{sender_prefix}|{body.get('user_id', '')}"
+    user_id = str(user_id)
+    if user_id == str(b.client.me.id):
+        return
+    sender_id = f"{sender_prefix}|{user_id}"
     if sender_id in ignored_sender:
         return
 
+    origin_message_id = str(origin_message_id)
+    emoji = str(emoji)
+    context = KOOKReactionContext(
+        origin_message_id=origin_message_id,
+        emoji=emoji,
+        user_id=user_id,
+    )
     session = await SessionInfo.assign(
-        target_id=f"{target_group_prefix}|{body.get('channel_id', '')}",
+        target_id=f"{target_group_prefix}|{channel_id}",
         sender_id=sender_id,
         target_from=target_group_prefix,
         sender_from=sender_prefix,
         client_name=client_name,
-        message_id=str(event.id),
-        reply_id=body.get("msg_id"),
-        messages=MessageChain.assign([Plain(body.get("emoji", {}).get("id", ""))]),
+        message_id=str(event.id) if event.id is not None else None,
+        reply_id=origin_message_id,
+        messages=MessageChain.assign([Plain(emoji)]),
         ctx_slot=ctx_id,
         bot_id=bot.me.id,
     )
 
-    await Bot.process_message(session, event)
+    await Bot.process_message(session, context)
 
 
 @bot.on_event(EventTypes.PRIVATE_ADDED_REACTION)
 async def private_add_reaction(b: khlBot, event: Event):
     body = event.extra.get("body", {})
-    if body.get("user_id") == b.client.me.id:
+    user_id = body.get("user_id")
+    origin_message_id = body.get("msg_id")
+    emoji = body.get("emoji", {}).get("id")
+    if user_id is None or origin_message_id is None or not emoji:
         return
-    sender_id = f"{sender_prefix}|{body.get('user_id', '')}"
+    user_id = str(user_id)
+    if user_id == str(b.client.me.id):
+        return
+    sender_id = f"{sender_prefix}|{user_id}"
     if sender_id in ignored_sender:
         return
 
+    origin_message_id = str(origin_message_id)
+    emoji = str(emoji)
+    context = KOOKReactionContext(
+        origin_message_id=origin_message_id,
+        emoji=emoji,
+        user_id=user_id,
+    )
     session = await SessionInfo.assign(
-        target_id=f"{target_person_prefix}|{body.get('user_id', '')}",
+        target_id=f"{target_person_prefix}|{user_id}",
         sender_id=sender_id,
         target_from=target_person_prefix,
         is_private=True,
         sender_from=sender_prefix,
         client_name=client_name,
-        message_id=str(event.id),
-        reply_id=body.get("msg_id"),
-        messages=MessageChain.assign([Plain(body.get("emoji", {}).get("id", ""))]),
+        message_id=str(event.id) if event.id is not None else None,
+        reply_id=origin_message_id,
+        messages=MessageChain.assign([Plain(emoji)]),
         ctx_slot=ctx_id,
         bot_id=bot.me.id,
     )
 
-    await Bot.process_message(session, event)
+    await Bot.process_message(session, context)
+
+
+@bot.on_event(EventTypes.JOINED_GUILD)
+async def joined_guild(b: khlBot, event: Event):
+    """接收 KOOK 服务器成员加入事件。"""
+    body = event.body
+    member_id = body.get("user_id")
+    guild_id = event.target_id
+    if not member_id or not guild_id:
+        return
+
+    sender_id = f"{sender_prefix}|{member_id}"
+    if member_id == b.client.me.id or sender_id in ignored_sender:
+        return
+
+    await guild_member_joined(
+        member_id,
+        guild_id,
+        joined_at=body.get("joined_at"),
+        event_id=str(event.id) if event.id is not None else None,
+    )
+
+
+@bot.on_event(EventTypes.EXITED_GUILD)
+async def exited_guild(b: khlBot, event: Event):
+    """接收 KOOK 服务器成员离开事件。"""
+    body = event.body
+    member_id = body.get("user_id")
+    guild_id = event.target_id
+    if not member_id or not guild_id:
+        return
+
+    sender_id = f"{sender_prefix}|{member_id}"
+    if member_id == b.client.me.id or sender_id in ignored_sender:
+        return
+
+    await guild_member_left(
+        member_id,
+        guild_id,
+        left_at=body.get("exited_at"),
+        event_id=str(event.id) if event.id is not None else None,
+    )
 
 
 @bot.on_startup
@@ -144,5 +216,4 @@ async def _(b: khlBot):
 
 
 if KookConfig.enable:
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(bot.start())
+    run_bot(bot)

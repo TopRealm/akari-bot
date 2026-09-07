@@ -5,10 +5,16 @@
 适配器模块，混在核心层测试中会让后者平白背上这个依赖。
 """
 
+from types import SimpleNamespace
 from urllib.parse import quote
 
-from bots.qqbot.context import ACTION_TEXT_MAX_LENGTH, _render_action_text
-from core.builtins.message.elements import ActionTextElement, PlainElement
+from bots.qqbot.context import ACTION_TEXT_MAX_LENGTH, _build_qqbot_keyboard, _render_action_text
+from bots.qqbot.info import target_group_prefix
+from core.builtins.message.chain import MessageChain
+from core.builtins.message.elements import ActionTextElement, ButtonFrameElement, PlainElement
+from core.builtins.message.internal import Button
+from core.builtins.session.info import SessionInfo
+from core.i18n import Locale
 from core.tester import func_case, Tester
 
 
@@ -92,21 +98,6 @@ def _test_render_empty_text():
         return False
 
 
-def _test_features_declared():
-    """测试适配器按 markdown 开关声明该能力
-
-    指令操作标签只在 markdown 消息中生效，故该标志须跟随 qq_use_markdown，
-    恒为真会让模块侧构造出发不出去的可点击内容。
-    """
-    try:
-        from bots.qqbot.config import QQBotConfig
-        from bots.qqbot.features import features
-
-        return features.support_action_text is QQBotConfig.qq_use_markdown
-    except Exception:
-        return False
-
-
 def _test_send_msg_markdown_inline_join():
     """测试指令操作与其前后文本落在同一行
 
@@ -148,6 +139,33 @@ def _test_send_msg_markdown_inline_join():
         return False
 
 
+def _test_button_element_builds_keyboard():
+    """测试 ButtonElement 经消息链转换后生成 QQBot 键盘。"""
+    try:
+        session = SessionInfo(
+            target_id=f"{target_group_prefix}|1",
+            target_from=target_group_prefix,
+            client_name="QQBot",
+            sender_id="QQBot|1",
+            locale=Locale("zh_cn"),
+            support_button=True,
+        )
+        sendable = MessageChain.assign(
+            [Button("Docs", "https://example.com"), Button("Help", "~help", reply_id="callback-123")]
+        ).as_sendable(session)
+        frame = next(element for element in sendable if isinstance(element, ButtonFrameElement))
+        keyboard = _build_qqbot_keyboard(frame.rows, session, SimpleNamespace(scope="group"))
+        docs, help_button = keyboard["content"]["rows"][0]["buttons"]
+        return (
+            docs["action"]["type"] == 0
+            and docs["action"]["data"] == "https://example.com"
+            and help_button["action"]["type"] == 1
+            and help_button["action"]["data"] == "<q:callback-123>~help"
+        )
+    except Exception:
+        return False
+
+
 @func_case
 async def test_qqbot_action_text(tester: Tester):
     """bots.qqbot.context: 指令操作标签渲染测试"""
@@ -157,7 +175,7 @@ async def test_qqbot_action_text(tester: Tester):
     await tester.test(_test_render_truncates_text, "text 截断测试")
     await tester.test(_test_render_truncates_show, "show 独立截断测试")
     await tester.test(_test_render_empty_text, "空 text 不产出标签测试")
-    await tester.test(_test_features_declared, "适配器能力声明测试")
     await tester.test(_test_send_msg_markdown_inline_join, "行内拼接测试")
+    await tester.test(_test_button_element_builds_keyboard, "ButtonElement 构建键盘测试")
 
     return tester

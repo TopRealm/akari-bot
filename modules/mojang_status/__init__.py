@@ -4,7 +4,10 @@ from core.component import module
 from core.utils.http import request_url
 
 mojang_status = module(
-    "mojang_status", desc="{I18N:mojang_status.help.desc}", alias=["mcstatus", "mjs", "mjsb"], developers=["Don_Trueno"]
+    "mojang-status",
+    desc="{I18N:mojang_status.help.desc}",
+    alias=["mojang_status", "mcstatus", "mjs", "mjsb"],
+    developers=["Don_Trueno"],
 )
 
 url = {
@@ -22,19 +25,19 @@ async def _(msg: Bot.MessageSession):
         )
     ]
     for u, v in url.items():
-        api = msg.session_info.locale.t("mojang_status.service." + u)
+        api = str(I18NContext("mojang_status.service." + u))
         try:
             DATA = await request_url(v, method="GET", logging_err_resp=False, attempt=1)
             if DATA is not None:
-                status = msg.session_info.locale.t("mojang_status.status.online")
+                status = str(I18NContext("mojang_status.status.online"))
             else:
-                status = msg.session_info.locale.t("mojang_status.status.empty")
+                status = str(I18NContext("mojang_status.status.empty"))
         except ValueError as e:
             if str(e).startswith("40"):
-                status = msg.session_info.locale.t("mojang_status.status.online")
+                status = str(I18NContext("mojang_status.status.online"))
             elif str(e).startswith("50"):
-                status = msg.session_info.locale.t("mojang_status.status.offline")
+                status = str(I18NContext("mojang_status.status.offline"))
             else:
-                status = msg.session_info.locale.t("mojang_status.status.unknown")
+                status = str(I18NContext("mojang_status.status.unknown"))
         msg_list.append(I18NContext("mojang_status.message.entry", api=api, status=status))
     await msg.finish(msg_list)

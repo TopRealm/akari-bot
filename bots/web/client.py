@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -8,14 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from slowapi import Limiter
 
-from bots.web.info import *
-from core.client.init import client_init
-from core.config import CFGManager
 from bots.web.config import WebConfig, WebSecretConfig
+from bots.web.info import *
+from core.client.init import client_cleanup, client_init
+from core.config import CFGManager
 from core.constants.path import assets_path, webui_path
 from core.database.models import SenderUnionInfo
 from core.logger import Logger
-from core.utils.random import Random
+from core.utils.random import SecureRandom
 from core.utils.socket import find_available_port, get_local_ip
 
 if (webui_path / "dist").exists():
@@ -60,7 +59,7 @@ def get_client_ip(request: Request) -> str:
 jwt_secret = WebSecretConfig.jwt_secret
 if not jwt_secret:
     # jwt_secret 须在 web 子进程首次启动时随机生成并持久化，属只读进程中的合法写入
-    CFGManager.edit_write("jwt_secret", Random.randbytes(32).hex(), secret=True, table_name="bot_web")
+    CFGManager.edit_write("jwt_secret", SecureRandom.randbytes(32).hex(), secret=True, table_name="bot_web")
     jwt_secret = WebSecretConfig.jwt_secret
 
 
@@ -83,13 +82,15 @@ def _webui_message():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await client_init(target_prefix_list, sender_prefix_list)
-    sender_union_info = await SenderUnionInfo.resolve_union(f"{sender_prefix}|0")
-    await sender_union_info.edit_attr("superuser", True)
-    if dist_path.exists():
-        Logger.info(_webui_message())
-    yield
-    await asyncio.Event().wait()  # 等待 server 清理进程
+    try:
+        await client_init(target_prefix_list, sender_prefix_list)
+        sender_union_info = await SenderUnionInfo.resolve_union(f"{sender_prefix}|0")
+        await sender_union_info.edit_attr("superuser", True)
+        if dist_path.exists():
+            Logger.info(_webui_message())
+        yield
+    finally:
+        await client_cleanup()
 
 
 app = FastAPI(lifespan=lifespan)

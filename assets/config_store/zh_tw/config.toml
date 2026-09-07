@@ -3,7 +3,7 @@
 # 例如：TOML 中的布林值必須是小寫。
 
 default_locale = "zh_tw" # 預設的語言環境。
-config_version = 3 # 組態檔版本號，將會隨功能更新自動增加，一般情況下請勿修改。
+config_version = 5 # 組態檔版本號，將會隨功能更新自動增加，一般情況下請勿修改。
 
 [config]
 # 一些基礎的組態部分，此處填寫的值可在訊息中以明文形式顯示。請不要在此部分填寫敏感資訊。
@@ -11,14 +11,18 @@ debug = false # 是否啟用調試模式，啟用後會輸出更多的日誌訊�
 timezone_offset = "+8" # 機器人的預設時區偏移量。
 allow_reload_base = false # 是否允許重載基礎模組。
 allow_request_private_ip = false # 是否允許機器人請求本地私有 IP 位址。（防止可能的資訊外洩）
-slower_schedule = false # 是否啟用更慢的排程任務調度器。（減少請求壓力用）
+schedule_interval_multiplier = 1.0 # 计划任务的间隔时间倍率，仅影响 IntervalTrigger，必须为大于 0 的数值。（值越大相对间隔时间越长）
+use_emote = false # 是否使用表情資源。
 use_font_mirror = false # 網頁成像時是否使用字體鏡像。
 use_secrets_random = false # 是否使用基於 secrets 庫的隨機數產生器。
-base_superuser = ["QQ|2596322644"] # 機器人的基礎超級使用者列表，此處填寫的值將會在機器人啟動時載入資料庫。
-ignored_sender = ["QQ|2854196310"] # 無視的使用者列表，匹配到此列表中的使用者將會被忽略。
-report_targets = [] # 上報場景列表，此處填寫的場景 ID 將會被辨識為上報場景。（如：當機器人執行指令出錯時，機器人會將報錯訊息傳送至對應場景）
+ffmpeg_path = "<Replace me with str value>" # FFmpeg 執行檔路徑。
+media_compression_threshold = 10 # 媒體檔案大小閾值，超過此值的檔案將嘗試使用 FFmpeg 壓縮。單位為 MB。
+base_superuser = ["QQ|2596322644"] # 機器人的基礎超級使用者清單，此處填寫的值將會在機器人啟動時載入資料庫。
+ignored_sender = ["QQ|2854196310"] # 無視的使用者清單，匹配到此清單中的使用者將會被忽略。
+report_targets = [] # 上報場景清單，此處填寫的場景 ID 將會被辨識為上報場景。（如：當機器人執行指令出錯時，機器人會將報錯訊息傳送至對應場景）
 retired_clients = [] # 已退役的用戶端及其資料遷移目標，格式為「<來源用戶端> -> <目標用戶端>」（例：「QQ -> QQBot」）。只填寫來源用戶端時表示不提供遷移。
 command_prefix = ["~", "～"] # 指令前綴，此處填入的值將會被辨識為指令前綴。
+regex_disable_prefix = [".", "。"] # 暫時關閉正規解析的訊息前綴。
 confirm_command = ["是", "对", "對", "yes", "Yes", "YES", "y", "Y"] # 確認指令的關鍵字，此處填入的值將會被辨識為確認指令。
 mention_required = false # 是否強制僅處理在訊息開頭提及機器人的訊息。
 no_confirm = false # 是否無需傳送者確認訊息後再執行指令。
@@ -26,7 +30,7 @@ quick_confirm = true # 是否啟用訊息快速確認。
 enable_analytics = true # 是否啟用內建的統計功能。
 enable_bind_auto = false # 是否啟用「bind auto」指令以自動配對同一場景內的其他實例。
 enable_commit_url = true # 是否在展示版本訊息時顯示 commit URL。
-enable_dirty_check = false # 是否啟用文字過濾偵測，需要設定阿里雲內容安全服務的 AccessKey ID 與 AccessKey Secret。
+enable_dirty_check = false # 是否啟用文字過濾偵測。
 check_use_textscan_v1 = false # 是否使用舊版阿里雲內容安全 1.0 服務介面。
 enable_urlmanager = false # 是否啟用 URLManager，用於 URL 跳板用。（聲明此 URL 非官方連結等）
 auto_purge_crontab = "0 0 * * *" # 自動清除快取的 Cron 表達式。
@@ -53,8 +57,10 @@ bug_report_url = "https://s.wd-ljt.com/botreportbug" # 回報錯誤網址。
 donate_url = "http://afdian.com/a/teahouse" # 捐贈網址。
 help_url = "https://bot.teahouse.team" # 線上說明文件網址。
 help_page_url = "https://bot.teahouse.team/wiki/${module}" # 模組線上說明文件網址。
-issue_url = "https://github.com/Teahouse-Studios/bot/issues/new/choose" # 問題報告網址。
+issue_url = "https://github.com/Teahouse-Studios/akari-bot/issues/new/choose" # 問題報告網址。
 locale_url = "https://hosted.weblate.org/engage/akaribot" # 在地化專案網址。
+qq_test_group_url = "<Replace me with str value>" # QQ 機器人的測試群邀請網址，留空時不在關於選單中展示。
+repo_url = "https://github.com/Teahouse-Studios/akari-bot" # 開源儲存庫網址。
 
 [secret]
 # 金鑰組態部分，此處的值若意外出現在傳送的訊息中，機器人會嘗試攔截。但請務必提防洩漏。
@@ -62,5 +68,5 @@ db_path = "sqlite://database/save.db" # 資料庫連結字串，請使用 Tortoi
 proxy = "<Replace me with str value>" # 代理服務位址。
 check_access_key_id = "<Replace me with str value>" # 阿里雲內容安全服務的 AccessKey ID。
 check_access_key_secret = "<Replace me with str value>" # 阿里雲內容安全服務的 AccessKey Secret。
-ff3_key = "<Replace me with str value>" # {I18N:config.comments.secret.ff3_key}
-ff3_tweak = "<Replace me with str value>" # {I18N:config.comments.secret.ff3_tweak}
+ff3_key = "<Replace me with str value>"
+ff3_tweak = "<Replace me with str value>"

@@ -15,7 +15,6 @@
 - 广播语言文件重载
 """
 
-import asyncio
 import re
 from typing import TYPE_CHECKING
 
@@ -25,7 +24,7 @@ from core.builtins.message.chain import MessageChain, MessageNodes
 from core.builtins.parser.command import CommandParser
 from core.builtins.parser.message import parser
 from core.builtins.session.features import Features
-from core.builtins.session.info import SessionInfo
+from core.builtins.session.info import EventInfo, SessionInfo
 from core.builtins.utils import command_prefix
 from core.constants.info import Info
 from core.constants.path import PrivateAssets
@@ -35,7 +34,7 @@ from core.i18n import Locale
 from core.loader import ModulesManager
 from core.logger import Logger
 from core.utils.bash import run_sys_command
-from core.web_render import web_render
+from core.utils.web_render import check_web_render_status
 from .base import JobQueueBase
 
 if TYPE_CHECKING:
@@ -48,12 +47,7 @@ class JobQueueServer(JobQueueBase):
     提供服务器向客户端发送各类操作请求的接口方法。这些方法将任务添加到队列，
     由客户端处理后将结果返回给服务器。
 
-    Attributes:
-        RELOAD_LOCALE_TIMEOUT: 等待客户端重载语言文件的秒数上限。保活信号只能证明客户端进程还在，
-                               不能证明它还在取走队列任务，无上限地等下去会使发起重载的会话一直挂着
     """
-
-    RELOAD_LOCALE_TIMEOUT = 30
 
     @classmethod
     async def add_job(cls, target_client: str, action, args, wait=True) -> str | dict | None:
@@ -84,19 +78,15 @@ class JobQueueServer(JobQueueBase):
         message: MessageChain | MessageNodes,
         quote: bool = True,
         wait=True,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ):
         """向客户端发送消息。
 
-        通过队列系统向指定的客户端发送消息。支持引用、消息解析和图片分割等功能。
+        通过队列系统向指定的客户端发送消息，文本解析选项由消息元素自身携带。
 
         :param session_info: 目标会话信息，指定消息发送到哪个场景/用户
         :param message: 要发送的消息链对象
         :param quote: 是否引用原消息（默认 True）
         :param wait: 是否等待消息发送完成（默认 True）
-        :param enable_parse_message: 是否解析消息中的特殊标记（默认 True）
-        :param enable_split_image: 是否将大图片拆分成多条消息发送（默认 True）
 
         :return wait=True: 返回发送结果字典（包含 message_id 等）
         :return wait=False: 返回任务 ID
@@ -108,8 +98,6 @@ class JobQueueServer(JobQueueBase):
                 "session_info": converter.unstructure(session_info),
                 "message": converter.unstructure(message, MessageChain | MessageNodes),
                 "quote": quote,
-                "enable_parse_message": enable_parse_message,
-                "enable_split_image": enable_split_image,
             },
             wait=wait,
         )
@@ -153,8 +141,6 @@ class JobQueueServer(JobQueueBase):
         user_id: str,
         message: MessageChain | MessageNodes,
         wait: bool = True,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ):
         """向指定用户单独发送私聊消息。
 
@@ -164,8 +150,6 @@ class JobQueueServer(JobQueueBase):
         :param user_id: 目标用户 ID（带平台前缀，如 `QQ|10000`）
         :param message: 要发送的消息链对象
         :param wait: 是否等待消息发送完成（默认 True，取回消息 ID 需要等待）
-        :param enable_parse_message: 是否解析消息中的特殊标记（默认 True）
-        :param enable_split_image: 是否将大图片拆分成多条消息发送（默认 True）
 
         :return wait=True: 返回发送结果字典（包含 message_id，为空列表表示发送失败）
         :return wait=False: 返回任务 ID
@@ -177,8 +161,6 @@ class JobQueueServer(JobQueueBase):
                 "session_info": converter.unstructure(session_info),
                 "user_id": user_id,
                 "message": converter.unstructure(message, MessageChain | MessageNodes),
-                "enable_parse_message": enable_parse_message,
-                "enable_split_image": enable_split_image,
             },
             wait=wait,
         )
@@ -210,7 +192,12 @@ class JobQueueServer(JobQueueBase):
 
     @classmethod
     async def client_restrict_member(
-        cls, session_info: SessionInfo, user_id: str | list[str], duration: int | None = None, reason: str | None = None
+        cls,
+        session_info: SessionInfo,
+        user_id: str | list[str],
+        duration: int | None = None,
+        reason: str | None = None,
+        wait: bool = False,
     ):
         """限制场景成员（禁言）。
 
@@ -232,12 +219,12 @@ class JobQueueServer(JobQueueBase):
                 "duration": duration,
                 "reason": reason,
             },
-            wait=False,
+            wait=wait,
         )
         return value
 
     @classmethod
-    async def client_unrestrict_member(cls, session_info: SessionInfo, user_id: str | list[str]):
+    async def client_unrestrict_member(cls, session_info: SessionInfo, user_id: str | list[str], wait: bool = False):
         """解除成员限制（解除禁言）。
 
         通过队列系统取消之前对成员的限制。这是一个非阻塞操作。
@@ -251,7 +238,7 @@ class JobQueueServer(JobQueueBase):
             session_info.client_name,
             "unrestrict_member",
             {"session_info": converter.unstructure(session_info), "user_id": user_id},
-            wait=False,
+            wait=wait,
         )
         return value
 
@@ -313,6 +300,50 @@ class JobQueueServer(JobQueueBase):
             wait=False,
         )
         return value
+
+    @classmethod
+    async def client_grant_permission_group(
+        cls,
+        session_info: SessionInfo,
+        user_id: str | list[str],
+        permission_group_id: str | list[str],
+        reason: str | None = None,
+        wait: bool = False,
+    ):
+        """为客户端场景成员授予平台原生权限组或角色。"""
+        return await cls.add_job(
+            session_info.client_name,
+            "grant_permission_group",
+            {
+                "session_info": converter.unstructure(session_info),
+                "user_id": user_id,
+                "permission_group_id": permission_group_id,
+                "reason": reason,
+            },
+            wait=wait,
+        )
+
+    @classmethod
+    async def client_revoke_permission_group(
+        cls,
+        session_info: SessionInfo,
+        user_id: str | list[str],
+        permission_group_id: str | list[str],
+        reason: str | None = None,
+        wait: bool = False,
+    ):
+        """移除客户端场景成员的平台原生权限组或角色。"""
+        return await cls.add_job(
+            session_info.client_name,
+            "revoke_permission_group",
+            {
+                "session_info": converter.unstructure(session_info),
+                "user_id": user_id,
+                "permission_group_id": permission_group_id,
+                "reason": reason,
+            },
+            wait=wait,
+        )
 
     @classmethod
     async def client_add_reaction(cls, session_info: SessionInfo, message_id: str | list[str], emoji: str):
@@ -439,46 +470,6 @@ class JobQueueServer(JobQueueBase):
         return value
 
     @classmethod
-    async def client_reload_locale(cls, client_name: str, timeout: float | None = None) -> list[str]:
-        """通知单个客户端重载语言文件。
-
-        :param client_name: 目标客户端名称
-        :param timeout: 等待客户端返回结果的秒数上限，默认为 `RELOAD_LOCALE_TIMEOUT`
-        :return: 重载过程中产生的错误信息，客户端掉线时为空列表
-        """
-        try:
-            ret = await asyncio.wait_for(
-                cls.add_job(client_name, "reload_locale", {}),
-                timeout=timeout if timeout else cls.RELOAD_LOCALE_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            Logger.error(f"Timed out waiting for client {client_name} to reload locale.")
-            return [f"Timed out waiting for client {client_name} to reload locale."]
-        return list(ret.get("err", [])) if ret else []
-
-    @classmethod
-    async def client_reload_locale_all(cls) -> list[str]:
-        """通知全部在线客户端重载语言文件。
-
-        语言文件在服务端重载后仅对服务端生效，而消息中的 I18NContext 元素是在客户端进程内渲染的，
-        因此须逐一通知客户端一并重载，否则实际发出的消息仍为旧文案。
-
-        各客户端读取的是同一批语言文件，产生的错误通常完全一致，因此重复的条目只保留一条。
-
-        :return: 各客户端返回的错误信息
-        """
-        clients = [client for client in Alive.get_alive() if client != Info.client_name]
-        if not clients:
-            return []
-        results = await asyncio.gather(*[cls.client_reload_locale(client) for client in clients])
-        errs = []
-        for client_errs in results:
-            for err in client_errs:
-                if err not in errs:
-                    errs.append(err)
-        return errs
-
-    @classmethod
     async def call_onebot_api(cls, session_info: SessionInfo, api_name: str, **kwargs: dict):
         """调用 OneBot 标准 API。
 
@@ -521,7 +512,7 @@ async def post_next_hop(tsk: JobQueuesTable, args: dict):
         if not session_info:
             Logger.warning(f"Failed to fetch next hop {target_id}, skipping to the one after it.")
             continue
-        # 掉线客户端无法接收任务，也就不会继续换跳，选中它将导致整条通道就此中断。
+        # 掉线客户端无法接收任务或继续换跳，选中后将中断整条通道。
         if not Alive.is_alive(session_info.client_name):
             Logger.warning(f"Client {session_info.client_name} is offline, skipping next hop {target_id}.")
             continue
@@ -551,6 +542,15 @@ async def receive_message_from_client(tsk: JobQueuesTable, args: dict):
             converter.structure(args.get("session_info", {}), SessionInfo)
         )
     )
+    return {"success": True}
+
+
+@JobQueueServer.action("receive_event_from_client")
+async def receive_event_from_client(tsk: JobQueuesTable, args: dict):
+    """接收来自客户端的事件并分发给模块。"""
+    event_info = converter.structure(args.get("event_info", {}), EventInfo)
+    await event_info.refresh_info()
+    await ModulesManager.dispatch_event(event_info)
     return {"success": True}
 
 
@@ -597,7 +597,7 @@ async def _(tsk: JobQueuesTable, args: dict):
     Logger.trace(
         f"Trigger hook {args.get('module_or_hook_name', '')} with args {args.get('args', {})}, result: {_val}, type: {type(_val)}"
     )
-    await JobQueueServer.return_val(tsk, {"result": _val})
+    return {"result": _val}
 
 
 @JobQueueServer.action("client_direct_message")
@@ -619,7 +619,6 @@ async def client_direct_message(tsk: JobQueuesTable, args: dict):
         session_info,
         message,
         disable_secret_check=args.get("disable_secret_check", False),
-        enable_parse_message=args.get("enable_parse_message", True),
     )
     return {"success": True}
 
@@ -659,7 +658,7 @@ async def get_web_render_status(tsk: JobQueuesTable, args: dict):
 
     :return: 包含 web_render_status 的字典
     """
-    return {"web_render_status": await web_render.browser.check_status()}
+    return {"web_render_status": await check_web_render_status()}
 
 
 @JobQueueServer.action("get_modules_list")

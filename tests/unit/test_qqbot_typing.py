@@ -4,19 +4,20 @@ QQ 群没有原生输入状态能力，适配器以「先发一条提示消息�
 提示消息一旦漏撤就会永久留在群里，且用户无从自行清理，因此其撤回必须对每条
 异常路径都成立——包括上下文已销毁、同一会话重复开启输入状态等情形。
 
-撤回由「机器人已发言」驱动，故该登记的落点亦在此一并把关：过早落下（如落在
-图片转换之前或发送失败时）会使提示先行消失，空窗反而暴露。
+撤回由「普通回复进入实际发送阶段」驱动。资源准备期间不能提前落下该标志；一旦
+准备完成并进入发送队列，即使平台稍后返回失败，也不得再让 typing 消息抢在回复后面。
 """
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from botpy.message import GroupMessage
 
-from bots.qqbot.context import QQBotContextManager, _TypingState
-from bots.qqbot.features import features as qqbot_features
+from bots.qqbot.context import QQBotContextManager, TYPING_EMOTES, _PreparedMessage, _TypingState
 from bots.qqbot.info import target_c2c_prefix, target_group_prefix
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.elements import ImageElement, PlainElement
+from core.builtins.message.elements import I18NContextElement, ImageElement, PlainElement
 from core.builtins.session.info import SessionInfo
 from core.logger import Logger
 from core.tester import func_case, Tester
@@ -31,7 +32,9 @@ class _FakeClient:
     def __init__(self, fail_times: int = 0):
         self.fail_times = fail_times
         self.send_calls = 0
-        self.image_kwargs = []
+        self.send_kwargs = []
+        self.upload_kwargs = []
+        self.upload_observer = None
         self.typing_targets = []
 
     async def _send(self):
@@ -41,11 +44,14 @@ class _FakeClient:
         return {"id": f"sent-{self.send_calls}"}
 
     async def send(self, target, **kwargs):
+        self.send_kwargs.append(kwargs)
         return await self._send()
 
-    async def send_image(self, target, **kwargs):
-        self.image_kwargs.append(kwargs)
-        return await self._send()
+    async def upload_media(self, target, file_type, **kwargs):
+        self.upload_kwargs.append((target, file_type, kwargs))
+        if self.upload_observer:
+            self.upload_observer()
+        return {"file_info": f"uploaded-{len(self.upload_kwargs)}"}
 
     async def send_typing(self, target, duration_seconds=60):
         self.typing_targets.append(target)
@@ -98,6 +104,8 @@ class _Recorder:
 
     def __init__(self):
         self.prompts: list[str] = []
+        self.prompt_messages: list[MessageChain] = []
+        self.prompt_kwargs: list[dict] = []
         self.messages: list[str] = []
         self.deleted: list[str] = []
         self._counter = 0
@@ -106,23 +114,45 @@ class _Recorder:
         cm = QQBotContextManager
         # 取类字典中的原始描述符，避免恢复时把 classmethod 降级成普通属性
         self._orig_send = cm.__dict__.get("send_message")
+        self._orig_prepare = cm.__dict__.get("_prepare_message")
+        self._orig_send_prepared = cm.__dict__.get("_send_prepared_message")
         self._orig_delete = cm.__dict__.get("delete_message")
         self._orig_delay = cm.TYPING_PROMPT_DELAY
+
+        async def fake_prepare(cls, session_info, message, *args, **kwargs):
+            return SimpleNamespace(message=message, kwargs=kwargs)
+
+        async def fake_send_prepared(cls, session_info, prepared, *args, **kwargs):
+            self._counter += 1
+            msg_id = f"msg-{self._counter}"
+            if kwargs.get("_typing_prompt"):
+                self.prompts.append(msg_id)
+                self.prompt_messages.append(prepared.message)
+                self.prompt_kwargs.append(prepared.kwargs)
+            else:
+                self.messages.append(msg_id)
+                cm._on_message_sending(session_info)
+                cm._on_message_sent(session_info)
+            return [msg_id]
 
         async def fake_send(session_info, message, *args, **kwargs):
             self._counter += 1
             msg_id = f"msg-{self._counter}"
             if kwargs.get("_typing_prompt"):
                 self.prompts.append(msg_id)
+                self.prompt_messages.append(message)
+                self.prompt_kwargs.append(kwargs)
             else:
                 self.messages.append(msg_id)
-                # 复刻生产 send_message 开头对「机器人已发言」的登记
+                cm._on_message_sending(session_info)
                 cm._on_message_sent(session_info)
             return [msg_id]
 
         async def fake_delete(session_info, message_id, reason=None):
             self.deleted.extend([message_id] if isinstance(message_id, str) else list(message_id))
 
+        cm._prepare_message = classmethod(fake_prepare)
+        cm._send_prepared_message = classmethod(fake_send_prepared)
         cm.send_message = staticmethod(fake_send)
         cm.delete_message = staticmethod(fake_delete)
         cm.TYPING_PROMPT_DELAY = TEST_DELAY
@@ -130,6 +160,8 @@ class _Recorder:
 
     def __exit__(self, *exc_info):
         cm = QQBotContextManager
+        cm._prepare_message = self._orig_prepare
+        cm._send_prepared_message = self._orig_send_prepared
         cm.send_message = self._orig_send
         cm.delete_message = self._orig_delete
         cm.TYPING_PROMPT_DELAY = self._orig_delay
@@ -139,6 +171,85 @@ class _Recorder:
     def leaked(self) -> list[str]:
         """已发出但未被撤回的输入提示。"""
         return [p for p in self.prompts if p not in self.deleted]
+
+
+class _InFlightPromptRecorder:
+    """模拟平台已接受 typing 消息、但 SDK 尚未返回消息 ID 的窗口。"""
+
+    def __init__(self):
+        self.prompt_started = asyncio.Event()
+        self.release_prompt = asyncio.Event()
+        self.prompts: list[str] = []
+        self.deleted: list[str] = []
+        self.platform_task: asyncio.Task[list[str]] | None = None
+
+    def __enter__(self):
+        cm = QQBotContextManager
+        self._orig_send = cm.__dict__.get("send_message")
+        self._orig_prepare = cm.__dict__.get("_prepare_message")
+        self._orig_send_prepared = cm.__dict__.get("_send_prepared_message")
+        self._orig_delete = cm.__dict__.get("delete_message")
+        self._orig_delay = cm.TYPING_PROMPT_DELAY
+
+        async def fake_prepare(cls, session_info, message, *args, **kwargs):
+            return SimpleNamespace(message=message, kwargs=kwargs)
+
+        async def fake_send_prepared(cls, session_info, prepared, *args, **kwargs):
+            if not kwargs.get("_typing_prompt"):
+                cm._on_message_sending(session_info)
+                cm._on_message_sent(session_info)
+                return ["response-message"]
+
+            self.prompt_started.set()
+
+            async def platform_send():
+                await self.release_prompt.wait()
+                self.prompts.append("late-typing-message")
+                return ["late-typing-message"]
+
+            self.platform_task = asyncio.create_task(platform_send())
+            return await asyncio.shield(self.platform_task)
+
+        async def fake_send(session_info, message, *args, **kwargs):
+            if not kwargs.get("_typing_prompt"):
+                cm._on_message_sending(session_info)
+                cm._on_message_sent(session_info)
+                return ["response-message"]
+
+            self.prompt_started.set()
+
+            async def platform_send():
+                await self.release_prompt.wait()
+                self.prompts.append("late-typing-message")
+                return ["late-typing-message"]
+
+            self.platform_task = asyncio.create_task(platform_send())
+            # botpy 的上层调用被取消时，底层 HTTP 请求仍可能已由平台受理并继续完成。
+            # shield 用于复现消息已发送、但调用方无法取得结果的时间窗口。
+            return await asyncio.shield(self.platform_task)
+
+        async def fake_delete(session_info, message_id, reason=None):
+            self.deleted.extend([message_id] if isinstance(message_id, str) else list(message_id))
+
+        cm._prepare_message = classmethod(fake_prepare)
+        cm._send_prepared_message = classmethod(fake_send_prepared)
+        cm.send_message = staticmethod(fake_send)
+        cm.delete_message = staticmethod(fake_delete)
+        cm.TYPING_PROMPT_DELAY = TEST_DELAY
+        return self
+
+    def __exit__(self, *exc_info):
+        cm = QQBotContextManager
+        cm._prepare_message = self._orig_prepare
+        cm._send_prepared_message = self._orig_send_prepared
+        cm.send_message = self._orig_send
+        cm.delete_message = self._orig_delete
+        cm.TYPING_PROMPT_DELAY = self._orig_delay
+        return False
+
+    @property
+    def leaked(self) -> list[str]:
+        return [prompt for prompt in self.prompts if prompt not in self.deleted]
 
 
 class _Session:
@@ -271,6 +382,102 @@ async def _test_prompt_recalled_on_end_typing() -> bool:
             QQBotContextManager.context.pop(session.session_id, None)
 
 
+async def _test_in_flight_prompt_recalled_after_response() -> bool:
+    """响应先完成、typing 后落地时，仍须等待其消息 ID 并完成撤回。"""
+    session = _make_session("typing-in-flight-after-response")
+    QQBotContextManager.context[session.session_id] = object()
+    with _InFlightPromptRecorder() as rec:
+        end_task = None
+        try:
+            await QQBotContextManager.start_typing(session)
+            await asyncio.wait_for(rec.prompt_started.wait(), timeout=TEST_DELAY * 10)
+
+            # 正常回复先发送成功；随后 parser 会调用 end_typing。此时 typing 请求已经
+            # 被平台受理，但 SDK 还没有返回其消息 ID。
+            await QQBotContextManager.send_message(session, None)
+            end_task = asyncio.create_task(QQBotContextManager.end_typing(session))
+            await asyncio.sleep(TEST_DELAY)
+            rec.release_prompt.set()
+            await asyncio.wait_for(end_task, timeout=TEST_DELAY * 10)
+            if rec.platform_task:
+                await asyncio.wait_for(rec.platform_task, timeout=TEST_DELAY * 10)
+
+            if rec.leaked:
+                Logger.error(f"Typing prompt sent after the response was left behind: {rec.leaked}")
+                return False
+            if rec.prompts != ["late-typing-message"] or rec.deleted != ["late-typing-message"]:
+                Logger.error(f"Unexpected in-flight prompt lifecycle: sent={rec.prompts}, deleted={rec.deleted}")
+                return False
+            return True
+        finally:
+            rec.release_prompt.set()
+            if end_task and not end_task.done():
+                await asyncio.gather(end_task, return_exceptions=True)
+            await QQBotContextManager.end_typing(session)
+            QQBotContextManager.context.pop(session.session_id, None)
+
+
+async def _test_group_typing_uses_emote_when_enabled() -> bool:
+    """开启 use_emote 后，群聊输入提示应附带随机 GIF，并强制走原生图片发送。"""
+    if not TYPING_EMOTES:
+        Logger.error("Typing emote assets are missing, the enabled-path test cannot run")
+        return False
+
+    with (
+        patch("bots.qqbot.context.CoreConfig", new=SimpleNamespace(use_emote=True)),
+        patch(
+            "bots.qqbot.context.Random.choice",
+            return_value=TYPING_EMOTES[0],
+        ),
+        _Recorder() as rec,
+    ):
+        async with _Session("typing-emote-enabled") as session:
+            await QQBotContextManager.start_typing(session)
+            if not await _wait_prompt_sent(rec):
+                Logger.error("Typing prompt with emote was not sent after the delay window")
+                return False
+
+            elements = rec.prompt_messages[0].values
+            prompt = next((x for x in elements if isinstance(x, I18NContextElement)), None)
+            image = next((x for x in elements if isinstance(x, ImageElement)), None)
+            if prompt is None or prompt.key != "message.typing":
+                Logger.error(f"Typing prompt text is missing or unexpected: {elements}")
+                return False
+            if image is None or image.path not in {str(path) for path in TYPING_EMOTES}:
+                Logger.error(f"Typing prompt did not use an emote asset: {elements}")
+                return False
+            if rec.prompt_kwargs[0].get("_force_plain") is not True:
+                Logger.error("Typing GIF must use QQBot's native image path to preserve animation")
+                return False
+
+    if rec.leaked:
+        Logger.error(f"Typing prompt with emote was not recalled: {rec.leaked}")
+        return False
+    return True
+
+
+async def _test_group_typing_omits_emote_when_disabled() -> bool:
+    """关闭 use_emote 后，群聊输入提示应保持原有纯文本形态。"""
+    with patch("bots.qqbot.context.CoreConfig", new=SimpleNamespace(use_emote=False)), _Recorder() as rec:
+        async with _Session("typing-emote-disabled") as session:
+            await QQBotContextManager.start_typing(session)
+            if not await _wait_prompt_sent(rec):
+                Logger.error("Plain typing prompt was not sent after the delay window")
+                return False
+
+            if rec.prompt_messages[0].contains(ImageElement):
+                Logger.error(f"Typing prompt unexpectedly contains an emote: {rec.prompt_messages[0]}")
+                return False
+            if rec.prompt_kwargs[0].get("_force_plain") is not False:
+                Logger.error("Plain typing prompt should retain the configured Markdown send path")
+                return False
+
+    if rec.leaked:
+        Logger.error(f"Plain typing prompt was not recalled: {rec.leaked}")
+        return False
+    return True
+
+
 async def _send_via_context(session: SessionInfo, ctx: _FakeGroupMessage, message) -> tuple[_TypingState, bool]:
     """在受控上下文中走一遍真实的发送流程。
 
@@ -296,9 +503,131 @@ async def _send_via_context(session: SessionInfo, ctx: _FakeGroupMessage, messag
         QQBotContextManager.typing_states.pop(sid, None)
 
 
-def _test_typing_feature_enabled() -> bool:
-    """新版 botpy 已覆盖适配器所需输入状态路径，能力应向核心层开放。"""
-    return qqbot_features.support_typing is True
+async def _test_group_typing_prepares_immediately() -> bool:
+    """群聊 typing 信号到达后应立即开始资源准备，不等待提示延时。"""
+    cm = QQBotContextManager
+    session = _make_session("typing-prepares-immediately")
+    prepare_started = asyncio.Event()
+    release_prepare = asyncio.Event()
+    original_prepare = cm.__dict__.get("_prepare_message")
+    original_delay = cm.TYPING_PROMPT_DELAY
+
+    async def fake_prepare(cls, session_info, message, *args, **kwargs):
+        prepare_started.set()
+        await release_prepare.wait()
+        raise AssertionError("Preparation should have been cancelled when typing ended")
+
+    cm._prepare_message = classmethod(fake_prepare)
+    cm.TYPING_PROMPT_DELAY = 10
+    cm.context[session.session_id] = object()
+    try:
+        with patch("bots.qqbot.context.CoreConfig", new=SimpleNamespace(use_emote=False)):
+            await cm.start_typing(session)
+            await asyncio.wait_for(prepare_started.wait(), timeout=TEST_DELAY * 5)
+            if cm.typing_states[session.session_id].sending.is_set():
+                Logger.error("Preparing the typing prompt must not mark a normal response as sending")
+                return False
+            await cm.end_typing(session)
+        return True
+    except TimeoutError:
+        Logger.error("Typing resource preparation did not start immediately")
+        return False
+    finally:
+        release_prepare.set()
+        await cm.end_typing(session)
+        cm.context.pop(session.session_id, None)
+        cm._prepare_message = original_prepare
+        cm.TYPING_PROMPT_DELAY = original_delay
+
+
+async def _test_group_typing_preuploads_emote_immediately() -> bool:
+    """带 GIF 的 typing 应在延时窗口开始时 upload_media，而不是临发送才上传。"""
+    if not TYPING_EMOTES:
+        Logger.error("Typing emote assets are missing, the pre-upload test cannot run")
+        return False
+
+    cm = QQBotContextManager
+    session = _make_session("typing-preuploads-emote")
+    client = _FakeClient()
+    upload_started = asyncio.Event()
+    client.upload_observer = upload_started.set
+    original_client = cm.client
+    original_delay = cm.TYPING_PROMPT_DELAY
+    cm.client = client
+    cm.TYPING_PROMPT_DELAY = 10
+    cm.context[session.session_id] = object()
+    try:
+        with (
+            patch("bots.qqbot.context.CoreConfig", new=SimpleNamespace(use_emote=True)),
+            patch("bots.qqbot.context.Random.choice", return_value=TYPING_EMOTES[0]),
+        ):
+            await cm.start_typing(session)
+            await asyncio.wait_for(upload_started.wait(), timeout=TEST_DELAY * 10)
+            state = cm.typing_states[session.session_id]
+            if state.sending.is_set() or client.send_kwargs:
+                Logger.error("Typing pre-upload must not enter the message send stage")
+                return False
+            await cm.end_typing(session)
+    except TimeoutError:
+        Logger.error("Typing emote was not pre-uploaded immediately")
+        return False
+    finally:
+        await cm.end_typing(session)
+        cm.context.pop(session.session_id, None)
+        cm.client = original_client
+        cm.TYPING_PROMPT_DELAY = original_delay
+
+    if len(client.upload_kwargs) != 1:
+        Logger.error(f"Typing emote should be uploaded exactly once, got {client.upload_kwargs}")
+        return False
+    _, _, kwargs = client.upload_kwargs[0]
+    if kwargs != {"local_path": str(TYPING_EMOTES[0])}:
+        Logger.error(f"Unexpected typing emote upload payload: {kwargs}")
+        return False
+    return True
+
+
+async def _test_send_queue_drops_stale_typing_prompt() -> bool:
+    """typing 已入队但尚未调用平台接口时，普通回复进入发送阶段应使其失效。"""
+    cm = QQBotContextManager
+    session = _make_session("typing-send-queue-race")
+    state = _TypingState()
+    sent: list[str] = []
+    target = SimpleNamespace(scope="group", target_id="typing-send-queue-race")
+
+    async def send_typing() -> list[str]:
+        sent.append("typing")
+        return ["typing"]
+
+    async def send_response() -> list[str]:
+        sent.append("response")
+        return ["response"]
+
+    typing = _PreparedMessage(target, send_typing, has_payload=True)
+    response = _PreparedMessage(target, send_response, has_payload=True)
+    cm.typing_states[session.session_id] = state
+    try:
+        typing_task = asyncio.create_task(
+            cm._send_prepared_message(
+                session,
+                typing,
+                _typing_prompt=True,
+                _typing_state=state,
+            )
+        )
+        await asyncio.sleep(0)
+        response_task = asyncio.create_task(cm._send_prepared_message(session, response))
+        typing_result, response_result = await asyncio.gather(typing_task, response_task)
+    finally:
+        cm.typing_states.pop(session.session_id, None)
+
+    if typing_result:
+        Logger.error(f"Stale typing prompt should have been cancelled, got {typing_result}")
+        return False
+    if response_result != ["response"] or sent != ["response"]:
+        Logger.error(f"Unexpected shaped send order: result={response_result}, sent={sent}")
+        return False
+    return True
 
 
 async def _test_c2c_uses_native_typing() -> bool:
@@ -334,13 +663,16 @@ async def _test_c2c_uses_native_typing() -> bool:
 
 
 async def _test_marked_after_send_succeeds() -> bool:
-    """发送成功后须登记为已发言，否则输入提示将失去撤回时机"""
+    """发送成功后须同时登记已进入发送阶段与已发言。"""
     session = _make_session("send-succeeds")
     ctx = _FakeGroupMessage()
     state, ok = await _send_via_context(session, ctx, MessageChain.assign(PlainElement.assign("hi")))
 
     if not ok:
         Logger.error("Sending should have succeeded in this case")
+        return False
+    if not state.sending.is_set():
+        Logger.error("A prepared message must be registered before entering the platform send call")
         return False
     if not state.spoken.is_set():
         Logger.error("A successfully sent message must be registered as the bot having spoken")
@@ -349,13 +681,16 @@ async def _test_marked_after_send_succeeds() -> bool:
 
 
 async def _test_not_marked_when_send_fails() -> bool:
-    """发送失败时不得登记为已发言，否则提示会赶在消息真正发出之前被撤回"""
+    """平台发送失败时仍已进入发送阶段，但不得登记为已成功发言。"""
     session = _make_session("send-fails")
     ctx = _FakeGroupMessage(fail_times=1)
     state, ok = await _send_via_context(session, ctx, MessageChain.assign(PlainElement.assign("hi")))
 
     if ok:
         Logger.error("Sending should have failed in this case")
+        return False
+    if not state.sending.is_set():
+        Logger.error("A failed platform call must still count as having entered the send stage")
         return False
     if state.spoken.is_set():
         Logger.error("A failed send must not be registered as the bot having spoken")
@@ -364,20 +699,28 @@ async def _test_not_marked_when_send_fails() -> bool:
 
 
 async def _test_not_marked_while_converting_image() -> bool:
-    """图片转换期间不得登记为已发言，转换可能远慢于发送本身"""
+    """图片读取与 upload_media 都属于资源准备，不得登记为已进入发送阶段。"""
     session = _make_session("converting-image")
     ctx = _FakeGroupMessage()
-    observed: list[bool] = []
+    observed: list[tuple[bool, bool]] = []
 
-    _ProbingImage.observer = lambda: observed.append(
-        QQBotContextManager.typing_states[session.session_id].spoken.is_set()
-    )
+    def observe_state():
+        observed.append(
+            (
+                QQBotContextManager.typing_states[session.session_id].sending.is_set(),
+                QQBotContextManager.typing_states[session.session_id].spoken.is_set(),
+            )
+        )
+
+    _ProbingImage.observer = observe_state
+    ctx.client.upload_observer = observe_state
     try:
         state, ok = await _send_via_context(
             session, ctx, MessageChain.assign(_ProbingImage(path="fake.png", need_get=False))
         )
     finally:
         _ProbingImage.observer = None
+        ctx.client.upload_observer = None
 
     if not ok:
         Logger.error("Sending should have succeeded in this case")
@@ -385,11 +728,14 @@ async def _test_not_marked_while_converting_image() -> bool:
     if not observed:
         Logger.error("The image was never converted, the test setup no longer matches the send path")
         return False
-    if any(observed):
-        Logger.error("The bot must not be registered as having spoken while the image is still being converted")
+    if any(sending or spoken for sending, spoken in observed):
+        Logger.error("Image reading and upload_media must finish before entering the send stage")
         return False
-    if ctx.client.image_kwargs != [{"local_path": "fake.png", "content": None}]:
-        Logger.error(f"Image upload should use local_path, got {ctx.client.image_kwargs}")
+    if len(ctx.client.upload_kwargs) != 1 or ctx.client.upload_kwargs[0][2] != {"local_path": "fake.png"}:
+        Logger.error(f"Image preparation should call upload_media once, got {ctx.client.upload_kwargs}")
+        return False
+    if ctx.client.send_kwargs != [{"content": None, "msg_type": 7, "media": {"file_info": "uploaded-1"}}]:
+        Logger.error(f"Prepared media should be sent by reference, got {ctx.client.send_kwargs}")
         return False
     if not state.spoken.is_set():
         Logger.error("A successfully sent message must be registered as the bot having spoken")
@@ -400,15 +746,20 @@ async def _test_not_marked_while_converting_image() -> bool:
 @func_case
 async def test_qqbot_typing(tester: Tester):
     """bots.qqbot.context: 群聊输入提示的撤回时机测试"""
-    await tester.test(_test_typing_feature_enabled, "输入状态能力启用测试")
     await tester.test(_test_c2c_uses_native_typing, "C2C 原生输入状态测试")
     await tester.test(_test_prompt_recalled_after_bot_message, "机器人发言后撤回输入提示测试")
     await tester.test(_test_prompt_recalled_when_context_dropped, "上下文销毁后撤回输入提示测试")
     await tester.test(_test_prompt_recalled_on_repeated_start, "重复开启输入状态撤回测试")
     await tester.test(_test_no_prompt_when_message_sent_early, "窗口内已发言不补发提示测试")
     await tester.test(_test_prompt_recalled_on_end_typing, "输入状态结束撤回提示测试")
+    await tester.test(_test_in_flight_prompt_recalled_after_response, "响应先于输入提示落地时的撤回测试")
+    await tester.test(_test_group_typing_uses_emote_when_enabled, "开启表情后的群聊输入提示测试")
+    await tester.test(_test_group_typing_omits_emote_when_disabled, "关闭表情后的群聊输入提示测试")
+    await tester.test(_test_group_typing_prepares_immediately, "群聊输入提示立即准备资源测试")
+    await tester.test(_test_group_typing_preuploads_emote_immediately, "群聊输入提示立即预上传图片测试")
+    await tester.test(_test_send_queue_drops_stale_typing_prompt, "发送队列取消过期输入提示测试")
     await tester.test(_test_marked_after_send_succeeds, "发送成功后登记发言测试")
-    await tester.test(_test_not_marked_when_send_fails, "发送失败不登记发言测试")
-    await tester.test(_test_not_marked_while_converting_image, "图片转换期间不登记发言测试")
+    await tester.test(_test_not_marked_when_send_fails, "发送失败的阶段登记测试")
+    await tester.test(_test_not_marked_while_converting_image, "图片预上传期间不登记发送测试")
 
     return tester

@@ -1,4 +1,5 @@
 import asyncio
+import mimetypes
 import os
 import platform
 from datetime import datetime, timedelta, UTC
@@ -6,21 +7,30 @@ from datetime import datetime, timedelta, UTC
 import psutil
 from cpuinfo import get_cpu_info
 from fastapi import HTTPException, Request, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from tortoise.expressions import Q
 
-from bots.web.client import app, limiter, enable_https, get_client_ip
-from core.builtins.utils import command_prefix
+from bots.web.client import app, client_cleanup, limiter, enable_https, get_client_ip
 from bots.web.config import WebConfig
+from core.builtins.utils import command_prefix
 from core.config.base import BaseConfig, CoreConfig
 from core.constants import config_filename
 from core.constants.path import config_path
-from core.database.models import AnalyticsData, SenderUnionInfo, SenderUnionBind, TargetUnionInfo, TargetUnionBind
+from core.database.models import (
+    AnalyticsData,
+    SenderUnionInfo,
+    SenderUnionBind,
+    TargetUnionInfo,
+    TargetUnionBind,
+    UnionDeleteBlocked,
+)
 from core.logger import Logger
 from core.queue.client import JobQueueClient
 from .auth import verify_jwt
+from bots.web.context import resolve_media_url
 
 started_time = datetime.now()
+_restart_task: asyncio.Task | None = None
 
 
 default_locale = BaseConfig.default_locale
@@ -111,6 +121,45 @@ def dump_sender(sender: SenderUnionInfo, bound_ids: list[str], display_id: str) 
     }
 
 
+def dump_sender_group(sender: SenderUnionInfo, bound_ids: list[str]) -> dict:
+    """
+    序列化用户组信息，列出组内已绑定的全部平台账号 ID。
+    """
+    return {
+        "union_id": sender.union_id,
+        "member_count": len(bound_ids),
+        "members": bound_ids,
+        "blocked": sender.blocked,
+        "trusted": sender.trusted,
+        "superuser": sender.superuser,
+        "warns": sender.warns,
+        "petal": sender.petal,
+        "sender_data": sender.sender_data,
+    }
+
+
+def dump_target_group(target: TargetUnionInfo, channels: dict[str, int]) -> dict:
+    """
+    序列化场景组信息，列出组内全部场景及其消息通道号。
+    """
+    members = [
+        {"target_id": target_id, "channel_id": channel_id}
+        for target_id, channel_id in sorted(channels.items(), key=lambda kv: (kv[1], kv[0]))
+    ]
+    return {
+        "union_id": target.union_id,
+        "member_count": len(members),
+        "members": members,
+        "blocked": target.blocked,
+        "muted": target.muted,
+        "locale": target.locale,
+        "modules": target.modules,
+        "custom_admins": target.custom_admins,
+        "banned_users": target.banned_users,
+        "target_data": target.target_data,
+    }
+
+
 async def resolve_sender_unions(ids: list[str]) -> list[str]:
     """
     把权限列表中的平台账号 ID 解析为 union ID，已经是 union ID 的原样保留。
@@ -130,6 +179,15 @@ async def api_root(request: Request):
     return {"message": "Hello, AkariBot!"}
 
 
+@app.get("/api/media/{token}")
+@limiter.limit("120/minute")
+async def media(request: Request, token: str):
+    path = resolve_media_url(token)
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Media not found")
+    return FileResponse(path, media_type=mimetypes.guess_type(path)[0])
+
+
 @app.get("/api/init")
 @limiter.limit("10/second")
 async def get_config(request: Request):
@@ -145,6 +203,7 @@ async def get_config(request: Request):
 
 
 @app.get("/api/server-info")
+@limiter.limit("6/minute")
 async def server_info(request: Request):
     verify_jwt(request)
     return {
@@ -175,6 +234,7 @@ async def server_info(request: Request):
 
 
 @app.get("/api/analytics")
+@limiter.limit("20/minute")
 async def get_analytics(request: Request, days: int = Query(1)):
     verify_jwt(request)
     try:
@@ -200,6 +260,7 @@ async def get_analytics(request: Request, days: int = Query(1)):
 
 
 @app.get("/api/config")
+@limiter.limit("30/minute")
 async def get_config_list(request: Request):
     verify_jwt(request)
     try:
@@ -219,6 +280,7 @@ async def get_config_list(request: Request):
 
 
 @app.get("/api/config/{cfg_filename}")
+@limiter.limit("30/minute")
 async def get_config_file(request: Request, cfg_filename: str):
     verify_jwt(request)
     if not config_path.exists():
@@ -241,6 +303,7 @@ async def get_config_file(request: Request, cfg_filename: str):
 
 
 @app.put("/api/config/{cfg_filename}")
+@limiter.limit("10/minute")
 async def edit_config_file(request: Request, cfg_filename: str):
     ip = get_client_ip(request)
     try:
@@ -269,6 +332,7 @@ async def edit_config_file(request: Request, cfg_filename: str):
 
 
 @app.get("/api/target")
+@limiter.limit("30/minute")
 async def get_target_list(
     request: Request,
     prefix: str = Query(None),
@@ -310,7 +374,26 @@ async def get_target_list(
         raise HTTPException(status_code=400, detail="Bad request")
 
 
+@app.get("/api/target/group/{union_id}")
+@limiter.limit("30/minute")
+async def get_target_group_info(request: Request, union_id: str):
+    try:
+        verify_jwt(request)
+        # 直接按 union_id 查询核心行，避免 resolve_union 为组 ID 创建无效映射。
+        target_union_info = await TargetUnionInfo.get_or_none(union_id=union_id)
+        if not target_union_info:
+            raise HTTPException(status_code=404, detail="Not found")
+        channels = await TargetUnionBind.list_channels(union_id)
+        return {"target_group": dump_target_group(target_union_info, channels)}
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
 @app.get("/api/target/{target_id}")
+@limiter.limit("30/minute")
 async def get_target_info(request: Request, target_id: str):
     try:
         verify_jwt(request)
@@ -327,6 +410,7 @@ async def get_target_info(request: Request, target_id: str):
 
 
 @app.patch("/api/target/{target_id}")
+@limiter.limit("20/minute")
 async def edit_target_info(request: Request, target_id: str):
     ip = get_client_ip(request)
     try:
@@ -363,7 +447,7 @@ async def edit_target_info(request: Request, target_id: str):
             target_union_info.locale = locale
         if modules is not None:
             target_union_info.modules = modules
-        # 权限名单存的是 union ID，控制台可能直接填平台账号 ID，这里统一解析一遍。
+        # 权限名单使用 union ID，控制台输入的平台账号 ID 需统一解析。
         if custom_admins is not None:
             target_union_info.custom_admins = await resolve_sender_unions(custom_admins)
         if banned_users is not None:
@@ -384,6 +468,7 @@ async def edit_target_info(request: Request, target_id: str):
 
 
 @app.delete("/api/target/{target_id}")
+@limiter.limit("20/minute")
 async def delete_target_info(request: Request, target_id: str):
     ip = get_client_ip(request)
     try:
@@ -391,12 +476,12 @@ async def delete_target_info(request: Request, target_id: str):
 
         target_union_info = await TargetUnionInfo.get_by_target_id(target_id, create=False)
         if target_union_info:
-            # 删除 union 的同时清掉其下全部映射，否则残留映射会指向不存在的 union。
-            await TargetUnionBind.filter(union_id=target_union_info.union_id).delete()
-            await target_union_info.delete()
+            await target_union_info.delete_union()
 
         Logger.info(f"[WebUI] {ip} has deleted the session data: {target_id}")
         return Response(status_code=204)
+    except UnionDeleteBlocked as e:
+        raise HTTPException(status_code=409, detail=e.reason) from e
     except HTTPException as e:
         raise e
     except Exception:
@@ -405,6 +490,7 @@ async def delete_target_info(request: Request, target_id: str):
 
 
 @app.get("/api/sender")
+@limiter.limit("30/minute")
 async def get_sender_list(
     request: Request,
     prefix: str = Query(None),
@@ -448,7 +534,26 @@ async def get_sender_list(
         raise HTTPException(status_code=400, detail="Bad request")
 
 
+@app.get("/api/sender/group/{union_id}")
+@limiter.limit("30/minute")
+async def get_sender_group_info(request: Request, union_id: str):
+    try:
+        verify_jwt(request)
+        # 直接按 union_id 查询核心行，避免 resolve_union 为组 ID 创建无效映射。
+        sender_union_info = await SenderUnionInfo.get_or_none(union_id=union_id)
+        if not sender_union_info:
+            raise HTTPException(status_code=404, detail="Not found")
+        bound_ids = await sender_union_info.list_bound_ids()
+        return {"sender_group": dump_sender_group(sender_union_info, bound_ids)}
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
 @app.get("/api/sender/{sender_id}")
+@limiter.limit("30/minute")
 async def get_sender_info(request: Request, sender_id: str):
     try:
         verify_jwt(request)
@@ -465,6 +570,7 @@ async def get_sender_info(request: Request, sender_id: str):
 
 
 @app.patch("/api/sender/{sender_id}")
+@limiter.limit("20/minute")
 async def edit_sender_info(request: Request, sender_id: str):
     ip = get_client_ip(request)
     try:
@@ -516,6 +622,7 @@ async def edit_sender_info(request: Request, sender_id: str):
 
 
 @app.delete("/api/sender/{sender_id}")
+@limiter.limit("20/minute")
 async def delete_sender_info(request: Request, sender_id: str):
     ip = get_client_ip(request)
     try:
@@ -523,11 +630,11 @@ async def delete_sender_info(request: Request, sender_id: str):
 
         sender_union_info = await SenderUnionInfo.get_by_sender_id(sender_id, create=False)
         if sender_union_info:
-            # 删除 union 的同时清掉其下全部映射，否则残留映射会指向不存在的 union。
-            await SenderUnionBind.filter(union_id=sender_union_info.union_id).delete()
-            await sender_union_info.delete()
+            await sender_union_info.delete_union()
         Logger.info(f"[WebUI] {ip} has deleted the user data: {sender_id}")
         return Response(status_code=204)
+    except UnionDeleteBlocked as e:
+        raise HTTPException(status_code=409, detail=e.reason) from e
     except HTTPException as e:
         raise e
     except Exception:
@@ -536,6 +643,7 @@ async def delete_sender_info(request: Request, sender_id: str):
 
 
 @app.get("/api/modules_list")
+@limiter.limit("30/minute")
 async def get_modules_list(request: Request):
     try:
         verify_jwt(request)
@@ -549,6 +657,7 @@ async def get_modules_list(request: Request):
 
 
 @app.get("/api/modules")
+@limiter.limit("30/minute")
 async def get_modules_info(request: Request, locale: str = Query(default_locale)):
     try:
         verify_jwt(request)
@@ -563,6 +672,7 @@ async def get_modules_info(request: Request, locale: str = Query(default_locale)
 
 
 @app.get("/api/module/{module_name}/related")
+@limiter.limit("30/minute")
 async def search_related_module(request: Request, module_name: str):
     try:
         verify_jwt(request)
@@ -576,6 +686,7 @@ async def search_related_module(request: Request, module_name: str):
 
 
 @app.get("/api/module/{module_name}/helpdoc")
+@limiter.limit("30/minute")
 async def get_module_helpdoc(request: Request, module_name: str, locale: str = Query(default_locale)):
     try:
         verify_jwt(request)
@@ -591,6 +702,7 @@ async def get_module_helpdoc(request: Request, module_name: str, locale: str = Q
 
 
 @app.post("/api/module/{module_name}/reload")
+@limiter.limit("10/minute")
 async def reload_module(request: Request, module_name: str):
     ip = get_client_ip(request)
     try:
@@ -609,6 +721,7 @@ async def reload_module(request: Request, module_name: str):
 
 
 @app.post("/api/module/{module_name}/load")
+@limiter.limit("10/minute")
 async def load_module(request: Request, module_name: str):
     ip = get_client_ip(request)
     try:
@@ -628,6 +741,7 @@ async def load_module(request: Request, module_name: str):
 
 
 @app.post("/api/module/{module_name}/unload")
+@limiter.limit("10/minute")
 async def unload_module(request: Request, module_name: str):
     ip = get_client_ip(request)
     try:
@@ -647,13 +761,47 @@ async def unload_module(request: Request, module_name: str):
 
 async def restart():
     await asyncio.sleep(1)
+    try:
+        await client_cleanup()
+    except BaseException:
+        # 重启请求已经被接受，清理失败不能把进程留在半关闭状态；记录后仍交给守护进程重启。
+        Logger.exception("Failed to clean up Web client before restart: ")
     os._exit(233)
 
 
+def _restart_done(task: asyncio.Task) -> None:
+    """Release the retained restart task and retrieve unexpected failures."""
+    global _restart_task
+    if _restart_task is task:
+        _restart_task = None
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        Logger.error(f"Web restart task failed: {error!r}")
+
+
+def schedule_restart() -> asyncio.Task:
+    """Schedule at most one retained Web restart task."""
+    global _restart_task
+    if _restart_task is not None and not _restart_task.done():
+        return _restart_task
+
+    awaitable = restart()
+    try:
+        _restart_task = asyncio.create_task(awaitable, name="web-restart")
+    except BaseException:
+        awaitable.close()
+        raise
+    _restart_task.add_done_callback(_restart_done)
+    return _restart_task
+
+
 @app.post("/api/restart")
+@limiter.limit("3/minute")
 async def restart_bot(request: Request):
     ip = get_client_ip(request)
     verify_jwt(request)
     Logger.info(f"[WebUI] {ip} restarted bot.")
-    asyncio.create_task(restart())
+    schedule_restart()
     return Response(status_code=202)

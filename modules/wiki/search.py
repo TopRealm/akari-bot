@@ -2,14 +2,14 @@ import asyncio
 import re
 
 from core.builtins.bot import Bot
-from core.builtins.message.internal import I18NContext, Plain
+from core.builtins.message.internal import ButtonFrame, I18NContext, Plain
 from core.logger import Logger
+from core.utils.button import build_button_rows
 from core.utils.func import is_int
 from .database.models import WikiTargetInfo
 from .utils.recommend import finish_with_start_wiki_not_set
-from .utils.wikilib import WikiLib
-from .wiki import wiki, query_pages
-import uuid
+from .utils.wikilib import BlockedWikiError, WikiLib
+from .wiki import finish_if_wiki_blocked, wiki, query_pages
 
 
 @wiki.command("search <pagename> {{I18N:wiki.help.search}}")
@@ -25,6 +25,7 @@ async def search_pages(msg: Bot.MessageSession, title: str | list | tuple, use_p
     prefix = target.prefix
     if not start_wiki:
         await finish_with_start_wiki_not_set(msg)
+    await finish_if_wiki_blocked(msg, start_wiki)
     if isinstance(title, str):
         title = [title]
     query_task = {start_wiki: {"query": [], "iw_prefix": ""}}
@@ -53,18 +54,21 @@ async def search_pages(msg: Bot.MessageSession, title: str | list | tuple, use_p
     wait_msg_list = []
     button_list = []
     for q in query_task:
+        await finish_if_wiki_blocked(msg, q)
         current_task = query_task[q]
         ready_for_query_pages = current_task["query"] if "query" in current_task else []
         iw_prefix = (current_task["iw_prefix"] + ":") if current_task["iw_prefix"] != "" else ""
         tasks = []
         for rd in ready_for_query_pages:
             tasks.append(asyncio.ensure_future(WikiLib(q, headers).search_page(rd)))
-        query = await asyncio.gather(*tasks)
+        try:
+            query = await asyncio.gather(*tasks)
+        except BlockedWikiError as e:
+            await finish_if_wiki_blocked(msg, e.url)
         for result in query:
             for r in result:
                 wait_msg_list.append(iw_prefix + r)
 
-    callback_id = str(uuid.uuid4())
     if len(wait_msg_list) != 0:
         msg_list.append(I18NContext("wiki.message.search"))
         i = 0
@@ -77,7 +81,7 @@ async def search_pages(msg: Bot.MessageSession, title: str | list | tuple, use_p
             msg_list.append(I18NContext("wiki.message.search.prompt.button"))
             for w in wait_msg_list[0:5]:
                 i += 1
-                button_list.append({f"{i}. {w}": f"<q:{callback_id}>{str(i)}"})
+                button_list.append({f"{i}. {w}": str(i)})
     else:
         await msg.finish(I18NContext("wiki.message.search.not_found"))
 
@@ -89,4 +93,6 @@ async def search_pages(msg: Bot.MessageSession, title: str | list | tuple, use_p
             else:
                 await msg.finish()
 
-    await msg.send_message(msg_list, callback=_callback, button_data=button_list, callback_id=callback_id)
+    if button_list:
+        msg_list.append(ButtonFrame(build_button_rows(button_list)))
+    await msg.send_message(msg_list, callback=_callback)

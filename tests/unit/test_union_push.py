@@ -108,7 +108,7 @@ async def _test_message_factory_receives_session():
             return Plain(session.target_id)
 
         calls = await _push(union_id, _build)
-        # 两个通道各算一次消息，且工厂拿到的会话即实际承担推送的那个
+        # 两个通道分别生成消息，且工厂接收实际承担推送的会话。
         return (
             sorted(seen) == ["UPUSHA|Group|factory", "UPUSHC|Group|factory"]
             and len(calls) == 2
@@ -149,11 +149,11 @@ async def _test_report_targets_dedup():
             sent.append(target.target_id)
 
         with (
-            patch("core.tos.report_targets", targets),
+            patch("core.utils.tos.report_targets", targets),
             patch.object(Alive, "get_alive", return_value=_ALIVE),
             patch.object(Bot, "send_direct_message", _record),
         ):
-            from core.tos import tos_report
+            from core.utils.tos import tos_report
 
             await tos_report("UPUSHA|1", "UPUSHA|Group|report", "reason")
         return sent == ["UPUSHA|Group|report"]

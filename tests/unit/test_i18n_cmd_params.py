@@ -20,14 +20,14 @@ from core.tester import func_case, Tester
 # issue_code() 接收 prompt_key 后在内部构造 ActionText，调用侧只写键名，
 # 逐调用点扫描无从分辨，故列为已知例外。
 KNOWN_INDIRECT_KEYS = {
-    "core.bind.message.start.private.prompt",
-    "core.bind.message.target.code.prompt",
-    "core.merge.message.start.private.prompt",
-    "core.merge.message.start.prompt",
+    "core.message.bind.start.private.prompt",
+    "core.message.bind.target.code.prompt",
+    "core.message.merge.start.private.prompt",
+    "core.message.merge.start.prompt",
 }
 
 # 上述键的 cmd 实际由该文件中的 issue_code() 补上
-INDIRECT_PROVIDER = "core/union_merge.py"
+INDIRECT_PROVIDER = "core/utils/union_merge.py"
 
 
 def _iter_call_args(source: str, key: str):

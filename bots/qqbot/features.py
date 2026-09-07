@@ -14,10 +14,10 @@ qq_use_markdown = QQBotConfig.qq_use_markdown
 
 features = Features(
     support_image=True,
-    support_voice=False,
+    support_audio=True,
+    support_video=True,
     support_mention=True,
     support_embed=False,
-    support_forward=False,
     support_delete=True,
     support_manage=False,
     support_markdown=True,
@@ -47,8 +47,10 @@ group_disable_read_all_message_features = evolve(
 
 guild_features = evolve(
     features,
+    support_permission_group=True,
     support_markdown=False,
     support_markdown_table=False,
+    support_handle_message_nodes=False,
     support_action_text=False,
     support_button=False,
     use_url_md_format=False,
@@ -78,6 +80,7 @@ def resolve_features(session_info: "SessionInfo", base: Features = features) -> 
         base,
         support_markdown=False,
         support_markdown_table=False,
+        support_handle_message_nodes=False,
         support_action_text=False,
         support_button=False,
         use_url_md_format=False,

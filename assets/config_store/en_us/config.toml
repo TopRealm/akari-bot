@@ -3,7 +3,7 @@
 # EXAMPLE: Boolean values in TOML must be lowercase.
 
 default_locale = "en_us" # Default language environment.
-config_version = 3 # Config version number, which will be automatically updated with the new features and generally does not need to be modified.
+config_version = 5 # Config version number, which will be automatically updated with the new features and generally does not need to be modified.
 
 [config]
 # The basic config section. The values entered here can be displayed in the message. Please do not enter sensitive information in this section.
@@ -11,14 +11,18 @@ debug = false # Whether to enable debug mode, more log information will be outpu
 timezone_offset = "+8" # The bot's default timezone offset.
 allow_reload_base = false # Whether to allow reloading of the base modules.
 allow_request_private_ip = false # Whether to allow the bot to request local private IP addresses. (Prevent possible leakage)
-slower_schedule = false # Whether to enable a slower task scheduler. (To reduce request pressure)
+schedule_interval_multiplier = 1.0 # 计划任务的间隔时间倍率，仅影响 IntervalTrigger，必须为大于 0 的数值。（值越大相对间隔时间越长）
+use_emote = false # Whether to use emote resources.
 use_font_mirror = false # Whether to use font mirrors when rendering web pages.
 use_secrets_random = false # Whether to use the random number generator based on the secrets library.
+ffmpeg_path = "<Replace me with str value>" # Path to the FFmpeg executable file.
+media_compression_threshold = 10 # Media file size threshold. Files exceeding this value will compressed using FFmpeg. Unit: MB.
 base_superuser = ["QQ|2596322644"] # The bot's base superuser list. The values entered here will be loaded into the database when the bot starts.
 ignored_sender = ["QQ|2854196310"] # Ignored user list. Users matching this list will be ignored.
 report_targets = [] # List of reporting contexts. The context ID filled in here will be identified as the reporting context. (e.g., when the bot encounters a command error, the bot will send the error information to the corresponding context)
 retired_clients = [] # Retired clients and their data migration targets, formatted as "<Source Client> -> <Target Client>" (e.g., "QQ -> QQBot"). Specifying only the source client indicates that migration is not provided.
 command_prefix = ["~", "～"] # Command prefixes. The value entered here will be recognized as the command prefix.
+regex_disable_prefix = [".", "。"] # Temporarily disable regex parsing of message prefixes.
 confirm_command = ["是", "对", "對", "yes", "Yes", "YES", "y", "Y"] # The keyword for the confirmation command. The value entered here will be recognized as the confirmation command.
 mention_required = false # Whether to force processing of only of messages that mention the bot at the beginning of the message.
 no_confirm = false # Whether to execute the command without the sender confirming the message.
@@ -26,7 +30,7 @@ quick_confirm = true # Whether to enable quick confirmation of message.
 enable_analytics = true # Whether to enable built-in statistics features.
 enable_bind_auto = false # Whether to enable the "bind auto" command to automatically pair with other instances within the same context.
 enable_commit_url = true # Whether to show the commit URL when displaying version information.
-enable_dirty_check = false # Whether to enable text filtering detection, requires the AccessKey ID and AccessKey Secret of Alibaba Cloud Content Security Service.
+enable_dirty_check = false # Whether to enable text filtering detection.
 check_use_textscan_v1 = false # Whether to use Alibaba Cloud Content Security Text Scan 1.0 legacy API.
 enable_urlmanager = false # Whether to enable URLManager for URL springboard. (Declare that this URL is not an official link, etc.)
 auto_purge_crontab = "0 0 * * *" # Cron expression for automatic cache purging.
@@ -53,8 +57,10 @@ bug_report_url = "https://s.wd-ljt.com/botreportbug" # Error reporting URL.
 donate_url = "http://afdian.com/a/teahouse" # Donate URL.
 help_url = "https://bot.teahouse.team" # Help document URL.
 help_page_url = "https://bot.teahouse.team/wiki/${module}" # Module help document URL.
-issue_url = "https://github.com/Teahouse-Studios/bot/issues/new/choose" # Issue feedback URL.
+issue_url = "https://github.com/Teahouse-Studios/akari-bot/issues/new/choose" # Issue feedback URL.
 locale_url = "https://hosted.weblate.org/engage/akaribot" # Localized project URL.
+qq_test_group_url = "<Replace me with str value>" # The inviting URL for the QQ bot test group. Leaving this blank will prevent it from being displayed in the "About Us" menu.
+repo_url = "https://github.com/Teahouse-Studios/akari-bot" # Open-source repository URL.
 
 [secret]
 # The secret config section. The bot will try to intercept if the values here accidentally appears in the message sent, but be careful to prevent leakage.
@@ -62,5 +68,5 @@ db_path = "sqlite://database/save.db" # Database connection string, use the conn
 proxy = "<Replace me with str value>" # Proxy service address.
 check_access_key_id = "<Replace me with str value>" # The AccessKey ID of Alibaba Cloud Content Security Service.
 check_access_key_secret = "<Replace me with str value>" # The AccessKey Secret of Alibaba Cloud Content Security Service.
-ff3_key = "<Replace me with str value>" # {I18N:config.comments.secret.ff3_key}
-ff3_tweak = "<Replace me with str value>" # {I18N:config.comments.secret.ff3_tweak}
+ff3_key = "<Replace me with str value>"
+ff3_tweak = "<Replace me with str value>"

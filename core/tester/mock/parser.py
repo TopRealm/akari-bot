@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from core.builtins.message.internal import ActionText, I18NContext
 from core.builtins.parser.command import CommandParser
-from core.builtins.parser.message import _unwrap_optional
+from core.builtins.parser.message import _unwrap_optional, should_skip_regex
 from core.builtins.session.tasks import SessionTaskManager
 from core.constants.exceptions import InvalidCommandFormatError, SessionFinished
 from core.exports import exports
@@ -21,7 +21,8 @@ if TYPE_CHECKING:
 async def parser(msg: "Bot.MessageSession"):
     await msg.session_info.refresh_info()
 
-    await SessionTaskManager.check(msg)
+    if await SessionTaskManager.check(msg):
+        return msg
     modules = ModulesManager.return_modules_list()
 
     msg.trigger_msg = normalize_space(msg.as_display())
@@ -40,6 +41,8 @@ async def parser(msg: "Bot.MessageSession"):
         return None
 
     # 检查正则
+    if should_skip_regex(msg.trigger_msg):
+        return None
     # 若任何正则命中则会在 _execute_regex 中调用对应函数并抛出 SessionFinished
     await _execute_regex(msg, modules)
     # 若未命中任何正则，视为不匹配（适用于单元测试）

@@ -2,7 +2,15 @@ default_locale = "zh_cn"
 
 confirm_command_default = ["是", "对", "對", "yes", "Yes", "YES", "y", "Y"]
 command_prefix_default = ["~", "～"]
+regex_disable_prefix_default = [".", "。"]
 lang_list = {"zh_cn": "简体中文", "zh_tw": "繁體中文", "en_us": "English", "ja_jp": "日本語", "ko_kr": "한국어"}
+weblate_lang_codes = {
+    "zh_cn": "zh_Hans",
+    "zh_tw": "zh_Hant",
+    "en_us": "en_US",
+    "ja_jp": "ja",
+    "ko_kr": "ko",
+}
 
 qq_host_default = "127.0.0.1:8080"
 matrix_homeserver_default = "https://matrix.org"
@@ -12,11 +20,13 @@ db_path_default = "sqlite://database/save.db"
 help_url_default = "https://bot.teahouse.team"
 help_page_url_default = "https://bot.teahouse.team/wiki/${module}"
 donate_url_default = "http://afdian.com/a/teahouse"
-issue_url_default = "https://github.com/Teahouse-Studios/bot/issues/new/choose"
+issue_url_default = "https://github.com/Teahouse-Studios/akari-bot/issues/new/choose"
+repo_url_default = "https://github.com/Teahouse-Studios/akari-bot"
+qq_test_group_url_default = ""
 bug_report_url_default = "https://s.wd-ljt.com/botreportbug"
 locale_url_default = "https://hosted.weblate.org/engage/akaribot"
 
-wiki_whitelist_url_default = (
+wiki_allowlist_url_default = (
     "https://github.com/Teahouse-Studios/akari-bot/issues/new?template=request_wiki_whitelist.yaml"
 )
 

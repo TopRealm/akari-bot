@@ -5,7 +5,7 @@ import orjson
 from core.builtins.bot import Bot
 from core.builtins.message.internal import Image as BImage, Plain, I18NContext
 from core.component import module
-from core.web_render import web_render, SourceOptions
+from core.utils.web_render import web_render, SourceOptions
 
 arc_assets_path = Path(__file__).parent / "assets"
 
@@ -25,6 +25,8 @@ async def _(msg: Bot.MessageSession):
     try:
         load_json = orjson.loads(resp)
     except Exception:
+        await msg.finish(I18NContext("arcaea.message.get_failed"))
+    if not load_json.get("value"):
         await msg.finish(I18NContext("arcaea.message.get_failed"))
     await msg.finish(
         I18NContext(

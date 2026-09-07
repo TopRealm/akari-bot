@@ -107,7 +107,9 @@ class ContextManager(ABC):
             cls.context_marks_hold[session_info.session_id] -= 1
             # 当计数达到 0 时，删除上下文和计数记录
             if cls.context_marks_hold[session_info.session_id] == 0:
-                del cls.context[session_info.session_id]
+                # 平台关闭流程可能已先清空上下文字典；release 仍须移除 hold 计数，
+                # 不能因重复清理抛 KeyError 而让后台任务以未取回异常结束。
+                cls.context.pop(session_info.session_id, None)
                 del cls.context_marks_hold[session_info.session_id]
                 Logger.trace(f"Context for session {session_info.session_id} is released.")
 
@@ -132,8 +134,6 @@ class ContextManager(ABC):
         session_info: SessionInfo,
         message: MessageChain | MessageNodes,
         quote: bool = True,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ) -> list[str]:
         """
         向会话所在的场景发送消息。
@@ -141,8 +141,6 @@ class ContextManager(ABC):
         :param session_info: 会话信息
         :param message: 消息内容，可以是 MessageChain 或字符串
         :param quote: 是否引用消息
-        :param enable_parse_message: 是否允许解析消息。（此参数作接口兼容用，仅 QQ 平台使用，默认为 True）
-        :param enable_split_image: 是否允许拆分图片发送。（此参数作接口兼容用，仅 Telegram 平台使用，默认为 True）
         :return: 消息 ID 列表
         """
 
@@ -179,8 +177,6 @@ class ContextManager(ABC):
         session_info: SessionInfo,
         user_id: str,
         message: MessageChain | MessageNodes,
-        enable_parse_message: bool = True,
-        enable_split_image: bool = True,
     ) -> list[str]:
         """
         向指定用户单独发送私聊消息。
@@ -193,8 +189,6 @@ class ContextManager(ABC):
         :param session_info: 会话信息
         :param user_id: 目标用户 ID（带平台前缀，如 ``QQ|10000``）
         :param message: 消息内容
-        :param enable_parse_message: 是否允许解析消息
-        :param enable_split_image: 是否允许拆分图片发送
         :return: 消息 ID 列表，为空表示发送失败（如对方未添加机器人为好友、未开启私信等）
         """
         raise NotImplementedError  # 请继承 class 后实现方法
@@ -320,6 +314,30 @@ class ContextManager(ABC):
         if session_info.session_id not in cls.context:
             raise ValueError("Session not found in context")
 
+        raise NotImplementedError  # 请继承 class 后实现方法
+
+    @classmethod
+    @abstractmethod
+    async def grant_permission_group(
+        cls,
+        session_info: SessionInfo,
+        user_id: str | list[str],
+        permission_group_id: str | list[str],
+        reason: str | None = None,
+    ) -> None:
+        """为场景成员授予平台原生权限组或角色。"""
+        raise NotImplementedError  # 请继承 class 后实现方法
+
+    @classmethod
+    @abstractmethod
+    async def revoke_permission_group(
+        cls,
+        session_info: SessionInfo,
+        user_id: str | list[str],
+        permission_group_id: str | list[str],
+        reason: str | None = None,
+    ) -> None:
+        """移除场景成员的平台原生权限组或角色。"""
         raise NotImplementedError  # 请继承 class 后实现方法
 
     @classmethod

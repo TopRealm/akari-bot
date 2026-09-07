@@ -6,20 +6,21 @@ from unittest.mock import AsyncMock, patch
 from bots.discord.buttons import (
     DiscordActionTextButton,
     DiscordActionTextSelect,
+    DiscordButton,
     build_discord_button_view,
     disable_selected_button,
 )
 from bots.discord.context import DiscordContextManager
-from bots.discord.features import features
 from core.builtins.message.internal import ActionText
 from core.builtins.session.info import SessionInfo
 from core.tester import Tester, func_case
+from core.utils.button import build_button_rows
 from core.utils.button_runtime import BUTTON_TOKEN_PREFIX, _clear_button_registry
 
 
 def _view():
     _clear_button_registry()
-    return build_discord_button_view([{"A": "~a", "B": "~b"}, {"C": "~c"}], "Discord|Client|1")
+    return build_discord_button_view(build_button_rows([{"A": "~a", "B": "~b"}, {"C": "~c"}]), "Discord|Client|1")
 
 
 def _test_view_layout_and_tokens():
@@ -33,6 +34,27 @@ def _test_view_layout_and_tokens():
     )
 
 
+def _test_link_buttons_use_native_urls():
+    _clear_button_registry()
+    view = build_discord_button_view(
+        build_button_rows([{"Docs": "https://example.com", "Local": "http://localhost"}, {"Help": "~help"}]),
+        "Discord|Client|1",
+    )
+    docs, local, help_button = view.children
+    return (
+        docs.url == "https://example.com"
+        and docs.custom_id is None
+        and not isinstance(docs, DiscordButton)
+        and local.url == "http://localhost"
+        and local.custom_id is None
+        and not isinstance(local, DiscordButton)
+        and isinstance(help_button, DiscordButton)
+        and help_button.url is None
+        and help_button.custom_id.startswith(BUTTON_TOKEN_PREFIX)
+        and [item.row for item in view.children] == [0, 0, 1]
+    )
+
+
 def _test_disables_only_selected():
     view = _view()
     selected = view.children[1].custom_id
@@ -42,12 +64,8 @@ def _test_disables_only_selected():
 
 def _test_platform_capacity():
     rows = [{f"B{row}-{column}": f"~b {row} {column}" for column in range(7)} for row in range(7)]
-    view = build_discord_button_view(rows, "Discord|Client|1")
+    view = build_discord_button_view(build_button_rows(rows), "Discord|Client|1")
     return len(view.children) == 25 and all(0 <= item.row < 5 for item in view.children)
-
-
-def _test_feature_enabled():
-    return features.support_button is True and features.support_action_text is True
 
 
 def _test_action_text_uses_modal_button():
@@ -119,6 +137,7 @@ async def _test_successful_click_routes_message():
     )
     assigned = SimpleNamespace()
     with (
+        patch("bots.discord.interactions.ensure_client_initialized", new=AsyncMock()) as ensure_initialized,
         patch("bots.discord.interactions.SessionInfo.assign", new=AsyncMock(return_value=assigned)) as assign,
         patch("bots.discord.interactions.Bot.process_message", new=AsyncMock()) as process,
         patch("bots.discord.interactions._get_bot_id", return_value="30"),
@@ -128,6 +147,7 @@ async def _test_successful_click_routes_message():
     return (
         response.defer.await_count == 1
         and message.edit.await_count == 1
+        and ensure_initialized.await_count == 1
         and button.disabled is True
         and kwargs["sender_id"] == "Discord|Client|1"
         and kwargs["reply_id"] == "10"
@@ -167,6 +187,7 @@ async def _test_action_text_submit_routes_edited_message():
     )
     assigned = SimpleNamespace()
     with (
+        patch("bots.discord.interactions.ensure_client_initialized", new=AsyncMock()) as ensure_initialized,
         patch("bots.discord.interactions.SessionInfo.assign", new=AsyncMock(return_value=assigned)) as assign,
         patch("bots.discord.interactions.Bot.process_message", new=AsyncMock()) as process,
         patch("bots.discord.interactions._get_bot_id", return_value="30"),
@@ -176,6 +197,7 @@ async def _test_action_text_submit_routes_edited_message():
     context = process.await_args.args[1]
     return (
         response.defer.await_count == 1
+        and ensure_initialized.await_count == 1
         and kwargs["message_id"] == "11"
         and kwargs["reply_id"] == "10"
         and kwargs["messages"].to_str() == "~help edited"
@@ -188,9 +210,9 @@ async def _test_action_text_submit_routes_edited_message():
 async def test_discord_buttons(tester: Tester):
     """Discord 按钮组件。"""
     await tester.test(_test_view_layout_and_tokens, "按钮布局与 token")
+    await tester.test(_test_link_buttons_use_native_urls, "链接使用原生 URL 按钮")
     await tester.test(_test_disables_only_selected, "仅停用当前按钮")
     await tester.test(_test_platform_capacity, "平台容量限制")
-    await tester.test(_test_feature_enabled, "平台声明按钮能力")
     await tester.test(_test_action_text_uses_modal_button, "ActionText 使用 Modal 按钮")
     await tester.test(_test_many_action_texts_use_select, "大量 ActionText 使用下拉菜单")
     await tester.test(_test_action_text_button_opens_prefilled_modal, "Modal 预填命令并保留引用设置")

@@ -3,7 +3,7 @@
 # 例：TOML のブール値は小文字である必要があります。
 
 default_locale = "ja_jp" # プリセット言語環境。
-config_version = 3 # バージョン番号。機能アップデートに伴い自動的に更新されるので、通常は変更しないでください。
+config_version = 5 # バージョン番号。機能アップデートに伴い自動的に更新されるので、通常は変更しないでください。
 
 [config]
 # 基本的な設定項目です。ここに入力された値は、メッセージ内にプレーンテキストで表示されます。この部分には機密情報を入力しないでください。
@@ -11,20 +11,24 @@ debug = false # デバッグモードを有効にするかどうか。有効に�
 timezone_offset = "+8" # ボットのデフォルトのタイムゾーン オフセット。
 allow_reload_base = false # 基本モジュールのリロードを許可するかどうか。
 allow_request_private_ip = false # ボットがローカルのプライベート IP アドレスにリクエストを送信することを許可するかどうか。（情報漏洩を防ぐため）
-slower_schedule = false # 低速のタスクスケジューラを有効にするかどうか。（リクエストの負荷を軽減するため）
+schedule_interval_multiplier = 1.0 # 计划任务的间隔时间倍率，仅影响 IntervalTrigger，必须为大于 0 的数值。（值越大相对间隔时间越长）
+use_emote = false # 感情表現リソースを使用するかどうか。
 use_font_mirror = false # ウェブページをレンダリングするときにフォントのミラーリングを使用するかどうか。
 use_secrets_random = false # secrets ライブラリに基づく乱数ジェネレータを使用するかどうか。
+ffmpeg_path = "<Replace me with str value>" # FFmpeg 実行ファイルのパス。
+media_compression_threshold = 10 # メディア ファイルのサイズしきい値。この値を超えるファイルは FFmpeg による圧縮が試みられます。単位は MB です。
 base_superuser = ["QQ|2596322644"] # ボットの基本スーパーユーザー リスト。ここに入力された値はボットの起動時にデータベースにロードされます。
 ignored_sender = ["QQ|2854196310"] # 無視されるユーザーのリスト。このリストに合致するユーザーは無視されます。
-report_targets = [] # レポート コンテクスト リスト。ここに入力されたコンテクスト ID がレポートコンテクストとして認識されます。（例：コマンドの実行エラーが発生すると、ボットは対応するコンテクストにエラー情報を送信します）
+report_targets = [] # レポート コンテキスト リスト。ここに入力されたコンテキスト ID がレポートコンテキストとして認識されます。（例：コマンドの実行エラーが発生すると、ボットは対応するコンテキストにエラー情報を送信します）
 retired_clients = [] # 廃止されたクライアントとそのデータ移行先を、「<移行元クライアント> -> <移行先クライアント>」（例：「QQ -> QQBot」）の形式で指定する必要があります。移行元クライアントのみを指定した場合は、移行を行わないことを示します。
 command_prefix = ["~", "～"] # コマンドのプレフィックス。ここに入力された値はコマンドのプレフィックスとして認識されます。
+regex_disable_prefix = [".", "。"] # 正規表現の解析を一時的に無効にするためのメッセージ プレフィックス。
 confirm_command = ["是", "对", "對", "yes", "Yes", "YES", "y", "Y"] # コマンド確認用のキーワード。ここに入力された値はコマンド確認用の単語として認識されます。
 mention_required = false # メッセージの冒頭にボットをメンションしたメッセージのみを処理することを強制するかどうか。
 no_confirm = false # 送信者がメッセージを確認せずにコマンドを実行するかどうか。
 quick_confirm = true # メッセージのクイック確認を有効にするかどうか。
 enable_analytics = true # 組み込みの統計機能を有効にするかどうか。
-enable_bind_auto = false # 同じシーン内の他のインスタンスを自動的にペアリングするために、「bind auto」コマンドを有効にするかどうか。
+enable_bind_auto = false # 同じコンテキスト内の他のインスタンスを自動的にペアリングするために、「bind auto」コマンドを有効にするかどうか。
 enable_commit_url = true # バージョン情報を表示する時にコミット URL を表示するかどうか。
 enable_dirty_check = false # テキスト フィルタリング検出を有効にするかどうか。Alibaba Cloud コンテンツ セキュリティ サービスの AccessKey ID と AccessKey Secret を設定する必要があります。
 check_use_textscan_v1 = false # Alibaba Cloud コンテンツ セキュリティ サービスの Text Scan 1.0 レガシー API を使用するかどうか。
@@ -53,8 +57,10 @@ bug_report_url = "https://s.wd-ljt.com/botreportbug" # エラーを報告する�
 donate_url = "http://afdian.com/a/teahouse" # 寄付の URL。
 help_url = "https://bot.teahouse.team" # ドキュメントの URL。
 help_page_url = "https://bot.teahouse.team/wiki/${module}" # モジュールのヘルプ情報の URL。
-issue_url = "https://github.com/Teahouse-Studios/bot/issues/new/choose" # フィードバックの URL。
+issue_url = "https://github.com/Teahouse-Studios/akari-bot/issues/new/choose" # フィードバックの URL。
 locale_url = "https://hosted.weblate.org/engage/akaribot" # 翻訳プロジェクトの URL。
+qq_test_group_url = "<Replace me with str value>" # QQボットのテストグループへの招待 URL。空欄にすると、「私たちについて」メニューには表示されません。
+repo_url = "https://github.com/Teahouse-Studios/akari-bot" # オープンソース リポジトリの URL。
 
 [secret]
 # キーの設定項目です。ここに入力された値は、送信メッセージに誤って含まれた場合、ボットはそれを傍受しようとします。ただし、漏洩を防ぐよう注意してください。
@@ -62,5 +68,5 @@ db_path = "sqlite://database/save.db" # データベース接続文字列。Tort
 proxy = "<Replace me with str value>" # プロキシ サービスのアドレス。
 check_access_key_id = "<Replace me with str value>" # Alibaba Cloud コンテンツ セキュリティ サービスの AccessKey ID。
 check_access_key_secret = "<Replace me with str value>" # Alibaba Cloud コンテンツ セキュリティ サービスの AccessKey Secret。
-ff3_key = "<Replace me with str value>" # {I18N:config.comments.secret.ff3_key}
-ff3_tweak = "<Replace me with str value>" # {I18N:config.comments.secret.ff3_tweak}
+ff3_key = "<Replace me with str value>"
+ff3_tweak = "<Replace me with str value>"

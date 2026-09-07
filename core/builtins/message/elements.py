@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import mimetypes
 import random
 import re
@@ -46,7 +47,7 @@ class BaseElement:
     KE 码是 AkariBot 的消息元素文本化的格式，用于在不便于使用标准的元素类的情况下使用。
     在机器人发出消息的最后阶段，KE 码会被解析器解析成对应的消息元素对象。
     格式为 `[KE:type,param1=value1,param2=value2]`，其中：
-    - type：元素类型（plain、image、voice、mention 等）
+    - type：元素类型（plain、image、audio、mention 等）
     - param*：元素特定的参数
 
     示例：
@@ -109,9 +110,10 @@ class PlainElement(BaseElement):
 
     text: str
     disable_joke: bool = False
+    allow_parse: bool = True
 
     @classmethod
-    def assign(cls, *texts: Any, disable_joke: bool = False):
+    def assign(cls, *texts: Any, disable_joke: bool = False, allow_parse: bool = True):
         """
         创建纯文本元素的工厂方法。
 
@@ -120,12 +122,13 @@ class PlainElement(BaseElement):
 
         :param texts: 文本内容（支持多个参数），每个参数会被转换为字符串并拼接
         :param disable_joke: 是否禁用玩笑功能（默认为 False）
+        :param allow_parse: 是否允许解析 KE 码、i18n 与平台消息标记（默认为 True）
         :return: PlainElement 实例
         """
         # 将所有参数转换为字符串并用空字符连接（保留原始格式）
         text = "".join([str(x) for x in texts])
         disable_joke = bool(disable_joke)
-        return deepcopy(cls(text=text, disable_joke=disable_joke))
+        return deepcopy(cls(text=text, disable_joke=disable_joke, allow_parse=bool(allow_parse)))
 
     def kecode(self):
         """
@@ -140,14 +143,109 @@ class PlainElement(BaseElement):
         :return: KE 码格式的字符串
         """
         encoded = parse.quote(self.text, safe="")
+        params = [f"text={encoded}"]
         if self.disable_joke:
-            # 有参数，将其拼接到 KE 码中
-            return f"[KE:plain,text={encoded},disable_joke=1]"
-        return f"[KE:plain,text={encoded}]"
+            params.append("disable_joke=1")
+        if not self.allow_parse:
+            params.append("allow_parse=0")
+        return f"[KE:plain,{','.join(params)}]"
 
     def __str__(self):
         """返回文本内容"""
         return self.text
+
+
+def markdown_to_plain_text(text: str) -> str:
+    """把常见 Markdown 标记转换为适合纯文本平台展示的内容。"""
+    lines = []
+    fence_char = None
+    fence_length = 0
+
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        stripped = line.lstrip()
+        fence = re.match(r"(`{3,}|~{3,})(.*)$", stripped)
+        if fence:
+            marker, info = fence.groups()
+            if fence_char is None:
+                fence_char = marker[0]
+                fence_length = len(marker)
+                if info := info.strip():
+                    lines.append(info)
+                continue
+            if marker[0] == fence_char and len(marker) >= fence_length:
+                fence_char = None
+                fence_length = 0
+                continue
+
+        if fence_char is not None:
+            lines.append(line)
+            continue
+
+        # Markdown 表格的分隔行没有可读内容，纯文本降级时直接丢弃。
+        if re.fullmatch(r"\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*", line):
+            continue
+
+        line = re.sub(r"^\s{0,3}#{1,6}\s+", "", line)
+        line = re.sub(r"^\s{0,3}>\s?", "", line)
+        line = re.sub(r"^\s*[-*+]\s+\[[xX]\]\s+", "☑ ", line)
+        line = re.sub(r"^\s*[-*+]\s+\[ \]\s+", "☐ ", line)
+        line = re.sub(r"^\s*[-*+]\s+", "• ", line)
+        if re.fullmatch(r"\s{0,3}(?:[-*_]\s*){3,}", line):
+            continue
+
+        stripped_line = line.strip()
+        if stripped_line.startswith("|") and stripped_line.endswith("|"):
+            cells = [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", stripped_line[1:-1])]
+            line = " | ".join(cells)
+
+        lines.append(line)
+
+    text = "\n".join(lines)
+    text = re.sub(
+        r"!\[([^\]]*)\]\((\S+?)(?:\s+[\"'].*?[\"'])?\)",
+        lambda match: f"{match.group(1)} ({match.group(2)})" if match.group(1) else match.group(2),
+        text,
+    )
+    text = re.sub(
+        r"\[([^\]]+)\]\((\S+?)(?:\s+[\"'].*?[\"'])?\)",
+        lambda match: match.group(2) if match.group(1) == match.group(2) else f"{match.group(1)} ({match.group(2)})",
+        text,
+    )
+    text = re.sub(r"<((?:https?://|mailto:)[^>]+)>", r"\1", text)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"</?[^>]+>", "", text)
+    text = re.sub(r"(`+)(.*?)\1", r"\2", text)
+    text = re.sub(r"~~(.*?)~~", r"\1", text)
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    text = re.sub(r"__(.*?)__", r"\1", text)
+    text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", text)
+    text = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"\1", text)
+    text = re.sub(r"\\([\\`*_{}\[\]()#+\-.!>|~])", r"\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return html.unescape(text).strip()
+
+
+@define
+class MarkdownElement(PlainElement):
+    """Markdown 文本元素；不支持 Markdown 时可降级为普通文本。"""
+
+    def to_plain(self) -> PlainElement:
+        """移除 Markdown 标记并保留可读内容。"""
+        return PlainElement.assign(
+            markdown_to_plain_text(self.text),
+            disable_joke=self.disable_joke,
+            allow_parse=self.allow_parse,
+        )
+
+    def kecode(self):
+        """转换为可跨进程传输的 Markdown KE 码。"""
+        encoded = parse.quote(self.text, safe="")
+        params = [f"text={encoded}"]
+        if self.disable_joke:
+            params.append("disable_joke=1")
+        if not self.allow_parse:
+            params.append("allow_parse=0")
+        return f"[KE:markdown,{','.join(params)}]"
 
 
 @define
@@ -534,9 +632,17 @@ class ImageElement(BaseElement):
     headers: dict[str, Any] | None = None
     need_get: bool = False
     cached_b64: str | None = None
+    max_h: int | None = None
+    allow_split: bool = True
 
     @classmethod
-    def assign(cls, path: str | Path | PILImage.Image, headers: dict[str, Any] | None = None):
+    def assign(
+        cls,
+        path: str | Path | PILImage.Image,
+        headers: dict[str, Any] | None = None,
+        max_h: int | None = None,
+        allow_split: bool = True,
+    ):
         """
         创建图片元素的工厂方法。
 
@@ -548,6 +654,8 @@ class ImageElement(BaseElement):
                     - Base64 编码数据（以 base64 开头）
                     - PIL Image 对象
         :param headers: 获取网络图片时的请求头（如用户代理、认证信息等）
+        :param max_h: QQBot Markdown 图片的最大显示宽度（像素）
+        :param allow_split: 平台发送时是否允许按高度拆分图片
         :return: ImageElement 实例
         """
         need_get = False
@@ -585,7 +693,16 @@ class ImageElement(BaseElement):
                     img_file.write(img_data)
                 path = save
 
-        return deepcopy(cls(str(path), headers, need_get))
+        normalized_max_h = max(1, int(max_h)) if max_h is not None else None
+        return deepcopy(
+            cls(
+                path=str(path),
+                headers=headers,
+                need_get=need_get,
+                max_h=normalized_max_h,
+                allow_split=bool(allow_split),
+            )
+        )
 
     async def get(self) -> str:
         """
@@ -675,7 +792,7 @@ class ImageElement(BaseElement):
         save = f"{random_cache_path()}.png"
         image.save(save)
         image.close()
-        return ImageElement.assign(save)
+        return ImageElement.assign(save, max_h=self.max_h, allow_split=self.allow_split)
 
     def kecode(self):
         """
@@ -683,11 +800,16 @@ class ImageElement(BaseElement):
 
         :return: KE 码格式的字符串
         """
+        params = [f"path={self.path}"]
         if self.headers:
             # 有请求头，进行 Base64 编码后传递
             headers_b64 = base64.b64encode(orjson.dumps(self.headers)).decode("utf-8")
-            return f"[KE:image,path={self.path},headers={headers_b64}]"
-        return f"[KE:image,path={self.path}]"
+            params.append(f"headers={headers_b64}")
+        if self.max_h is not None:
+            params.append(f"max_h={self.max_h}")
+        if not self.allow_split:
+            params.append("allow_split=0")
+        return f"[KE:image,{','.join(params)}]"
 
     async def to_PIL_image(self) -> PILImage.Image:
         """
@@ -712,7 +834,7 @@ class ImageElement(BaseElement):
 
 
 @define
-class VoiceElement(BaseElement):
+class AudioElement(BaseElement):
     """
     语音消息元素。
 
@@ -723,9 +845,9 @@ class VoiceElement(BaseElement):
 
     示例：
     ```
-        > voice = VoiceElement.assign("/path/to/audio.mp3")
-        > str(voice)
-        '[KE:voice,path=/path/to/audio.mp3]'
+        > audio = AudioElement.assign("/path/to/audio.mp3")
+        > str(audio)
+        '[KE:audio,path=/path/to/audio.mp3]'
     ```
     """
 
@@ -737,13 +859,52 @@ class VoiceElement(BaseElement):
         创建语音元素的工厂方法。
 
         :param path: 语音文件的本地路径（str 或 Path 对象）
-        :return: VoiceElement 实例
+        :return: AudioElement 实例
         """
         return deepcopy(cls(str(path)))
 
     def kecode(self):
         """转换为 KE 码格式"""
-        return f"[KE:voice,path={self.path}]"
+        return f"[KE:audio,path={self.path}]"
+
+    def __str__(self):
+        """返回 KE 码格式"""
+        return self.kecode()
+
+
+@define
+class VideoElement(BaseElement):
+    """
+    视频消息元素。
+
+    该类用于处理消息中的视频文件。支持本地文件路径。
+
+    属性：
+        path: 视频文件的本地路径
+
+    示例：
+    ```
+        > video = VideoElement.assign("/path/to/video.mp4")
+        > str(video)
+        '[KE:video,path=/path/to/video.mp4]'
+    ```
+    """
+
+    path: str
+
+    @classmethod
+    def assign(cls, path: str | Path):
+        """
+        创建语音元素的工厂方法。
+
+        :param path: 语音文件的本地路径（str 或 Path 对象）
+        :return: VideoElement 实例
+        """
+        return deepcopy(cls(str(path)))
+
+    def kecode(self):
+        """转换为 KE 码格式"""
+        return f"[KE:video,path={self.path}]"
 
     def __str__(self):
         """返回 KE 码格式"""
@@ -977,6 +1138,126 @@ class ActionTextElement(BaseElement):
 
     def __str__(self):
         """返回 KE 码格式"""
+        return self.kecode()
+
+
+_BUTTON_REPLY_PATTERN = re.compile(r"<q:(.*?)>(.*)", re.DOTALL)
+
+
+@define(frozen=True)
+class ButtonPayload:
+    """按钮点击所携带的语义数据。
+
+    ``reply_id`` 是框架为按钮交互虚拟出的回复目标。平台收到点击事件后将它写入
+    :class:`SessionInfo.reply_id`，即可复用普通回复消息的 callback 分发机制。
+    ``<q:...>`` 仅是部分平台传输该字段时使用的兼容编码，不再由模块业务代码拼接。
+    """
+
+    value: str
+    reply_id: str | None = None
+
+    @classmethod
+    def parse(cls, data: str, reply_id: str | None = None):
+        """从平台数据或旧版 ``<q:reply_id>value`` 编码恢复语义字段。"""
+        data = str(data)
+        legacy_reply_id = None
+        if match := _BUTTON_REPLY_PATTERN.fullmatch(data):
+            legacy_reply_id = match.group(1) or None
+            data = match.group(2)
+        return cls(value=data, reply_id=str(reply_id) if reply_id is not None else legacy_reply_id)
+
+    def to_data(self) -> str:
+        """编码为只支持单个字符串字段的平台按钮数据。"""
+        if self.reply_id is None:
+            return self.value
+        return f"<q:{self.reply_id}>{self.value}"
+
+
+@define
+class ButtonElement(BaseElement):
+    """单个消息按钮元素。"""
+
+    show: str
+    value: str
+    reply_id: str | None = None
+
+    @classmethod
+    def assign(cls, show: str, value: str, reply_id: str | None = None):
+        """创建单个按钮，show 为展示文本，value 为点击数据。"""
+        payload = ButtonPayload.parse(value, reply_id)
+        return deepcopy(cls(show=str(show), value=payload.value, reply_id=payload.reply_id))
+
+    @property
+    def payload(self) -> ButtonPayload:
+        """返回按钮点击数据；同时兼容反序列化得到的旧版内嵌编码。"""
+        return ButtonPayload.parse(self.value, self.reply_id)
+
+    def kecode(self):
+        """转换为 KE 码格式。"""
+        show = parse.quote(self.show, safe="")
+        value = parse.quote(self.value, safe="")
+        params = [f"show={show}", f"value={value}"]
+        if self.reply_id is not None:
+            params.append(f"reply_id={parse.quote(self.reply_id, safe='')}")
+        return f"[KE:button,{','.join(params)}]"
+
+    def __str__(self):
+        """返回 KE 码格式。"""
+        return self.kecode()
+
+
+@define
+class ButtonRows:
+    """消息按钮的一行。"""
+
+    buttons: list[ButtonElement]
+
+    @classmethod
+    def assign(cls, buttons: list[ButtonElement] | None = None):
+        """使用单个按钮元素组成一行。"""
+        normalized = []
+        for button in buttons or []:
+            if not isinstance(button, ButtonElement):
+                raise TypeError("ButtonRows only accepts Button elements.")
+            normalized.append(button)
+        return deepcopy(cls(buttons=normalized))
+
+
+@define
+class ButtonFrameElement(BaseElement):
+    """消息底部的完整按钮区域。"""
+
+    rows: list[ButtonRows]
+
+    @classmethod
+    def assign(cls, rows: list[ButtonRows] | None = None):
+        """使用按钮行组成完整按钮区域。"""
+        normalized = []
+        for row in rows or []:
+            if not isinstance(row, ButtonRows):
+                raise TypeError("ButtonFrame only accepts ButtonRows elements.")
+            if row.buttons:
+                normalized.append(row)
+        return deepcopy(cls(rows=normalized))
+
+    def kecode(self):
+        """转换为 KE 码格式。"""
+        rows = [
+            [
+                {
+                    "show": button.show,
+                    "value": button.value,
+                    **({"reply_id": button.reply_id} if button.reply_id is not None else {}),
+                }
+                for button in row.buttons
+            ]
+            for row in self.rows
+        ]
+        data = parse.quote(orjson.dumps(rows).decode("utf-8"), safe="")
+        return f"[KE:button_frame,data={data}]"
+
+    def __str__(self):
+        """返回 KE 码格式。"""
         return self.kecode()
 
 
@@ -1218,14 +1499,21 @@ class RawElement(BaseElement):
 __all__ = [
     "BaseElement",
     "PlainElement",
+    "MarkdownElement",
+    "markdown_to_plain_text",
     "URLElement",
     "FormattedTimeElement",
     "I18NContextElement",
     "ImageElement",
-    "VoiceElement",
+    "AudioElement",
+    "VideoElement",
     "EmbedFieldElement",
     "EmbedElement",
     "MentionElement",
     "ActionTextElement",
+    "ButtonPayload",
+    "ButtonElement",
+    "ButtonRows",
+    "ButtonFrameElement",
     "RawElement",
 ]

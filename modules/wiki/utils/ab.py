@@ -1,7 +1,7 @@
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
 from core.builtins.message.internal import I18NContext, Plain, Url
-from core.dirty_check import check
+from core.utils.dirty_check import check
 from modules.wiki.utils.utils import strptime2ts
 from modules.wiki.utils.wikilib import WikiLib
 
@@ -39,7 +39,7 @@ async def get_ab(msg: Bot.MessageSession | Bot.FetchedMessageSession, wiki_url, 
         )
     y = await check(d, session=msg)
 
-    g = MessageChain.assign([Url(pageurl, trusted=True if wiki.wiki_info.in_allowlist else None)])
+    g = MessageChain.assign([Url(pageurl, trusted=True if wiki.wiki_info.is_allowed else None)])
     g += MessageChain.assign([Plain(z["content"]) for z in y])
     g.append(I18NContext("message.collapse", amount=AB_LIMIT))
 

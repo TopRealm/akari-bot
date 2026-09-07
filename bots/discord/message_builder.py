@@ -1,5 +1,7 @@
 """Discord 消息聚合负载构建。"""
 
+import asyncio
+
 import discord
 from attrs import define, field
 
@@ -8,13 +10,17 @@ from bots.discord.utils import convert_embed
 from core.builtins.message.chain import MessageChain, match_atcode
 from core.builtins.message.elements import (
     ActionTextElement,
+    ButtonFrameElement,
+    ButtonRows,
     EmbedElement,
     ImageElement,
     MentionElement,
     PlainElement,
-    VoiceElement,
+    AudioElement,
+    VideoElement,
 )
 from core.builtins.session.info import SessionInfo
+from core.logger import Logger
 
 
 @define
@@ -25,6 +31,7 @@ class DiscordPayload:
     files: list[discord.File] = field(factory=list)
     embeds: list[discord.Embed] = field(factory=list)
     action_texts: list[ActionTextElement] = field(factory=list)
+    button_rows: list[ButtonRows] = field(factory=list)
 
 
 def split_discord_text(text: str, limit: int = 2000) -> list[str]:
@@ -43,20 +50,19 @@ def split_discord_text(text: str, limit: int = 2000) -> list[str]:
     return chunks
 
 
-async def build_discord_payloads(
-    session_info: SessionInfo, message: MessageChain, enable_parse_message: bool = True
-) -> list[DiscordPayload]:
+async def build_discord_payloads(session_info: SessionInfo, message: MessageChain) -> list[DiscordPayload]:
     """将完整消息链聚合为受平台限制约束的 Discord 负载。"""
     text_parts = []
     files = []
     embed_units = []
     action_texts = []
+    button_rows = []
     embed_index = 0
     inline_pending = False
 
-    for element in message.as_sendable(session_info, parse_message=enable_parse_message):
+    for element in message.as_sendable(session_info):
         if isinstance(element, PlainElement):
-            text = match_atcode(element.text, client_name, "<@{uid}>") if enable_parse_message else element.text
+            text = match_atcode(element.text, client_name, "<@{uid}>") if element.allow_parse else element.text
             if inline_pending and text_parts:
                 text_parts[-1] += text
             else:
@@ -70,6 +76,9 @@ async def build_discord_payloads(
                 text_parts.append(fallback)
             action_texts.append(element)
             inline_pending = True
+        elif isinstance(element, ButtonFrameElement):
+            button_rows.extend(element.rows)
+            inline_pending = False
         elif isinstance(element, MentionElement):
             if element.client == client_name and session_info.target_from == target_channel_prefix:
                 text_parts.append(f"<@{element.id}>")
@@ -77,7 +86,10 @@ async def build_discord_payloads(
         elif isinstance(element, ImageElement):
             files.append(discord.File(await element.get()))
             inline_pending = False
-        elif isinstance(element, VoiceElement):
+        elif isinstance(element, AudioElement):
+            files.append(discord.File(element.path))
+            inline_pending = False
+        elif isinstance(element, VideoElement):
             files.append(discord.File(element.path))
             inline_pending = False
         elif isinstance(element, EmbedElement):
@@ -116,8 +128,11 @@ async def build_discord_payloads(
         )
         if text_index < len(text_chunks):
             text_index += 1
+    if not payloads and (button_rows or action_texts):
+        payloads.append(DiscordPayload(content="\u200b"))
     if payloads:
         payloads[-1].action_texts = action_texts
+        payloads[-1].button_rows = button_rows
     return payloads
 
 
@@ -125,13 +140,18 @@ async def execute_discord_payloads(channel, payloads: list[DiscordPayload], refe
     """依次发送 Discord 负载，引用仅首条、按钮仅末条。"""
     sent_messages = []
     for index, payload in enumerate(payloads):
-        sent_messages.append(
-            await channel.send(
+        try:
+            sent = await channel.send(
                 content=payload.content,
                 files=payload.files or None,
                 embeds=payload.embeds or None,
                 reference=reference if index == 0 else None,
                 view=view if index == len(payloads) - 1 else None,
             )
-        )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            Logger.exception(f"Failed to send Discord payload {index + 1}/{len(payloads)}: ")
+            break
+        sent_messages.append(sent)
     return sent_messages

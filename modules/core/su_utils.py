@@ -11,7 +11,7 @@ from core.alive import Alive
 from core.builtins.bot import Bot
 from core.builtins.converter import converter
 from core.builtins.message.chain import MessageChain, convert_senderid_to_atcode, match_kecode
-from core.builtins.message.internal import I18NContext, Plain
+from core.builtins.message.internal import I18NContext, Plain, Button, Image
 from core.builtins.session.features import Features
 from core.component import module
 from core.config import CFGManager
@@ -23,12 +23,13 @@ from core.loader import ModulesManager
 from core.logger import Logger
 from core.scheduler import CronTrigger
 from core.server.terminate import restart
-from core.tos import WARNING_COUNTS, check_temp_ban, remove_temp_ban
+from core.utils.tos import WARNING_COUNTS, check_temp_ban, remove_temp_ban
 from core.types import Param
 from core.utils.bash import run_sys_command
 from core.utils.func import is_float, is_int
-from core.utils.storedata import get_stored_list, update_stored_list
-from core.web_render import web_render, close_web_render, init_web_render
+from core.utils.image_table import ImageTable, image_table_render
+from core.utils.url_audit import GlobalURLAllowlist, GlobalURLBlocklist, URLRule, URLRuleError
+from core.utils.web_render import check_web_render_status, close_web_render, init_web_render, web_render
 
 auto_purge_crontab = CoreConfig.auto_purge_crontab
 
@@ -36,7 +37,7 @@ auto_purge_crontab = CoreConfig.auto_purge_crontab
 su = module("superuser", alias="su", required_superuser=True, base=True, doc=True)
 
 
-@su.command("add <user>")
+@su.command("add <user> {{I18N:core.help.superuser.add}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -49,7 +50,7 @@ async def _(msg: Bot.MessageSession, user: str):
         await msg.finish(I18NContext("core.message.superuser.add.success", sender=user))
 
 
-@su.command("remove <user>")
+@su.command("remove <user> {{I18N:core.help.superuser.remove}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -68,14 +69,13 @@ async def _(msg: Bot.MessageSession, user: str):
 features = module("features", required_superuser=True, base=True, doc=True)
 
 
-@features.command()
+@features.command("{{I18N:core.help.features}}")
 async def _(msg: Bot.MessageSession):
     fetched = await Bot.fetch_target(msg.session_info.target_id)
 
-    locale = msg.session_info.locale
-    yes = locale.t("message.yes")
-    no = locale.t("message.no")
-    unknown = locale.t("message.unknown")
+    yes = str(I18NContext("message.yes"))
+    no = str(I18NContext("message.no"))
+    unknown = str(I18NContext("message.unknown"))
 
     lines = []
     diff_count = 0
@@ -106,7 +106,7 @@ async def _(msg: Bot.MessageSession):
 purge = module("purge", required_superuser=True, base=True, doc=True)
 
 
-@purge.command()
+@purge.command("{{I18N:core.help.purge}}")
 async def _(msg: Bot.MessageSession):
     if cache_path.exists():
         if len(list(cache_path.iterdir())) > 0:
@@ -131,9 +131,9 @@ set_ = module("set", required_superuser=True, base=True, doc=True)
 
 
 @set_.command(
-    "target module enable <target> <modules> ...",
-    "target module disable <target> <modules> ...",
-    "target module list <target>",
+    "target module enable <target> <modules> ... {{I18N:core.help.set.target.module.enable}}",
+    "target module disable <target> <modules> ... {{I18N:core.help.set.target.module.disable}}",
+    "target module list <target> {{I18N:core.help.set.target.module.list}}",
 )
 async def _(msg: Bot.MessageSession, target: str):
     if not Alive.determine_target_from(target):
@@ -175,7 +175,11 @@ async def _(msg: Bot.MessageSession, target: str):
             await msg.finish(I18NContext("core.message.set.module.list.none"))
 
 
-@set_.command("target data get <target> [<k>]", "target data edit <target> <k> <v>", "target data delete <target> <k>")
+@set_.command(
+    "target data get <target> [<k>] {{I18N:core.help.set.target.data.get}}",
+    "target data edit <target> <k> <v> {{I18N:core.help.set.target.data.edit}}",
+    "target data delete <target> <k> {{I18N:core.help.set.target.data.delete}}",
+)
 async def _(msg: Bot.MessageSession, target: str):
     if not Alive.determine_target_from(target):
         await msg.finish(I18NContext("message.id.invalid.target", target=msg.session_info.target_from))
@@ -214,7 +218,11 @@ async def _(msg: Bot.MessageSession, target: str):
         await msg.finish(I18NContext("message.success"))
 
 
-@set_.command("sender data get <user> [<k>]", "sender data edit <user> <k> <v>", "sender data delete <user> <k>")
+@set_.command(
+    "sender data get <user> [<k>] {{I18N:core.help.set.sender.data.get}}",
+    "sender data edit <user> <k> <v> {{I18N:core.help.set.sender.data.edit}}",
+    "sender data delete <user> <k> {{I18N:core.help.set.sender.data.delete}}",
+)
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -253,10 +261,12 @@ async def _(msg: Bot.MessageSession, user: str):
         await msg.finish(I18NContext("message.success"))
 
 
-post_whitelist = module("post_whitelist", required_superuser=True, base=True, doc=True, available_for="QQ")
+post_whitelist = module(
+    "post-whitelist", alias="post_whitelist", required_superuser=True, base=True, doc=True, available_for="QQ"
+)
 
 
-@post_whitelist.command("<group_id>")
+@post_whitelist.command("<group_id> {{I18N:core.help.post-whitelist}}")
 async def _(msg: Bot.MessageSession, group_id: str):
     if not group_id.startswith("QQ|Group|"):
         await msg.finish(I18NContext("message.id.invalid.target", target="QQ|Group"))
@@ -272,10 +282,173 @@ async def _(msg: Bot.MessageSession, group_id: str):
     await msg.finish(I18NContext("core.message.set.option.edit.success", k=k, v=v))
 
 
+url = module(
+    "url-audit",
+    required_superuser=True,
+    base=True,
+)
+
+
+def _url_rule_error(msg: Bot.MessageSession, list_name: str, error: URLRuleError):
+    reason = msg.session_info.locale.t(f"core.message.url-audit.{list_name}.error.reason.{error.reason}")
+    return I18NContext(f"core.message.url-audit.{list_name}.error.invalid", reason=reason)
+
+
+def _url_rule_details(msg: Bot.MessageSession, list_name: str, rules) -> str:
+    return "\n".join(
+        f"[{msg.session_info.locale.t(f'core.message.url-audit.source.{list_name}.{rule.source}')}] {rule.serialized}"
+        for rule in rules
+    )
+
+
+async def _finish_url_rule_list(msg: Bot.MessageSession, list_name: str, rules: tuple[URLRule, ...]) -> None:
+    locale = msg.session_info.locale
+    table = ImageTable(
+        [
+            [
+                locale.t(f"core.message.url-audit.{list_name}.source.{rule.source}"),
+                locale.t("core.message.url-audit.list.table.type.regex")
+                if rule.is_regex
+                else locale.t("core.message.url-audit.list.table.type.exact"),
+                rule.value,
+            ]
+            for rule in rules
+        ],
+        [
+            locale.t("core.message.url-audit.list.table.header.source"),
+            locale.t("core.message.url-audit.list.table.header.type"),
+            locale.t("core.message.url-audit.list.table.header.rule"),
+        ],
+        disable_joke=True,
+    )
+    imgs = await image_table_render(table)
+    if not imgs:
+        await msg.finish()
+    await msg.finish([I18NContext(f"core.message.url-audit.{list_name}.list.title")] + [Image(img) for img in imgs])
+
+
+@url.command(
+    [
+        "allowlist add <url> {{I18N:core.help.url-audit.allowlist.add}}",
+        "allowlist add-regex <url> {{I18N:core.help.url-audit.allowlist.add_regex}}",
+    ]
+)
+async def _(msg: Bot.MessageSession, url: str):
+    is_regex = bool(msg.parsed_msg.get("add-regex", False))
+    try:
+        added = GlobalURLAllowlist.add_user_rule(url, is_regex=is_regex)
+    except URLRuleError as exc:
+        await msg.finish(_url_rule_error(msg, "allowlist", exc))
+    await msg.finish(
+        I18NContext(
+            "core.message.url-audit.allowlist.add.success" if added else "core.message.url-audit.allowlist.add.exists",
+            rule=(f"regex:{url.strip()}" if is_regex else url),
+        )
+    )
+
+
+@url.command(
+    [
+        "allowlist remove <url> {{I18N:core.help.url-audit.allowlist.remove}}",
+        "allowlist remove-regex <url> {{I18N:core.help.url-audit.allowlist.remove_regex}}",
+    ]
+)
+async def _(msg: Bot.MessageSession, url: str):
+    is_regex = bool(msg.parsed_msg.get("remove-regex", False))
+    try:
+        removed = GlobalURLAllowlist.remove_user_rule(url, is_regex=is_regex)
+    except URLRuleError as exc:
+        await msg.finish(_url_rule_error(msg, "allowlist", exc))
+    await msg.finish(
+        I18NContext(
+            "core.message.url-audit.allowlist.remove.success"
+            if removed
+            else "core.message.url-audit.allowlist.remove.missing",
+            rule=(f"regex:{url.strip()}" if is_regex else url),
+        )
+    )
+
+
+@url.command("allowlist query <url> {{I18N:core.help.url-audit.allowlist.query}}")
+async def _(msg: Bot.MessageSession, url: str):
+    matches = GlobalURLAllowlist.matching_rules(url)
+    if not matches:
+        await msg.finish(I18NContext("core.message.url-audit.allowlist.query.denied", url=url))
+    details = _url_rule_details(msg, "allowlist", matches)
+    await msg.finish(I18NContext("core.message.url-audit.allowlist.query.allowed", url=url, rules=details))
+
+
+@url.command("allowlist list {{I18N:core.help.url-audit.allowlist.list}}")
+async def _(msg: Bot.MessageSession):
+    rules = GlobalURLAllowlist.rules()
+    if not rules:
+        await msg.finish(I18NContext("core.message.url-audit.allowlist.list.empty"))
+    await _finish_url_rule_list(msg, "allowlist", rules)
+
+
+@url.command(
+    [
+        "blocklist add <url> {{I18N:core.help.url-audit.blocklist.add}}",
+        "blocklist add-regex <url> {{I18N:core.help.url-audit.blocklist.add_regex}}",
+    ]
+)
+async def _(msg: Bot.MessageSession, url: str):
+    is_regex = bool(msg.parsed_msg.get("add-regex", False))
+    try:
+        added = GlobalURLBlocklist.add_user_rule(url, is_regex=is_regex)
+    except URLRuleError as exc:
+        await msg.finish(_url_rule_error(msg, "blocklist", exc))
+    await msg.finish(
+        I18NContext(
+            "core.message.url-audit.blocklist.add.success" if added else "core.message.url-audit.blocklist.add.exists",
+            rule=(f"regex:{url.strip()}" if is_regex else url),
+        )
+    )
+
+
+@url.command(
+    [
+        "blocklist remove <url> {{I18N:core.help.url-audit.blocklist.remove}}",
+        "blocklist remove-regex <url> {{I18N:core.help.url-audit.blocklist.remove_regex}}",
+    ]
+)
+async def _(msg: Bot.MessageSession, url: str):
+    is_regex = bool(msg.parsed_msg.get("remove-regex", False))
+    try:
+        removed = GlobalURLBlocklist.remove_user_rule(url, is_regex=is_regex)
+    except URLRuleError as exc:
+        await msg.finish(_url_rule_error(msg, "blocklist", exc))
+    await msg.finish(
+        I18NContext(
+            "core.message.url-audit.blocklist.remove.success"
+            if removed
+            else "core.message.url-audit.blocklist.remove.missing",
+            rule=(f"regex:{url.strip()}" if is_regex else url),
+        )
+    )
+
+
+@url.command("blocklist query <url> {{I18N:core.help.url-audit.blocklist.query}}")
+async def _(msg: Bot.MessageSession, url: str):
+    matches = GlobalURLBlocklist.matching_rules(url)
+    if not matches:
+        await msg.finish(I18NContext("core.message.url-audit.blocklist.query.allowed", url=url))
+    details = _url_rule_details(msg, "blocklist", matches)
+    await msg.finish(I18NContext("core.message.url-audit.blocklist.query.blocked", url=url, rules=details))
+
+
+@url.command("blocklist list {{I18N:core.help.url-audit.blocklist.list}}")
+async def _(msg: Bot.MessageSession):
+    rules = GlobalURLBlocklist.rules()
+    if not rules:
+        await msg.finish(I18NContext("core.message.url-audit.blocklist.list.empty"))
+    await _finish_url_rule_list(msg, "blocklist", rules)
+
+
 ae = module("abuse", alias="ae", required_superuser=True, base=True, doc=True)
 
 
-@ae.command("check <user>")
+@ae.command("check <user> {{I18N:core.help.abuse.check}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -296,7 +469,7 @@ async def _(msg: Bot.MessageSession, user: str):
     await msg.finish([I18NContext("core.message.abuse.check.warns", sender=user, warns=warns)] + stat)
 
 
-@ae.command("warn <user> [<count>]")
+@ae.command("warn <user> [<count>] {{I18N:core.help.abuse.warn}}")
 async def _(msg: Bot.MessageSession, user: str, count: int = 1):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -313,7 +486,7 @@ async def _(msg: Bot.MessageSession, user: str, count: int = 1):
     )
 
 
-@ae.command("revoke <user> [<count>]")
+@ae.command("revoke <user> [<count>] {{I18N:core.help.abuse.revoke}}")
 async def _(msg: Bot.MessageSession, user: str, count: int = 1):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -328,7 +501,7 @@ async def _(msg: Bot.MessageSession, user: str, count: int = 1):
     )
 
 
-@ae.command("clear <user>")
+@ae.command("clear <user> {{I18N:core.help.abuse.clear}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -341,7 +514,7 @@ async def _(msg: Bot.MessageSession, user: str):
     await msg.finish(I18NContext("core.message.abuse.clear.success", sender=user))
 
 
-@ae.command("untempban <user>")
+@ae.command("untempban <user> {{I18N:core.help.abuse.untempban}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -349,7 +522,7 @@ async def _(msg: Bot.MessageSession, user: str):
     await msg.finish(I18NContext("core.message.abuse.untempban.success", sender=user))
 
 
-@ae.command("ban <user>")
+@ae.command("ban <user> {{I18N:core.help.abuse.ban}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -362,7 +535,7 @@ async def _(msg: Bot.MessageSession, user: str):
         await msg.finish(I18NContext("core.message.abuse.ban.success", sender=user))
 
 
-@ae.command("unban <user>")
+@ae.command("unban <user> {{I18N:core.help.abuse.unban}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -375,7 +548,7 @@ async def _(msg: Bot.MessageSession, user: str):
         await msg.finish(I18NContext("core.message.abuse.unban.success", sender=user))
 
 
-@ae.command("trust <user>")
+@ae.command("trust <user> {{I18N:core.help.abuse.trust}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -388,7 +561,7 @@ async def _(msg: Bot.MessageSession, user: str):
         await msg.finish(I18NContext("core.message.abuse.trust.success", sender=user))
 
 
-@ae.command("distrust <user>")
+@ae.command("distrust <user> {{I18N:core.help.abuse.distrust}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))
@@ -401,7 +574,7 @@ async def _(msg: Bot.MessageSession, user: str):
         await msg.finish(I18NContext("core.message.abuse.distrust.success", sender=user))
 
 
-@ae.command("block <target>", available_for="QQ")
+@ae.command("block <target> {{I18N:core.help.abuse.block}}", available_for="QQ")
 async def _(msg: Bot.MessageSession, target: str):
     if not target.startswith("QQ|Group|"):
         await msg.finish(I18NContext("message.id.invalid.target", target="QQ|Group"))
@@ -416,7 +589,7 @@ async def _(msg: Bot.MessageSession, target: str):
         await msg.finish(I18NContext("core.message.abuse.block.success", target=target))
 
 
-@ae.command("unblock <target>", available_for="QQ")
+@ae.command("unblock <target> {{I18N:core.help.abuse.unblock}}", available_for="QQ")
 async def _(msg: Bot.MessageSession, target: str):
     if not target.startswith("QQ|Group|"):
         await msg.finish(I18NContext("message.id.invalid.target", target="QQ|Group"))
@@ -432,7 +605,9 @@ async def _(msg: Bot.MessageSession, target: str):
 upd = module("update", required_superuser=True, base=True, doc=True)
 
 
-async def pull_repo():
+async def pull_repo(force: bool = False):
+    if force:
+        await run_sys_command(["git", "reset", "--hard"], timeout=60)
     returncode, output, error = await run_sys_command(["git", "pull"], timeout=60)
     if returncode != 0:
         return error
@@ -447,15 +622,11 @@ async def update_dependencies():
     return "..." + pip_install[-500:] if len(pip_install) > 500 else pip_install
 
 
-@upd.command("[--force-im-sure-what-i-am-doing]")
+@upd.command("[--force] {{I18N:core.help.update}}", options_desc={"--force": "{I18N:core.help.update.option.force}"})
 async def _(msg: Bot.MessageSession):
-    if msg.parsed_msg and msg.parsed_msg.get("--force-im-sure-what-i-am-doing", False) and not Bot.Info.binary_mode:
-        await pull_repo()
-        await update_dependencies()
-        return
     if not Bot.Info.binary_mode:
         if Bot.Info.version and Bot.Info.version.startswith("git:"):
-            pull_repo_result = await pull_repo()
+            pull_repo_result = await pull_repo(bool(msg.parsed_msg and msg.parsed_msg.get("--force", False)))
             if pull_repo_result:
                 await msg.send_message(Plain(pull_repo_result, disable_joke=True))
 
@@ -479,10 +650,10 @@ restart_time = []
 
 
 async def wait_for_restart(msg: Bot.MessageSession):
-    get = Bot.ExecutionLockList.get()
+    active_commands = Bot.ExecutionLockList.count(exclude=msg)
     if time.time() - restart_time[0] < 60:
-        if len(get) != 0:
-            await msg.send_message(I18NContext("core.message.restart.wait", count=len(get)))
+        if active_commands:
+            await msg.send_message(I18NContext("core.message.restart.wait", count=active_commands))
             await msg.sleep(10)
             return await wait_for_restart(msg)
         await msg.send_message(I18NContext("core.message.restart.restarting"))
@@ -490,20 +661,21 @@ async def wait_for_restart(msg: Bot.MessageSession):
         await msg.send_message(I18NContext("core.message.restart.timeout"))
 
 
-@rst.command("[--force-im-sure-what-i-am-doing]")
+@rst.command("[--force] {{I18N:core.help.restart}}", options_desc={"--force": "{I18N:core.help.restart.force}"})
 async def _(msg: Bot.MessageSession):
-    if msg.parsed_msg and msg.parsed_msg.get("--force-im-sure-what-i-am-doing", False):
-        await restart()
-    try:
-        if not await msg.wait_confirm(append_instruction=False):
-            await msg.finish()
-        else:
-            if not restart_time:
-                restart_time.append(time.time())
-            await wait_for_restart(msg)
-    except Exception:
-        Logger.critical("Failed to send restart confirmation message, perhaps bug? Force restart...")
-        Logger.critical(traceback.format_exc())
+    if msg.parsed_msg and msg.parsed_msg.get("--force", False):
+        await msg.send_message(I18NContext("core.message.restart.restarting"))
+    else:
+        try:
+            if not await msg.wait_confirm(append_instruction=False):
+                await msg.finish()
+            else:
+                if not restart_time:
+                    restart_time.append(time.time())
+                await wait_for_restart(msg)
+        except Exception:
+            Logger.critical("Failed to send restart confirmation message, perhaps bug? Force restart...")
+            Logger.critical(traceback.format_exc())
     try:
         restart_time.append(time.time())
         write_restart_cache(msg)
@@ -524,23 +696,27 @@ upds = module(
 )
 
 
-@upds.command("[--force-im-sure-what-i-am-doing]")
+@upds.command(
+    "[--force] {{I18N:core.help.update&restart}}",
+    options_desc={"--force": "{I18N:core.help.update&restart.option.force}"},
+)
 async def _(msg: Bot.MessageSession):
-    if msg.parsed_msg and msg.parsed_msg.get("--force-im-sure-what-i-am-doing", False):
-        if Bot.Info.version and Bot.Info.version.startswith("git:"):
-            await pull_repo()
-        await restart()
+    force = bool(msg.parsed_msg and msg.parsed_msg.get("--force", False))
+
     if not Bot.Info.binary_mode:
-        try:
-            if not await msg.wait_confirm(append_instruction=False):
-                await msg.finish()
-            else:
-                if not restart_time:
-                    restart_time.append(time.time())
-                await wait_for_restart(msg)
-        except Exception:
-            Logger.critical("Failed to send restart confirmation message, perhaps bug? Force restart...")
-            Logger.critical(traceback.format_exc())
+        if force:
+            await msg.send_message(I18NContext("core.message.restart.restarting"))
+        else:
+            try:
+                if not await msg.wait_confirm(append_instruction=False):
+                    await msg.finish()
+                else:
+                    if not restart_time:
+                        restart_time.append(time.time())
+                    await wait_for_restart(msg)
+            except Exception:
+                Logger.critical("Failed to send restart confirmation message, perhaps bug? Force restart...")
+                Logger.critical(traceback.format_exc())
         try:
             restart_time.append(time.time())
             write_restart_cache(msg)
@@ -549,7 +725,7 @@ async def _(msg: Bot.MessageSession):
             Logger.critical(traceback.format_exc())
         if Bot.Info.version and Bot.Info.version.startswith("git:"):
             try:
-                pull_repo_result = await pull_repo()
+                pull_repo_result = await pull_repo(force)
                 if pull_repo_result:
                     await msg.send_message(Plain(pull_repo_result, disable_joke=True))
             except Exception:
@@ -569,7 +745,7 @@ async def _(msg: Bot.MessageSession):
 resume = module("resume", required_base_superuser=True, base=True, doc=True, available_for="QQ")
 
 
-@resume.command()
+@resume.command("{{I18N:core.help.resume}}")
 async def _(msg: Bot.MessageSession):
     Bot.Temp.data["is_group_message_blocked"] = False
     if targets := Bot.Temp.data["waiting_for_send_group_message"]:
@@ -586,7 +762,7 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(I18NContext("core.message.resume.nothing"))
 
 
-@resume.command("continue")
+@resume.command("continue {{I18N:core.help.resume.continue}}")
 async def _(msg: Bot.MessageSession):
     if not Bot.Temp.data["waiting_for_send_group_message"]:
         await msg.finish(I18NContext("core.message.resume.nothing"))
@@ -606,27 +782,11 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(I18NContext("core.message.resume.nothing"))
 
 
-@resume.command("clear")
+@resume.command("clear {{I18N:core.help.resume.clear}}")
 async def _(msg: Bot.MessageSession):
     Bot.Temp.data["is_group_message_blocked"] = False
     Bot.Temp.data["waiting_for_send_group_message"] = []
     await msg.finish(I18NContext("core.message.resume.clear"))
-
-
-forward_msg = module("forward_msg", required_superuser=True, base=True, doc=True)
-
-
-@forward_msg.command()
-async def _(msg: Bot.MessageSession):
-    alist = await get_stored_list(Bot.Info.client_name, "forward_msg")
-    if not alist:
-        alist = [{"status": True}]
-    alist[0]["status"] = not alist[0]["status"]
-    await update_stored_list(Bot.Info.client_name, "forward_msg", alist)
-    if not alist[0]["status"]:
-        await msg.finish(I18NContext("core.message.forward_msg.disable"))
-    else:
-        await msg.finish(I18NContext("core.message.forward_msg.enable"))
 
 
 echo = module("echo", required_superuser=True, base=True, doc=True)
@@ -638,15 +798,15 @@ async def _(msg: Bot.MessageSession):
     if dis:
         try:
             dis = dis.as_display()
-            await msg.finish(dis, enable_parse_message=False)
+            await msg.finish(Plain(dis, allow_parse=False))
         except Exception as e:
             raise NoReportException(str(e))
 
 
-@echo.command("[<display_msg>]")
+@echo.command("[<display_msg>] {{I18N:core.help.echo}}")
 async def _(msg: Bot.MessageSession, dis: Param("<display_msg>", str)):
     try:
-        await msg.finish(dis, enable_parse_message=False)
+        await msg.finish(Plain(dis, allow_parse=False))
     except Exception as e:
         raise NoReportException(str(e))
 
@@ -654,7 +814,7 @@ async def _(msg: Bot.MessageSession, dis: Param("<display_msg>", str)):
 say = module("say", required_superuser=True, base=True, doc=True)
 
 
-@say.command("<display_msg>")
+@say.command("<display_msg> {{I18N:core.help.say}}")
 async def _(msg: Bot.MessageSession, display_msg: str):
     try:
         display_msg = convert_senderid_to_atcode(display_msg, msg.session_info.sender_from)
@@ -663,10 +823,21 @@ async def _(msg: Bot.MessageSession, display_msg: str):
         raise NoReportException(str(e))
 
 
+@say.command("md <display_msg> {{I18N:core.help.say.md}}")
+async def _(msg: Bot.MessageSession, display_msg: str):
+    try:
+        display_msg = convert_senderid_to_atcode(display_msg, msg.session_info.sender_from)
+        chain = MessageChain.assign(display_msg)
+        chain += Button("md test", "md test")
+        await msg.finish(chain, quote=False)
+    except Exception as e:
+        raise NoReportException(str(e))
+
+
 rse = module("raise", required_superuser=True, base=True, doc=True)
 
 
-@rse.command("[<args>]")
+@rse.command("[<args>] {{I18N:core.help.raise}}")
 async def _(msg: Bot.MessageSession, args: str | None = None):
     e = args or "{I18N:core.message.raise}"
     raise TestException(str(e))
@@ -675,7 +846,7 @@ async def _(msg: Bot.MessageSession, args: str | None = None):
 post_ = module("post", required_superuser=True, base=True, doc=True)
 
 
-@post_.command("<target> <post_msg>")
+@post_.command("<target> <post_msg> {{I18N:core.help.post}}")
 async def _(msg: Bot.MessageSession, target: str, post_msg: str):
     if not target.startswith(f"{msg.session_info.client_name}|"):
         await msg.finish(I18NContext("message.id.invalid.target", target=msg.session_info.target_from))
@@ -690,7 +861,7 @@ async def _(msg: Bot.MessageSession, target: str, post_msg: str):
         await msg.finish()
 
 
-@post_.command("global <post_msg>")
+@post_.command("global <post_msg> {{I18N:core.help.post.global}}")
 async def _(msg: Bot.MessageSession, post_msg: str):
     msg_chain = MessageChain.assign([I18NContext("core.message.post.prefix")] + match_kecode(post_msg))
     preview = msg_chain.copy()
@@ -705,12 +876,12 @@ async def _(msg: Bot.MessageSession, post_msg: str):
 cfg_ = module("config", required_superuser=True, alias="cfg", base=True, doc=True)
 
 
-@cfg_.command("get <k> [<table_name>]")
+@cfg_.command("get <k> [<table_name>] {{I18N:core.help.config.get}}")
 async def _(msg: Bot.MessageSession, k: str, table_name: str | None = None):
     await msg.finish(str(CFGManager.get(k, table_name=table_name)))
 
 
-@cfg_.command("write <k> <v> [<table_name>] [-s]")
+@cfg_.command("write <k> <v> [<table_name>] [-s] {{I18N:core.help.config.write}}")
 async def _(msg: Bot.MessageSession, k: str, v: str, table_name: str | None = None):
     secret = bool(msg.parsed_msg["-s"])
     if v.lower() == "true":
@@ -739,7 +910,7 @@ async def _(msg: Bot.MessageSession, k: str, v: str, table_name: str | None = No
     await msg.finish(I18NContext("message.success"))
 
 
-@cfg_.command("delete <k> [<table_name>]")
+@cfg_.command("delete <k> [<table_name>] {{I18N:core.help.config.delete}}")
 async def _(msg: Bot.MessageSession, k: str, table_name: str | None = None):
     if CFGManager.edit_delete(k, table_name):
         await msg.finish(I18NContext("message.success"))
@@ -750,41 +921,41 @@ async def _(msg: Bot.MessageSession, k: str, table_name: str | None = None):
 jobqueue = module("jobqueue", required_superuser=True, base=True)
 
 
-@jobqueue.command("clear")
+@jobqueue.command("clear {{I18N:core.help.jobqueue.clear}}")
 async def _(msg: Bot.MessageSession):
-    await JobQueuesTable.clear_task(time=0)
+    await JobQueuesTable.clear_task(time=0, include_active=True)
     await msg.finish(I18NContext("message.success"))
 
 
 wr = module("webrender", required_superuser=True, base=True, doc=True)
 
 
-@wr.command("status")
+@wr.command("status {{I18N:core.help.webrender.status}}")
 async def _(msg: Bot.MessageSession):
     await msg.finish(str(await web_render.status(StatusOptions())))
 
 
-@wr.command("start")
+@wr.command("start {{I18N:core.help.webrender.start}}")
 async def _(msg: Bot.MessageSession):
     if await init_web_render():
-        Bot.Info.web_render_status = await web_render.browser.check_status()
+        Bot.Info.web_render_status = await check_web_render_status()
         await msg.finish(I18NContext("message.success"))
     else:
         await msg.finish(I18NContext("message.failed"))
 
 
-@wr.command("stop")
+@wr.command("stop {{I18N:core.help.webrender.stop}}")
 async def _(msg: Bot.MessageSession):
     await close_web_render()
-    Bot.Info.web_render_status = await web_render.browser.check_status()
+    Bot.Info.web_render_status = await check_web_render_status()
     await msg.finish(I18NContext("message.success"))
 
 
-@wr.command("reload")
+@wr.command("reload {{I18N:core.help.webrender.reload}}")
 async def _(msg: Bot.MessageSession):
     await close_web_render()
     if await init_web_render():
-        Bot.Info.web_render_status = await web_render.browser.check_status()
+        Bot.Info.web_render_status = await check_web_render_status()
         await msg.finish(I18NContext("message.success"))
     else:
         await msg.finish(I18NContext("message.failed"))
@@ -807,8 +978,8 @@ async def _check_authorizer_still_superuser(authorized_by: str) -> bool:
 
 
 @auth.command(
-    "add <user> <module>",
-    "remove <user> <module>",
+    "add <user> <module> {{I18N:core.help.auth.add}}",
+    "remove <user> <module> {{I18N:core.help.auth.remove}}",
 )
 async def _(msg: Bot.MessageSession, user: str, module: str):
     if not Alive.determine_sender_from(user):
@@ -825,13 +996,15 @@ async def _(msg: Bot.MessageSession, user: str, module: str):
         sender_union_info = await SenderUnionInfo.resolve_union(user)
     auth_list = _get_authorizations(sender_union_info)
     if "add" in msg.parsed_msg:
-        for entry in auth_list:
-            if entry["module"] == module and entry["authorized_by"] == msg.session_info.sender_id:
-                await msg.finish(I18NContext("core.message.auth.add.already", user=user, module=module))
-                return
-        auth_list.append({"module": module, "authorized_by": msg.session_info.sender_id})
-        await _set_authorizations(sender_union_info, auth_list)
-        await msg.finish(I18NContext("core.message.auth.add.success", user=user, module=module))
+        verify = await msg.verify_user()
+        if verify:
+            for entry in auth_list:
+                if entry["module"] == module and entry["authorized_by"] == msg.session_info.sender_id:
+                    await msg.finish(I18NContext("core.message.auth.add.already", user=user, module=module))
+                    return
+            auth_list.append({"module": module, "authorized_by": msg.session_info.sender_id})
+            await _set_authorizations(sender_union_info, auth_list)
+            await msg.finish(I18NContext("core.message.auth.add.success", user=user, module=module))
     elif "remove" in msg.parsed_msg:
         new_list = [
             e for e in auth_list if not (e["module"] == module and e["authorized_by"] == msg.session_info.sender_id)
@@ -843,7 +1016,7 @@ async def _(msg: Bot.MessageSession, user: str, module: str):
         await msg.finish(I18NContext("core.message.auth.remove.success", user=user, module=module))
 
 
-@auth.command("list <user>")
+@auth.command("list <user> {{I18N:core.help.auth.list}}")
 async def _(msg: Bot.MessageSession, user: str):
     if not Alive.determine_sender_from(user):
         await msg.finish(I18NContext("message.id.invalid.sender", sender=msg.session_info.sender_from))

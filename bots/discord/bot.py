@@ -1,4 +1,3 @@
-import asyncio
 import importlib
 import logging
 import pkgutil
@@ -9,19 +8,18 @@ import discord
 import filetype
 
 import bots.discord.slash as slash_modules
-from bots.discord.client import discord_bot
+from bots.discord.client import discord_bot, ensure_client_initialized
+from bots.discord.config import DiscordConfig, DiscordSecretConfig
 from bots.discord.buttons import set_action_text_submit_handler, set_button_click_handler
 from bots.discord.interactions import handle_action_text_submit, handle_button_click
-from bots.discord.context import DiscordContextManager, DiscordFetchedContextManager
+from bots.discord.context import DiscordContextManager, DiscordFetchedContextManager, DiscordReactionContext
+from bots.discord.events import guild_member_joined, guild_member_left
 from bots.discord.info import *
-from bots.discord.slash_context import DiscordSlashContextManager
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
-from core.builtins.message.internal import Plain, Image, Voice
+from core.builtins.message.internal import Plain, Image, Audio, Video
 from core.builtins.session.info import SessionInfo
 from core.builtins.utils import command_prefix
-from core.client.init import client_init
-from bots.discord.config import DiscordConfig, DiscordSecretConfig
 from core.config.base import CoreConfig
 from core.logger import Logger
 from core.utils.http import download
@@ -49,24 +47,12 @@ mention_required = CoreConfig.mention_required
 count = 0
 
 
-async def cleanup_typing_signal():
-    while True:
-        for f in DiscordContextManager.typing_flags:
-            if f not in DiscordContextManager.context:
-                DiscordContextManager.typing_flags[f].set()
-        for fs in DiscordSlashContextManager.typing_flags:
-            if fs not in DiscordSlashContextManager.context:
-                DiscordSlashContextManager.typing_flags[fs].set()
-        await asyncio.sleep(1)
-
-
 @discord_bot.event
 async def on_ready():
     Logger.info(f"Logged on as {discord_bot.user}")
     global count
     if count == 0:
-        await client_init(target_prefix_list, sender_prefix_list)
-        asyncio.create_task(cleanup_typing_signal())
+        await ensure_client_initialized()
         logging.getLogger("discord").setLevel(logging.INFO)
         count += 1
 
@@ -90,6 +76,28 @@ def load_slashcommands():
 load_slashcommands()
 
 
+@discord_bot.event
+async def on_member_join(member: discord.Member):
+    """接收 Discord 服务器成员加入事件。"""
+    sender_id = f"{sender_prefix}|{member.id}"
+    if member.id == discord_bot.user.id or sender_id in ignored_sender:
+        return
+
+    await ensure_client_initialized()
+    await guild_member_joined(member.id, member.guild.id, member.joined_at)
+
+
+@discord_bot.event
+async def on_member_remove(member: discord.Member):
+    """接收 Discord 服务器成员离开事件。"""
+    sender_id = f"{sender_prefix}|{member.id}"
+    if member.id == discord_bot.user.id or sender_id in ignored_sender:
+        return
+
+    await ensure_client_initialized()
+    await guild_member_left(member.id, member.guild.id)
+
+
 async def to_message_chain(message: discord.Message):
     lst = [Plain(re.sub(r"<@(.*?)>", rf"{sender_prefix}|\1", message.content))]
     for x in message.attachments:
@@ -97,7 +105,9 @@ async def to_message_chain(message: discord.Message):
         if filetype.is_image(d):
             lst.append(Image(d))
         elif filetype.is_audio(d):
-            lst.append(Voice(d))
+            lst.append(Audio(d))
+        elif filetype.is_video(d):
+            lst.append(Video(d))
     return MessageChain.assign(lst)
 
 
@@ -132,6 +142,7 @@ async def on_message(message: discord.Message):
 
     msg_chain = await to_message_chain(message)
 
+    await ensure_client_initialized()
     session = await SessionInfo.assign(
         target_id=target_id,
         sender_id=sender_id,
@@ -141,7 +152,7 @@ async def on_message(message: discord.Message):
         sender_from=sender_prefix,
         client_name=client_name,
         message_id=str(message.id),
-        reply_id=str(reply_id),
+        reply_id=str(reply_id) if reply_id is not None else None,
         messages=msg_chain,
         ctx_slot=ctx_id,
         bot_id=discord_bot.user.id,
@@ -158,10 +169,19 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     sender_id = f"{sender_prefix}|{payload.user_id}"
     if sender_id in ignored_sender:
         return
+    channel = await discord_bot.fetch_channel(payload.channel_id)
     target_from = target_channel_prefix
-    if isinstance(await discord_bot.fetch_channel(payload.channel_id), discord.DMChannel):
+    if isinstance(channel, discord.DMChannel):
         target_from = target_dm_channel_prefix
     target_id = f"{target_from}|{payload.channel_id}"
+    try:
+        origin_message = await channel.fetch_message(payload.message_id)
+    except Exception:
+        Logger.exception(f"Failed to fetch Discord reaction origin message {payload.message_id}: ")
+        origin_message = None
+    user = payload.member or await discord_bot.fetch_user(payload.user_id)
+    context = DiscordReactionContext(channel=channel, user=user, message=origin_message, emoji=payload.emoji)
+    await ensure_client_initialized()
     session = await SessionInfo.assign(
         target_id=target_id,
         sender_id=sender_id,
@@ -174,7 +194,7 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         ctx_slot=ctx_id,
         bot_id=discord_bot.user.id,
     )
-    await Bot.process_message(session, payload)
+    await Bot.process_message(session, context)
 
 
 if DiscordConfig.enable:

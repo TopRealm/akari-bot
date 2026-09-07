@@ -2,10 +2,9 @@ from core.builtins.bot import Bot
 from core.builtins.message.internal import ActionText, I18NContext, Plain
 from core.component import module
 from modules.ai.config import AiConfig
-from core.cooldown import CoolDown
-from core.dirty_check import check_bool, rickroll
+from core.utils.cooldown import CoolDown
+from core.utils.dirty_check import check_bool, rickroll
 from core.logger import Logger
-from .llm import ask_llm
 from .petal import precount_petal, count_token_petal
 from .setting import llm_api_list, llm_list, llm_su_list
 
@@ -45,6 +44,9 @@ async def _(msg: Bot.MessageSession, prompt: str):
         qc = CoolDown("call_ai", msg, 60)
         c = qc.check()
         if c == 0 or is_superuser:
+            # OpenAI、Matplotlib、网页提取等依赖体积较大，仅在实际调用 AI 时加载。
+            from .llm import ask_llm
+
             chain, input_tokens, output_tokens = await ask_llm(
                 msg,
                 prompt,

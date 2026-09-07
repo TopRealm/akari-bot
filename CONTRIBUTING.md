@@ -51,7 +51,7 @@
 > [!WARNING]
 > **绝对不要**在 Issue 或其他任何公开渠道报告或复现包含敏感信息的安全问题或漏洞。
 > 
-> 涉及敏感内容的问题必须通过电子邮件（地址详见 [`pyproject.toml`](/pyproject.toml)）或私聊联系开发者。
+> 涉及敏感内容的问题必须通过电子邮件或私聊联系开发者，详见 [`SECURITY.md`](/SECURITY.md)。
 >
 > 违反本条规则的内容将被删除；若执意违反，后果自负。
 
@@ -125,7 +125,7 @@ pre-commit install
 
 ### 分支命名
 本项目中所有关于新功能或改动的分支使用 `dev/` 前缀，修复错误的分支使用 `fix/` 前缀。
-（虽然实际上大多还是会直接 push 到 `main`。）
+（虽然实际上大多还是会直接 push 到 `master`。）
 
 分支的命名必须使用英文。建议采用简短的描述或直接使用 Issue 编号。
 
@@ -141,7 +141,7 @@ PR 标题请参考 [Commit message](#提交规范)，正文请根据 PR 模板�
 
 一个 PR 必须通过所有 CI 测试，并得到至少 1 名开发者的 LGTM（看起来不错）后方可合并。
 
-重大更改*原则上*不应该直接 push 到 `main`，须提交 PR 进行审查。
+重大更改*原则上*不应该直接 push 到 `master`，须提交 PR 进行审查。
 
 ### 代码风格
 本项目使用 [Ruff](https://docs.astral.sh/ruff) 作为代码格式化和静态分析工具。在提交代码之前，请运行以下命令以确保代码符合规范：
@@ -232,7 +232,7 @@ No matter which method you choose, please **describe your problem in as much det
 > [!WARNING]
 > **Never** report or reproduce security issues / vulnerabilities that involve sensitive information in Issues or any public channels.
 >
-> Such issues must be reported privately via email (address available in [`pyproject.toml`](/pyproject.toml)) or direct message to the developers.
+> Such issues must be reported privately via email or direct message to the developers. See [`SECURITY.md`](/SECURITY.md))
 >
 > Content that violates this rule will be removed. Persistent violation may have consequences.
 
@@ -322,7 +322,7 @@ They will automatically run formatting, linting, dependency export, etc. on comm
 Branches for new features or changes should use the `dev/` prefix.  
 Bugfix branches should use the `fix/` prefix.
 
-(Although in practice many changes still go straight to `main`...)
+(Although in practice many changes still go straight to `master`...)
 
 Branch names must be in English. Short descriptive names or Issue numbers (e.g. `dev/add-xxx-command`, `fix/123`) are recommended.
 
@@ -340,7 +340,7 @@ It is recommended to [reference related issues](#suggesting-features) in the des
 
 A pull request must pass all CI checks and receive at least 1 developer's LGTM (Looks Good To Me) before it can be merged.
 
-Major changes should not be pushed directly to `main` — please open a pull request for review.
+Major changes should not be pushed directly to `master` — please open a pull request for review.
 
 ### Code Style
 

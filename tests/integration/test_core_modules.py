@@ -4,8 +4,10 @@ from core.tester import (
     func_case,
     Tester,
     Contains,
+    ContainsAll,
     Empty,
 )
+from modules.core.help import regex_disable_prefixes
 
 
 @func_case
@@ -17,12 +19,31 @@ async def test_version(tester: Tester):
 
 
 @func_case
+async def test_about(tester: Tester):
+    """about 命令测试"""
+    await tester.integrate("~about", Contains("AGPL-3.0"), "about 应显示关于信息")
+
+    return tester
+
+
+@func_case
 async def test_help(tester: Tester):
     """help 命令测试"""
     await tester.integrate("~help", Contains("基础模块"), "help 应显示基础模块列表")
     await tester.integrate("~help help", Contains("--image"), "help 帮助应展示强制图片选项")
     await tester.integrate("~help version", Contains("version"), "help version 应显示版本帮助")
     await tester.integrate("~help version", Contains("版本号"), "help version 应包含版本号描述")
+    await tester.integrate(
+        "~help url-audit",
+        ContainsAll("~url-audit allowlist", "~url-audit blocklist"),
+        "合并后的 URL 模块帮助应展示允许列表与阻止列表子命令",
+    )
+    await tester.integrate("~help mojang-status", Contains("~mojang-status"), "help 应展示无文档模块自身的默认命令")
+    await tester.integrate(
+        "~help bilibili",
+        ContainsAll("提示：", regex_disable_prefixes[0]),
+        "带正则表达式的详细 help 应展示当前配置的临时关闭前缀",
+    )
 
     return tester
 
@@ -115,13 +136,5 @@ async def test_locale(tester: Tester):
 async def test_petal(tester: Tester):
     """petal 命令测试"""
     await tester.integrate("~petal", Contains("花瓣"), "petal 应显示花瓣信息")
-
-    return tester
-
-
-@func_case
-async def test_admin(tester: Tester):
-    """admin 命令测试"""
-    await tester.integrate("~admin list", Contains("管理员"), "admin list 应显示管理员信息")
 
     return tester

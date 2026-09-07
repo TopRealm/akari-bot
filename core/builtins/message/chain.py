@@ -23,26 +23,36 @@ from core.builtins.converter import converter
 from core.builtins.message.elements import (
     BaseElement,
     PlainElement,
+    MarkdownElement,
     EmbedElement,
     FormattedTimeElement,
     I18NContextElement,
     URLElement,
     ImageElement,
-    VoiceElement,
+    AudioElement,
+    VideoElement,
     MentionElement,
     ActionTextElement,
+    ButtonElement,
+    ButtonRows,
+    ButtonFrameElement,
 )
 from core.constants import Secret, default_locale
 from core.exports import add_export
 from core.i18n import Locale
-from core.joke import shuffle_joke as joke
+from core.utils.joke import shuffle_joke as joke
 from core.logger import Logger
 from core.utils.func import convert_bool
 from core.utils.http import url_pattern
+from core.utils.url_audit import GlobalURLBlocklist, evaluate_url_policy, redact_blocklisted_urls
+from core.utils.button import AUTO_BUTTON_MAX_ROWS, AUTO_BUTTONS_PER_ROW
 
 if TYPE_CHECKING:
     from core.builtins.session.info import SessionInfo
     from core.builtins.session.internal import MessageSession
+
+
+_I18N_MESSAGE_PATTERN = re.compile(r"\[AKARI-MSG:([A-Za-z0-9_-]+={0,2})\]")
 
 
 @define
@@ -180,7 +190,10 @@ class MessageChain:
                 if secret := Secret.check(v.text):
                     Logger.warning(unsafeprompt("Plain", secret, v.text))
                     return False
-
+            if isinstance(v, URLElement):
+                if secret := Secret.check(v.original_url):
+                    Logger.warning(unsafeprompt("URL", secret, v.original_url))
+                    return False
             # ========== 检查 Embed 元素 ==========
             elif isinstance(v, EmbedElement):
                 # 检查标题
@@ -235,7 +248,7 @@ class MessageChain:
         该方法将消息链中的各种元素转换为适合发送的格式，包括：
         1. 多语言翻译
         2. KE 码解析
-        3. URL 处理（跳板和 Markdown 格式）
+        3. URL 处理（全局黑名单、跳板和 Markdown 格式）
         4. 时间格式化
         5. 愚人节玩笑处理
 
@@ -261,21 +274,85 @@ class MessageChain:
 
             support_embed = session_info.support_embed
 
+        def append_parsed_elements(element_chain: MessageChain) -> None:
+            inline_pending = False
+            for elem in element_chain.values:
+                elem_ = (
+                    MessageChain.assign(elem)
+                    .as_sendable(session_info, parse_message=False, disable_markdown=disable_markdown)
+                    .values
+                )
+                is_action_text = isinstance(elem, ActionTextElement)
+                for el in elem_:
+                    # 该赋值原本假定 elem 是纯文本元素，指令操作降级后
+                    # elem_ 中也会出现纯文本，不加判定会把元素改写为字符串
+                    if isinstance(el, PlainElement) and isinstance(elem, PlainElement) and session_info:
+                        elem.text = session_info.locale.t_str(el.text)
+                for el in elem_:
+                    if (is_action_text or inline_pending) and isinstance(el, PlainElement):
+                        _append_inline(value, el)
+                    else:
+                        value.append(el)
+                inline_pending = is_action_text
+
         # ========== 处理每个消息元素 ==========
         for x in self.values:
             if x is None:
                 continue
+
+            if isinstance(x, EmbedElement) and GlobalURLBlocklist.rules():
+                x = deepcopy(x)
+                locale = session_info.locale if session_info else Locale(default_locale)
+                replacement = locale.t("message.url.blocked")
+                for attribute in ("title", "description", "author", "footer"):
+                    text = getattr(x, attribute)
+                    if text:
+                        translated = locale.t_str(text)
+                        setattr(x, attribute, redact_blocklisted_urls(translated, replacement))
+                fields = x.fields if isinstance(x.fields, list) else [x.fields] if x.fields else []
+                for field in fields:
+                    field.name = redact_blocklisted_urls(locale.t_str(field.name), replacement)
+                    field.value = redact_blocklisted_urls(locale.t_str(field.value), replacement)
+                if x.url and GlobalURLBlocklist.is_blocked(x.url):
+                    x.url = None
 
             # ========== 处理 Embed 元素 ==========
             # 如果平台不支持 Embed，将其转换为普通消息链
             if isinstance(x, EmbedElement) and not support_embed:
                 value += x.to_message_chain(session_info)
 
+            # ========== 处理 Markdown 文本元素 ==========
+            elif isinstance(x, MarkdownElement):
+                markdown_enabled = not disable_markdown and (session_info is None or session_info.support_markdown)
+                source = PlainElement.assign(x.text, disable_joke=x.disable_joke, allow_parse=x.allow_parse)
+                converted = MessageChain.assign(source).as_sendable(
+                    session_info,
+                    parse_message=parse_message,
+                    disable_markdown=disable_markdown,
+                )
+                for element in converted:
+                    if isinstance(element, PlainElement):
+                        value.append(
+                            MarkdownElement.assign(
+                                element.text,
+                                disable_joke=element.disable_joke,
+                                allow_parse=element.allow_parse,
+                            )
+                            if markdown_enabled
+                            else MarkdownElement.assign(
+                                element.text,
+                                disable_joke=element.disable_joke,
+                                allow_parse=element.allow_parse,
+                            ).to_plain()
+                        )
+                    else:
+                        value.append(element)
+
             # ========== 处理纯文本元素 ==========
             elif isinstance(x, PlainElement):
                 if session_info:
                     if x.text != "":
-                        if parse_message:
+                        if parse_message and x.allow_parse:
                             # 进行多语言翻译
                             x.text = session_info.locale.t_str(x.text)
                             # 解析 KE 码格式的消息
@@ -285,30 +362,13 @@ class MessageChain:
                             # 换行拼接拆成数行。其余元素照旧各自追加，以免破坏
                             # MessageChain([Plain("a"), Plain("b")]) 经 KE 码往返后
                             # 仍应是两个元素的既有约定。
-                            inline_pending = False
-                            # 递归处理解析出的元素
-                            for elem in element_chain.values:
-                                elem_ = (
-                                    MessageChain.assign(elem)
-                                    .as_sendable(session_info, parse_message=False, disable_markdown=disable_markdown)
-                                    .values
-                                )
-                                is_action_text = isinstance(elem, ActionTextElement)
-                                for el in elem_:
-                                    # 该赋值原本假定 elem 是纯文本元素，指令操作降级后
-                                    # elem_ 中也会出现纯文本，不加判定会把元素改写为字符串
-                                    if isinstance(el, PlainElement) and isinstance(elem, PlainElement):
-                                        elem.text = session_info.locale.t_str(el.text)
-                                for el in elem_:
-                                    if (is_action_text or inline_pending) and isinstance(el, PlainElement):
-                                        _append_inline(value, el)
-                                    else:
-                                        value.append(el)
-                                inline_pending = is_action_text
+                            append_parsed_elements(element_chain)
                             continue
                     else:
                         # 空文本，使用默认错误消息
                         x = PlainElement.assign(session_info.locale.t("error.message.chain.empty"))
+                locale = session_info.locale if session_info else Locale(default_locale)
+                x.text = redact_blocklisted_urls(x.text, locale.t("message.url.blocked"))
                 value.append(x)
 
             # ========== 处理格式化时间元素 ==========
@@ -336,24 +396,34 @@ class MessageChain:
                     if isinstance(v, str):
                         x.kwargs[k] = locale.t_str(v)
                     if isinstance(v, MessageChain):
-                        # 传入 i18n 模块后 MessageChain 会被 Template.safe_substitute 强制转义为字符串... 思考了很久怎么处理比较好，决定暂时用 kecode 处理
-                        x.kwargs[k] = v.to_kecode()
+                        # Template.safe_substitute 会把参数强制转成字符串，因此先将消息链
+                        # 结构化并编码成可嵌入模板的内部标记，翻译后再还原。
+                        x.kwargs[k] = _serialize_i18n_message(v)
                     if isinstance(v, ActionTextElement):
-                        # 同上，参数值会被强制转为字符串。此处先解析内层再转 KE 码，
-                        # 交由随后对翻译结果的再次转换经 match_kecode() 还原为元素
-                        x.kwargs[k] = v.resolve(session_info).kecode()
+                        # 指令操作同样需要保留元素类型；先解析内层多语言元素再序列化。
+                        x.kwargs[k] = _serialize_i18n_message(v.resolve(session_info))
 
                 # 执行多语言翻译
                 t_value = locale.t(x.key, x.fallback, x.locale_failed_prompt, **x.kwargs)
-                value += (
-                    MessageChain.assign(t_value).as_sendable(session_info, disable_markdown=disable_markdown).values
-                )
+                append_parsed_elements(_deserialize_i18n_messages(t_value, x.disable_joke))
 
             # ========== 处理 URL 元素 ==========
             elif isinstance(x, URLElement):
+                url_policy = evaluate_url_policy(x.original_url)
+                if url_policy.blocked:
+                    locale = session_info.locale if session_info else Locale(default_locale)
+                    value.append(PlainElement.assign(locale.t("message.url.blocked"), disable_joke=True))
+                    continue
+
+                globally_trusted = bool(
+                    session_info and session_info.use_url_manager and x.trusted is None and url_policy.allowed
+                )
                 # 链接须按未认证处理的两种来源：模块显式标记为不可信，或未表态而会话启用了 URLManager
                 needs_guard = bool(
-                    session_info and x.trusted is not True and (x.trusted is False or session_info.use_url_manager)
+                    session_info
+                    and not globally_trusted
+                    and x.trusted is not True
+                    and (x.trusted is False or session_info.use_url_manager)
                 )
                 if needs_guard and session_info.support_markdown and not disable_markdown:
                     title = session_info.locale.t("message.url.untrusted")
@@ -361,7 +431,7 @@ class MessageChain:
                     continue
 
                 # 应用 URL 跳板（如果需要）
-                if session_info and x.trusted is None and session_info.use_url_manager:
+                if session_info and x.trusted is None and not globally_trusted and session_info.use_url_manager:
                     x = URLElement.assign(x.url, trusted=False, md_format_name=x.md_format_name)
                 # 应用 Markdown 格式（如果需要）
                 if (
@@ -382,9 +452,36 @@ class MessageChain:
                 else:
                     _append_inline(value, x.to_plain(session_info))
 
+            # ========== 处理单个按钮元素 ==========
+            elif isinstance(x, ButtonElement):
+                if not session_info or session_info.support_button:
+                    value.append(x)
+
+            # ========== 处理按钮区域元素 ==========
+            elif isinstance(x, ButtonFrameElement):
+                if not session_info or session_info.support_button:
+                    value.append(x)
+
             # ========== 其他元素类型 ==========
             else:
                 value.append(x)
+
+        # ========== 自动排布散落的单个按钮 ==========
+        buttons = [x for x in value if isinstance(x, ButtonElement)]
+        if buttons:
+            capacity = AUTO_BUTTONS_PER_ROW * AUTO_BUTTON_MAX_ROWS
+            if len(buttons) > capacity:
+                Logger.warning(
+                    f"Got {len(buttons)} standalone buttons but only {capacity} fit; "
+                    f"dropped the last {len(buttons) - capacity}."
+                )
+                buttons = buttons[:capacity]
+            value = [x for x in value if not isinstance(x, ButtonElement)]
+            rows = [
+                ButtonRows.assign(buttons[start : start + AUTO_BUTTONS_PER_ROW])
+                for start in range(0, len(buttons), AUTO_BUTTONS_PER_ROW)
+            ]
+            value.append(ButtonFrameElement.assign(rows))
 
         # ========== 处理空消息链 ==========
         if not value:
@@ -983,6 +1080,35 @@ def _append_inline(value: list, element: PlainElement) -> None:
         value.append(element)
 
 
+def _serialize_i18n_message(value: MessageChain | MessageElement) -> str:
+    chain = value if isinstance(value, MessageChain) else MessageChain.assign(value)
+    payload = orjson.dumps(converter.unstructure(chain, MessageChain))
+    encoded = base64.urlsafe_b64encode(payload).decode("ascii")
+    return f"[AKARI-MSG:{encoded}]"
+
+
+def _deserialize_i18n_messages(text: str, disable_joke: bool = False) -> MessageChain:
+    elements = MessageChain.create()
+    cursor = 0
+
+    for match in _I18N_MESSAGE_PATTERN.finditer(text):
+        if prefix := text[cursor : match.start()]:
+            elements.extend(match_kecode(prefix, disable_joke))
+
+        try:
+            payload = base64.urlsafe_b64decode(match.group(1))
+            elements.extend(converter.structure(orjson.loads(payload), MessageChain))
+        except Exception:
+            elements.extend(match_kecode(match.group(0), disable_joke))
+
+        cursor = match.end()
+
+    if suffix := text[cursor:]:
+        elements.extend(match_kecode(suffix, disable_joke))
+
+    return elements
+
+
 def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
     """
     解析 KE 码格式的文本并转换为消息链。
@@ -992,11 +1118,13 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
 
     支持的 KE 码类型：
     - `[KE:plain,text=...]`: 纯文本
+    - `[KE:markdown,text=...]`: Markdown 文本
     - `[KE:image,path=...]`: 图片
-    - `[KE:voice,path=...]`: 语音
+    - `[KE:audio,path=...]`: 语音
     - `[KE:i18n,i18nkey=...,param1=val1,...]`: 多语言文本
     - `[KE:mention,userid=...]`: 提及用户
     - `[KE:action_text,text=...,show=...,reference=0]`: 指令操作
+    - `[KE:button,data=...]`: 消息底部按钮
 
     :param text: 包含 KE 码的文本字符串
     :param disable_joke: 是否禁用玩笑功能（默认为 False）
@@ -1074,8 +1202,20 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
                 text_value = unquote(parsed_params.get("text", ""))
 
                 local_disable_joke = convert_bool(parsed_params.get("disable_joke"), disable_joke)
+                allow_parse = convert_bool(parsed_params.get("allow_parse"), True)
 
-                elements.append(PlainElement.assign(text_value, disable_joke=local_disable_joke))
+                elements.append(
+                    PlainElement.assign(text_value, disable_joke=local_disable_joke, allow_parse=allow_parse)
+                )
+
+            # ========= Markdown 文本 =========
+            elif element_type == "markdown":
+                text_value = unquote(parsed_params.get("text", ""))
+                local_disable_joke = convert_bool(parsed_params.get("disable_joke"), disable_joke)
+                allow_parse = convert_bool(parsed_params.get("allow_parse"), True)
+                elements.append(
+                    MarkdownElement.assign(text_value, disable_joke=local_disable_joke, allow_parse=allow_parse)
+                )
 
             # ========= 图片 =========
             elif element_type == "image":
@@ -1085,7 +1225,13 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
                     parse_url = urlparse(path)
 
                     if parse_url[0] == "file" or url_pattern.match(parse_url[1]):
-                        img = ImageElement.assign(path=path)
+                        max_h = parsed_params.get("max_h")
+                        allow_split = convert_bool(parsed_params.get("allow_split"), True)
+                        img = ImageElement.assign(
+                            path=path,
+                            max_h=int(max_h) if max_h and max_h.isdigit() else None,
+                            allow_split=allow_split,
+                        )
 
                         headers = parsed_params.get("headers")
 
@@ -1094,14 +1240,29 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
 
                         elements.append(img)
                     else:
-                        elements.append(ImageElement.assign(path))
+                        max_h = parsed_params.get("max_h")
+                        allow_split = convert_bool(parsed_params.get("allow_split"), True)
+                        elements.append(
+                            ImageElement.assign(
+                                path,
+                                max_h=int(max_h) if max_h and max_h.isdigit() else None,
+                                allow_split=allow_split,
+                            )
+                        )
 
             # ========= 语音 =========
-            elif element_type == "voice":
+            elif element_type == "audio":
                 path = parsed_params.get("path")
 
                 if path:
-                    elements.append(VoiceElement.assign(path))
+                    elements.append(AudioElement.assign(path))
+
+            # ========= 视频 =========
+            elif element_type == "video":
+                path = parsed_params.get("path")
+
+                if path:
+                    elements.append(VideoElement.assign(path))
 
             # ========= 多语言 =========
             elif element_type == "i18n":
@@ -1159,6 +1320,49 @@ def match_kecode(text: str, disable_joke: bool = False) -> MessageChain:
                         )
                     )
 
+            # ========= 按钮 =========
+            elif element_type == "button":
+                button_show = parsed_params.get("show")
+                button_value = parsed_params.get("value")
+                if button_show is not None and button_value is not None:
+                    button_reply_id = parsed_params.get("reply_id")
+                    elements.append(
+                        ButtonElement.assign(
+                            unquote(button_show),
+                            unquote(button_value),
+                            unquote(button_reply_id) if button_reply_id is not None else None,
+                        )
+                    )
+                    continue
+
+                # 兼容旧版 ButtonElement 的按行 JSON KE 码。
+                button_data = parsed_params.get("data")
+                if button_data:
+                    decoded = orjson.loads(unquote(button_data))
+                    rows = [
+                        ButtonRows.assign([ButtonElement.assign(show, value) for show, value in row.items()])
+                        for row in decoded
+                        if isinstance(row, dict)
+                    ]
+                    elements.append(ButtonFrameElement.assign(rows))
+
+            elif element_type == "button_frame":
+                button_data = parsed_params.get("data")
+                if button_data:
+                    decoded = orjson.loads(unquote(button_data))
+                    rows = [
+                        ButtonRows.assign(
+                            [
+                                ButtonElement.assign(button["show"], button["value"], button.get("reply_id"))
+                                for button in row
+                                if isinstance(button, dict) and "show" in button and "value" in button
+                            ]
+                        )
+                        for row in decoded
+                        if isinstance(row, list)
+                    ]
+                    elements.append(ButtonFrameElement.assign(rows))
+
         except Exception:
             elements.append(PlainElement.assign(e, disable_joke=disable_joke))
     return elements
@@ -1205,6 +1409,23 @@ def match_atcode(text: str, client: str, pattern: str) -> str:
     # 使用正则表达式查找并替换所有 AT 码
     # 格式: <AT:client|...?|userid> 或 <@:client|...?|userid>
     return re.sub(r"<(?:AT|@):([^\|]+)\|(?:.*?\|)?([^\|>]+)>", _replacer, text)
+
+
+def escape_special_char(s: str, escape_comma: bool = True) -> str:
+    """
+    转义特殊占位符标记的特殊字符。
+
+    :param s: 要转义的字符串。
+    :param escape_comma: 是否转义逗号（`,`）。
+    :return: 转义后的字符串。
+    """
+    s = s.replace("&", "&amp;")
+    s = s.replace("{", "&#123;").replace("}", "&#124;")
+    s = s.replace("[", "&#91;").replace("]", "&#93;")
+    s = s.replace("<", "&lt;").replace(">", "&gt;")
+    if escape_comma:
+        s = s.replace(",", "&#44;")
+    return s
 
 
 def convert_senderid_to_atcode(text: str, sender_prefix: str) -> str:
@@ -1269,4 +1490,6 @@ __all__ = [
     "get_message_chain",
     "MessageNodes",
     "match_kecode",
+    "match_atcode",
+    "escape_special_char",
 ]
