@@ -1,49 +1,131 @@
+# Environment Variables
 *.env
-__pycache__/
-config*/*.cfg*
-config*/*.toml*
-.idea
-.DS_Store
-.vscode/*
+.worktrees/*
+
+# Runtime Lock & Process Files
+.bot.lock
+.pid_last
+
+# SQLite
 *.db
 *.db-shm
 *.db-wal
+
+# Python
+__pycache__/
+
+# ==========
+# Bot Core
+# ==========
+
+# Cache
+.cache_loader
+/data/i18n_cache/*
 cache/*
+
+# Configuration Files
+config*/*.toml*
+
+# Build Outputs
+output/*
+
+# Logs
+*.log
+/data/union_merge_logs/*
+
+# Private Data
+/data/private*
+/data/config_store_bak
+
+# Version Files
+/assets/version
+/assets/version_tag
+!/version.py
+
+# ==========
+# Local Development Environment
+# ==========
+
+# JetBrains
+.idea
+
+# MacOS
+.DS_Store
+
+# Local Runtime Configuration
+.run/*
+
+# VS Code
+.vscode/*
+
+# ==========
+# AI Agent / LLM Tools
+# ==========
+
+generated_docs/*
+
+# Claude Code
+.claude/*
+CLAUDE.md
+
+# Cline
+.clinerules
+
+# Mimo Code
+.mimocode/*
+
+# ==========
+# User Customization
+# ==========
+
+# Local Text Filters
+/data/filter_words/*.txt
+
+# Local URL Audit
+/data/url_audit/allowlist/user.txt
+/data/url_audit/blocklist/user.txt
+
+# Module Data
+modules/*/data/*
+!modules/ai/data/instructions.txt
+
+# Module Assets (Manually set)
+modules/maimai/assets/chu_song_info.json
+modules/maimai/assets/mai_song_alias.json
+modules/maimai/assets/mai_song_info.json
+modules/phigros/assets/resource_version.txt
+modules/phigros/assets/illustration/*
+modules/phigros/assets/song_info.json
+
+# Retired Client Data
+/data/retired/*
+
+# WebUI
+webui/*
+
+# ==========
+# Testing & CI
+# ==========
+
+# Test Adapters & Modules
+bots/test/*
+modules/test/*
+
+# Test Files
+/test*.*
+!tester.py
+
+# CI Test Report
+junit.xml
+test_result.log
+
+# ==========
+# Legacy
+# ==========
+
 assets/bots_list.json
-assets/bad_words/*.txt
 assets/discord_slash_list.json
 assets/modules_list.json
 assets/schedulers_list.json
-assets/union_merge_logs/*
-assets/url_audit/allowlist/user.txt
-assets/url_audit/blocklist/user.txt
-assets/private*
-assets/retired/*
-/assets/i18n_cache/*
-bots/test/*
-junit.xml
-modules/test/*
-modules/ai/assets/*
-modules/arcaea/assets/*
-modules/maimai/assets/*
-modules/phigros/assets/*
-webui/*
-version*
-!version.py
-.pid_last
-.cache_loader
-.console_history
-*.log
+
 matrix_store
-output/*
-modules/yunhei/admins.json
-.bot.lock
-/test*.*
-!tester.py
-.run/*
-generated_docs/*
-.mimocode/*
-.claude/*
-CLAUDE.md
-AGENTS.md
-.agents/*
