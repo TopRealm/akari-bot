@@ -5,12 +5,15 @@ import httpx
 import orjson
 from khl import Message, MessageTypes, PublicChannel, User
 
-from core.builtins.message.chain import MessageChain, MessageNodes, match_atcode
+from core.builtins.message.mention import render_at_code
+from core.builtins.message.chain import MessageChain, MessageNodes
 from core.builtins.message.elements import PlainElement, ImageElement, AudioElement, VideoElement, MentionElement
 from core.builtins.session.context import ContextManager
+from core.builtins.session.bot_state import BotState
 from core.builtins.session.features import Features
 from core.builtins.session.info import SessionInfo
 from core.logger import Logger
+from core.utils.media import resolve_media_path
 from .client import bot
 from .client import token as kook_token
 from .features import features as kook_features
@@ -87,12 +90,93 @@ class KOOKContextManager(ContextManager):
         guild = await bot.client.fetch_guild(channel.guild_id)
         user_roles = (await guild.fetch_user(author)).roles
         guild_roles = await guild.fetch_roles()
-        for i in guild_roles:  # 遍历服务器身分组
+        for i in guild_roles:
             if i.id in user_roles and i.has_permission(0):
                 return True
         if author == guild.master_id:
             return True
         return False
+
+    @classmethod
+    async def check_bot_state(cls, session_info: SessionInfo) -> BotState:
+        """Resolve KOOK guild roles and expose their permission bitmasks."""
+        if session_info.target_from == target_person_prefix:
+            return BotState(
+                available=True,
+                joined=True,
+                is_owner=None,
+                is_admin=None,
+                can_read_messages=True,
+                can_read_all_messages=True,
+                can_send_messages=True,
+                can_send_proactive_messages=True,
+                can_manage_messages=None,
+                can_manage_members=None,
+                can_restrict_members=None,
+                can_react=True,
+                can_send_private_messages=True,
+                raw={"channel_type": "person"},
+            )
+        try:
+            guild = await get_guild(session_info)
+            if guild is None:
+                return BotState(available=None, joined=None, error="KOOK guild is unavailable")
+            me = await bot.client.fetch_me()
+            bot_user_id = str(getattr(me, "id", ""))
+            member = await guild.fetch_user(bot_user_id)
+            role_ids = [int(role_id) for role_id in getattr(member, "roles", [])]
+            roles = await guild.fetch_roles()
+            role_map = {int(role.id): role for role in roles}
+            is_owner = str(guild.master_id) == bot_user_id
+            role_permissions = {
+                str(role_id): int(role_map[role_id].permissions) for role_id in role_ids if role_id in role_map
+            }
+            is_admin = is_owner or any(
+                role_map[role_id].has_permission(0) for role_id in role_ids if role_id in role_map
+            )
+            raw = {
+                "guild_id": str(guild.id),
+                "member_id": bot_user_id,
+                "roles": role_ids,
+                "role_permissions": role_permissions,
+            }
+            try:
+                channel = await get_channel(session_info)
+                if isinstance(channel, PublicChannel):
+                    channel_permissions = await channel.fetch_permission()
+                    raw["channel_permissions"] = {
+                        "sync": channel_permissions.sync,
+                        "role_overwrites": [
+                            {"role_id": str(item.role_id), "allow": item.allow, "deny": item.deny}
+                            for item in channel_permissions.roles
+                        ],
+                        "user_overwrites": [
+                            {"user_id": str(item.user.id), "allow": item.allow, "deny": item.deny}
+                            for item in channel_permissions.users
+                        ],
+                    }
+            except Exception as exc:
+                raw["channel_permissions_error"] = str(exc)
+            return BotState(
+                available=True,
+                joined=True,
+                is_owner=is_owner,
+                is_admin=is_admin,
+                can_read_messages=None,
+                can_read_all_messages=None,
+                can_send_messages=None,
+                can_send_proactive_messages=None,
+                can_manage_messages=is_admin,
+                can_manage_members=is_admin,
+                can_restrict_members=is_admin,
+                can_react=None,
+                can_send_private_messages=True,
+                permissions={"role_permissions": role_permissions, "admin_role": is_admin},
+                raw=raw,
+            )
+        except Exception as exc:
+            Logger.exception(f"Failed to check KOOK bot state in {session_info.target_id}: ")
+            return BotState(available=None, joined=None, error=str(exc))
 
     @classmethod
     async def send_message(
@@ -123,8 +207,6 @@ class KOOKContextManager(ContextManager):
         quote: bool = True,
         msg_ids: list[str] | None = None,
     ) -> list[str]:
-        # if session_info.session_id not in cls.context:
-        #     raise ValueError("Session not found in context")
         raw_ctx = cls.context.get(session_info.session_id)
         ctx = raw_ctx if isinstance(raw_ctx, Message) else None
         reaction_ctx = raw_ctx if isinstance(raw_ctx, KOOKReactionContext) else None
@@ -152,7 +234,7 @@ class KOOKContextManager(ContextManager):
         for x in message.as_sendable(session_info):
             if isinstance(x, PlainElement):
                 if x.allow_parse:
-                    x.text = match_atcode(x.text, client_name, "(met){uid}(met)")
+                    x.text = render_at_code(x.text, client_name, lambda at: f"(met){at.id}(met)")
                 if ctx:
                     send_ = await ctx.reply(
                         x.text,
@@ -164,7 +246,9 @@ class KOOKContextManager(ContextManager):
                 Logger.info(f"[Bot] -> [{session_info.target_id}]: {x.text}")
                 msg_ids.append(str(send_.get("msg_id", "")))
             if isinstance(x, ImageElement):
-                image_path = await x.get()
+                image_path = await resolve_media_path(x)
+                if image_path is None:
+                    continue
                 with open(image_path, "rb") as image:
                     url = await bot.create_asset(image)
                 if ctx:
@@ -178,7 +262,10 @@ class KOOKContextManager(ContextManager):
                 Logger.info(f"[Bot] -> [{session_info.target_id}]: Image: {str(x.path)}")
                 msg_ids.append(str(send_.get("msg_id", "")))
             if isinstance(x, AudioElement):
-                with open(x.path, "rb") as audio:
+                audio_path = await resolve_media_path(x)
+                if audio_path is None:
+                    continue
+                with open(audio_path, "rb") as audio:
                     url = await bot.create_asset(audio)
                 if ctx:
                     send_ = await ctx.reply(
@@ -191,7 +278,10 @@ class KOOKContextManager(ContextManager):
                 Logger.info(f"[Bot] -> [{session_info.target_id}]: Audio: {str(x.__dict__)}")
                 msg_ids.append(str(send_.get("msg_id", "")))
             if isinstance(x, VideoElement):
-                with open(x.path, "rb") as video:
+                video_path = await resolve_media_path(x)
+                if video_path is None:
+                    continue
+                with open(video_path, "rb") as video:
                     url = await bot.create_asset(video)
                 if ctx:
                     send_ = await ctx.reply(
@@ -289,7 +379,20 @@ class KOOKContextManager(ContextManager):
         permission_group_id: str | list[str],
         reason: str | None = None,
     ) -> None:
-        await cls._edit_permission_groups(session_info, user_id, permission_group_id, grant=True)
+        user_ids = [user_id] if isinstance(user_id, str) else user_id
+        group_ids = [permission_group_id] if isinstance(permission_group_id, str) else permission_group_id
+        if not isinstance(user_ids, list) or not isinstance(group_ids, list):
+            raise TypeError("User ID and permission group ID must be a list or str")
+
+        guild = await get_guild(session_info)
+        if guild is None:
+            return
+        for uid in user_ids:
+            member_id = str(uid).split("|")[-1]
+            for group_id in group_ids:
+                role_id = str(group_id).split("|")[-1]
+                await guild.grant_role(member_id, role_id)
+        Logger.info(f"Granted permission groups {group_ids} for members {user_ids} in guild {guild.id}")
 
     @classmethod
     async def revoke_permission_group(
@@ -298,15 +401,6 @@ class KOOKContextManager(ContextManager):
         user_id: str | list[str],
         permission_group_id: str | list[str],
         reason: str | None = None,
-    ) -> None:
-        await cls._edit_permission_groups(session_info, user_id, permission_group_id, grant=False)
-
-    @staticmethod
-    async def _edit_permission_groups(
-        session_info: SessionInfo,
-        user_id: str | list[str],
-        permission_group_id: str | list[str],
-        grant: bool,
     ) -> None:
         user_ids = [user_id] if isinstance(user_id, str) else user_id
         group_ids = [permission_group_id] if isinstance(permission_group_id, str) else permission_group_id
@@ -320,12 +414,8 @@ class KOOKContextManager(ContextManager):
             member_id = str(uid).split("|")[-1]
             for group_id in group_ids:
                 role_id = str(group_id).split("|")[-1]
-                if grant:
-                    await guild.grant_role(member_id, role_id)
-                else:
-                    await guild.revoke_role(member_id, role_id)
-        action = "Granted" if grant else "Revoked"
-        Logger.info(f"{action} permission groups {group_ids} for members {user_ids} in guild {guild.id}")
+                await guild.revoke_role(member_id, role_id)
+        Logger.info(f"Revoked permission groups {group_ids} for members {user_ids} in guild {guild.id}")
 
     @classmethod
     async def add_reaction(cls, session_info: SessionInfo, message_id: str | list[str], emoji: str) -> None:

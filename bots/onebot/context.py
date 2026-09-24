@@ -13,13 +13,16 @@ from bots.onebot.client import aiocqhttp_bot
 from bots.onebot.config import AiocqhttpConfig
 from bots.onebot.info import target_private_prefix, target_group_prefix, client_name
 from bots.onebot.utils import CQCodeHandler
-from core.builtins.message.chain import MessageChain, MessageNodes, match_atcode
+from core.builtins.message.mention import render_at_code
+from core.builtins.message.chain import MessageChain, MessageNodes
 from core.builtins.message.elements import PlainElement, ImageElement, AudioElement, VideoElement, MentionElement
 from core.builtins.session.context import ContextManager
+from core.builtins.session.bot_state import BotState
 from core.builtins.session.features import Features
 from core.builtins.session.info import SessionInfo
 from core.builtins.temp import Temp
 from core.logger import Logger
+from core.utils.media import resolve_media_base64, resolve_media_path
 from .features import features as onebot_features
 
 qq_typing_emoji = str(AiocqhttpConfig.qq_typing_emoji)
@@ -65,7 +68,7 @@ async def fake_forward_msg(session_info: SessionInfo, nodelist):
         )
 
 
-def convert_msg_nodes(
+async def convert_msg_nodes(
     session_info: SessionInfo,
     msg_node: MessageNodes,
 ) -> list[dict]:
@@ -77,7 +80,10 @@ def convert_msg_nodes(
             if isinstance(x, PlainElement):
                 content += x.text + "\n"
             elif isinstance(x, ImageElement):
-                content += f"[CQ:image,file=base64://{x.get_base64()}]\n"
+                image_b64 = await resolve_media_base64(x)
+                if image_b64 is None:
+                    continue
+                content += f"[CQ:image,file=base64://{image_b64}]\n"
 
         template = {
             "type": "node",
@@ -149,7 +155,6 @@ class OneBotContextManager(ContextManager):
 
     @classmethod
     async def check_native_permission(cls, session_info: SessionInfo) -> bool:
-        # 这里可以添加权限检查的逻辑
 
         @retry(stop=stop_after_attempt(3), wait=wait_fixed(3), reraise=True)
         async def _check():
@@ -168,16 +173,69 @@ class OneBotContextManager(ContextManager):
         return await _check()
 
     @classmethod
+    async def check_bot_state(cls, session_info: SessionInfo) -> BotState:
+        """Query the OneBot group member record for the bot itself."""
+        if session_info.target_from == target_private_prefix:
+            return BotState(
+                available=True,
+                joined=True,
+                is_owner=None,
+                is_admin=None,
+                can_read_messages=True,
+                can_read_all_messages=True,
+                can_send_messages=True,
+                can_send_proactive_messages=True,
+                can_manage_messages=None,
+                can_manage_members=None,
+                can_restrict_members=None,
+                can_react=None,
+                can_send_private_messages=True,
+                raw={"detail_type": "private"},
+            )
+        if session_info.target_from != target_group_prefix:
+            return BotState(available=None, joined=None, error="OneBot context is not a group or private chat")
+
+        bot_id = session_info.bot_id or Temp.data.get("qq_account")
+        if bot_id is None:
+            return BotState(available=None, joined=None, error="OneBot bot ID is unavailable")
+        try:
+            member = await aiocqhttp_bot.call_action(
+                "get_group_member_info",
+                group_id=int(session_info.get_common_target_id()),
+                user_id=int(str(bot_id).split("|")[-1]),
+            )
+            role = member.get("role")
+            is_owner = role == "owner"
+            is_admin = role in {"owner", "admin"}
+            return BotState(
+                available=True,
+                joined=True,
+                is_owner=is_owner,
+                is_admin=is_admin,
+                can_read_messages=True,
+                can_read_all_messages=None,
+                can_send_messages=True,
+                can_send_proactive_messages=True,
+                can_manage_messages=is_admin,
+                can_manage_members=is_admin,
+                can_restrict_members=is_admin,
+                can_react=True,
+                can_send_private_messages=True,
+                permissions={"role": role},
+                raw=dict(member),
+            )
+        except Exception as exc:
+            Logger.exception(f"Failed to check OneBot bot state in {session_info.target_id}: ")
+            return BotState(available=None, joined=None, error=str(exc))
+
+    @classmethod
     async def send_message(
         cls,
         session_info: SessionInfo,
         message: MessageChain | MessageNodes,
         quote: bool = True,
     ) -> list[str]:
-        # if session_info.session_id not in cls.context:
-        #     raise ValueError("Session not found in context")
 
-        # ctx: Event = cls.context.get(session_info.session_id)
         send = None
         if session_info.sender_id is None:
             if session_info.target_from == target_group_prefix:
@@ -194,7 +252,7 @@ class OneBotContextManager(ContextManager):
                         return []
 
         if isinstance(message, MessageNodes):
-            send = await fake_forward_msg(session_info, convert_msg_nodes(session_info, message))
+            send = await fake_forward_msg(session_info, await convert_msg_nodes(session_info, message))
 
         else:
             convert_msg_segments = MessageSegment.text("")
@@ -205,7 +263,7 @@ class OneBotContextManager(ContextManager):
             for x in message.as_sendable(session_info):
                 if isinstance(x, PlainElement):
                     if x.allow_parse:
-                        x.text = match_atcode(x.text, client_name, "[CQ:at,qq={uid}]")
+                        x.text = render_at_code(x.text, client_name, lambda at: f"[CQ:at,qq={at.id}]")
                     if x.allow_parse:
                         parts = re.split(r"(\[CQ:[^\]]+\])", x.text)
                         parts = [part for part in parts if part]
@@ -249,18 +307,26 @@ class OneBotContextManager(ContextManager):
                     Logger.info(f"[Bot] -> [{session_info.target_id}]: {x.text}")
                     count += 1
                 elif isinstance(x, ImageElement):
-                    convert_msg_segments = convert_msg_segments + MessageSegment.image(
-                        "base64://" + await x.get_base64()
-                    )
+                    image_b64 = await resolve_media_base64(x)
+                    if image_b64 is None:
+                        continue
+                    convert_msg_segments = convert_msg_segments + MessageSegment.image("base64://" + image_b64)
                     Logger.info(f"[Bot] -> [{session_info.target_id}]: Image: {str(x)}")
                     count += 1
-                elif isinstance(x, AudioElement):
-                    convert_msg_segments = convert_msg_segments + MessageSegment.record(file=Path(x.path).as_uri())
-                    Logger.info(f"[Bot] -> [{session_info.target_id}]: Audio: {str(x)}")
-                    count += 1
-                elif isinstance(x, VideoElement):
-                    convert_msg_segments = convert_msg_segments + MessageSegment.video(file=Path(x.path).as_uri())
-                    Logger.info(f"[Bot] -> [{session_info.target_id}]: Audio: {str(x)}")
+                elif isinstance(x, (AudioElement, VideoElement)):
+                    media_path = await resolve_media_path(x)
+                    if media_path is None:
+                        continue
+                    if isinstance(x, AudioElement):
+                        convert_msg_segments = convert_msg_segments + MessageSegment.record(
+                            file=Path(media_path).as_uri()
+                        )
+                        Logger.info(f"[Bot] -> [{session_info.target_id}]: Audio: {str(x)}")
+                    else:
+                        convert_msg_segments = convert_msg_segments + MessageSegment.video(
+                            file=Path(media_path).as_uri()
+                        )
+                        Logger.info(f"[Bot] -> [{session_info.target_id}]: Video: {str(x)}")
                     count += 1
                 elif isinstance(x, MentionElement):
                     if x.client == client_name and session_info.target_from == target_group_prefix:
@@ -269,6 +335,10 @@ class OneBotContextManager(ContextManager):
                     else:
                         convert_msg_segments = convert_msg_segments + MessageSegment.text(" ")
                     count += 1
+
+            if count == 0:
+                # 元素均因底层媒体不可得被跳过时不发送空消息
+                return []
 
             if session_info.target_from == target_group_prefix:
                 try:
@@ -432,6 +502,72 @@ class OneBotContextManager(ContextManager):
                     Logger.exception(f"Failed to ban member {x} in group {session_info.target_id}: ")
 
     @classmethod
+    async def grant_permission_group(
+        cls,
+        session_info: SessionInfo,
+        user_id: str | list[str],
+        permission_group_id: str | list[str],
+        reason: str | None = None,
+    ) -> None:
+        if isinstance(user_id, str):
+            user_id = [user_id]
+        if isinstance(permission_group_id, str):
+            permission_group_id = [permission_group_id]
+        if not isinstance(user_id, list):
+            raise TypeError("User ID must be a list or str")
+        if not isinstance(permission_group_id, list):
+            raise TypeError("Permission group ID must be a list or str")
+
+        if session_info.target_from == target_group_prefix:
+            if "admin" not in {str(x).lower() for x in permission_group_id}:
+                Logger.warning(f"OneBot does not support permission group(s) {permission_group_id}, skipping.")
+                return
+            for x in user_id:
+                try:
+                    await aiocqhttp_bot.call_action(
+                        "set_group_admin",
+                        group_id=int(session_info.get_common_target_id()),
+                        user_id=int(x.split("|")[-1]),
+                        enable=True,
+                    )
+                    Logger.info(f"Granted admin of {x} in group {session_info.target_id}")
+                except Exception:
+                    Logger.exception(f"Failed to grant admin of {x} in group {session_info.target_id}: ")
+
+    @classmethod
+    async def revoke_permission_group(
+        cls,
+        session_info: SessionInfo,
+        user_id: str | list[str],
+        permission_group_id: str | list[str],
+        reason: str | None = None,
+    ) -> None:
+        if isinstance(user_id, str):
+            user_id = [user_id]
+        if isinstance(permission_group_id, str):
+            permission_group_id = [permission_group_id]
+        if not isinstance(user_id, list):
+            raise TypeError("User ID must be a list or str")
+        if not isinstance(permission_group_id, list):
+            raise TypeError("Permission group ID must be a list or str")
+
+        if session_info.target_from == target_group_prefix:
+            if "admin" not in {str(x).lower() for x in permission_group_id}:
+                Logger.warning(f"OneBot does not support permission group(s) {permission_group_id}, skipping.")
+                return
+            for x in user_id:
+                try:
+                    await aiocqhttp_bot.call_action(
+                        "set_group_admin",
+                        group_id=int(session_info.get_common_target_id()),
+                        user_id=int(x.split("|")[-1]),
+                        enable=False,
+                    )
+                    Logger.info(f"Revoked admin of {x} in group {session_info.target_id}")
+                except Exception:
+                    Logger.exception(f"Failed to revoke admin of {x} in group {session_info.target_id}: ")
+
+    @classmethod
     async def add_reaction(cls, session_info: SessionInfo, message_id: str | list[str], emoji: str) -> None:
         if isinstance(message_id, str):
             message_id = [message_id]
@@ -568,8 +704,6 @@ class OneBotContextManager(ContextManager):
 
     @classmethod
     async def end_typing(cls, session_info: SessionInfo) -> None:
-        # if session_info.session_id not in cls.context:
-        #     raise ValueError("Session not found in context")
         flag = cls.typing_flags.pop(session_info.session_id, None)
         if flag:
             flag.set()
@@ -577,14 +711,12 @@ class OneBotContextManager(ContextManager):
         if task:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        # 这里可以添加结束输入状态的逻辑
         Logger.debug(f"End typing in session: {session_info.session_id}")
 
     @classmethod
     async def error_signal(cls, session_info: SessionInfo) -> None:
         if session_info.session_id not in cls.context:
             raise ValueError("Session not found in context")
-        # 这里可以添加错误处理逻辑
 
         if session_info.target_from == target_group_prefix:
             qq_account = Temp.data.get("qq_account")

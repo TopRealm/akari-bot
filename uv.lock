@@ -213,6 +213,7 @@ dependencies = [
     { name = "akari-bot-i18n" },
     { name = "akari-bot-webrender" },
     { name = "akari-bot-webui" },
+    { name = "anthropic" },
     { name = "apscheduler" },
     { name = "argon2-cffi" },
     { name = "attrs" },
@@ -234,7 +235,7 @@ dependencies = [
     { name = "google-play-scraper" },
     { name = "gql" },
     { name = "httpx" },
-    { name = "japanera" },
+    { name = "httpx-ws" },
     { name = "jinja2" },
     { name = "khl-py" },
     { name = "langconv" },
@@ -242,6 +243,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "matrix-nio" },
     { name = "mcstatus" },
+    { name = "milky-python-sdk" },
     { name = "numpy" },
     { name = "openai" },
     { name = "orjson" },
@@ -259,7 +261,9 @@ dependencies = [
     { name = "python-multipart" },
     { name = "python-whois" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "pyyaml" },
     { name = "qq-botpy-sdk" },
+    { name = "qrcode" },
     { name = "rapidfuzz" },
     { name = "rdkit" },
     { name = "regex" },
@@ -279,6 +283,8 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
 
@@ -287,9 +293,10 @@ requires-dist = [
     { name = "aiocqhttp", specifier = ">=1.4.3,<2.0.0" },
     { name = "aiofile", specifier = ">=3.8.1,<4.0.0" },
     { name = "aiogram", specifier = "==3.31.0" },
-    { name = "akari-bot-i18n", specifier = "==0.1.2" },
+    { name = "akari-bot-i18n", specifier = "==0.1.3" },
     { name = "akari-bot-webrender", specifier = "==0.6.2" },
-    { name = "akari-bot-webui", specifier = "==0.4.3" },
+    { name = "akari-bot-webui", specifier = "==0.4.5" },
+    { name = "anthropic", specifier = ">=1.5.0" },
     { name = "apscheduler", specifier = ">=3.9.1.post0,<4.0.0.0" },
     { name = "argon2-cffi", specifier = ">=25.0.0,<26.0.0" },
     { name = "attrs", specifier = ">=25.0.0,<26.0.0" },
@@ -311,7 +318,7 @@ requires-dist = [
     { name = "google-play-scraper", specifier = ">=1.2.2,<2.0.0" },
     { name = "gql", specifier = ">=4.0.0,<5.0.0" },
     { name = "httpx", specifier = ">=0.28.1,<1.0.0" },
-    { name = "japanera", specifier = ">=2.1.3,<3.0.0" },
+    { name = "httpx-ws", specifier = ">=0.9.0,<1.0.0" },
     { name = "jinja2", specifier = ">=3.1.6,<4.0.0" },
     { name = "khl-py", specifier = ">=0.3.16,<1.0.0" },
     { name = "langconv", git = "https://github.com/Teahouse-Studios/langconv.py.git" },
@@ -319,6 +326,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.6.3,<4.0.0" },
     { name = "matrix-nio", specifier = ">=0.25.0,<1.0.0" },
     { name = "mcstatus", specifier = ">=14.1.0,<14.2.0" },
+    { name = "milky-python-sdk", specifier = ">=0.4.2" },
     { name = "numpy", specifier = "<2.5.3" },
     { name = "openai", specifier = ">=3.6.0,<3.7.0" },
     { name = "orjson", specifier = ">=3.10.9,<4.0.0" },
@@ -336,7 +344,9 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.22,<1.0.0" },
     { name = "python-whois", specifier = ">=0.9.0,<1.0.0" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=312,<313" },
-    { name = "qq-botpy-sdk", specifier = "==2.0.3" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "qq-botpy-sdk", specifier = "==2.0.5" },
+    { name = "qrcode", specifier = ">=8.2,<9.0.0" },
     { name = "rapidfuzz", specifier = ">=3.14.5" },
     { name = "rdkit", specifier = ">=2026.3.1,<2026.4.0" },
     { name = "regex", specifier = ">=2026.5.9,<2027.0.0" },
@@ -355,18 +365,22 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = ">=0.15.1" }]
+dev = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "ruff", specifier = ">=0.15.1" },
+]
 
 [[package]]
 name = "akari-bot-i18n"
-version = "0.1.2"
+version = "0.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "orjson" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/65/4f/fbf9432f902791ef7f5dc4a12f3a4ece41944221b4cbb9bd2d4aa639ae78/akari_bot_i18n-0.1.2.tar.gz", hash = "sha256:8a868f1a957676a9f7fe5466492055750a3664b308a52e90a3b081c0a2713e26", size = 11677, upload-time = "2026-08-15T09:52:23.165Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/fb/51005ef724268c9590931a0227d23da115f1e2664faf8fdbf94e53be5cd1/akari_bot_i18n-0.1.3.tar.gz", hash = "sha256:aeeda94c53f39982451123d032231220d8d6f227208dceea5610efd77ee324d8", size = 29782, upload-time = "2026-09-17T06:46:56.043Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/6c/829096138497eb38da56097cb6cdfcfd3089df887eaaa79ea5a4a712bc43/akari_bot_i18n-0.1.2-py3-none-any.whl", hash = "sha256:36f45752c2f09ab67d5da52b391bc5d62f6768aaf1c164b846b62e7b7cbab207", size = 12627, upload-time = "2026-08-15T09:52:21.981Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/7c/612cf71a7686d391e93fca9e03586f242dbace878caa3666bad38504eec7/akari_bot_i18n-0.1.3-py3-none-any.whl", hash = "sha256:c99719baa103e04db5324e849866dc10893ad672da3eedcf98a312f6983d74dd", size = 30274, upload-time = "2026-09-17T06:46:54.871Z" },
 ]
 
 [[package]]
@@ -391,11 +405,11 @@ wheels = [
 
 [[package]]
 name = "akari-bot-webui"
-version = "0.4.3"
+version = "0.4.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3c/d4/c881eacabb2eef9dbcab3db2c00fec0624318c11b9c4fbb8f84e38188721/akari_bot_webui-0.4.3.tar.gz", hash = "sha256:35734b1e7ece08a5d32f1da55b4d2d2302b8f8a4c0dbb1901bd750dfa5804b39", size = 1115615, upload-time = "2026-08-26T08:04:54.152Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/a0/ba2f415b9c7fcdc81b94ef24d6cf82e461f9aac049ef7bab21e486dd79bc/akari_bot_webui-0.4.5.tar.gz", hash = "sha256:0ffad905f733e06feb01c88b776c2f4a643f7a000153741114cc45267c79f9f2", size = 1118588, upload-time = "2026-09-09T08:03:49.22Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/b5/f8869c9dd3f3de61651b2b151e84b9452d516f16caad9ac47207a4e13c43/akari_bot_webui-0.4.3-py3-none-any.whl", hash = "sha256:06f21d04e95e1a171b9c76c21b38c5ff0b497bbdd5c0ecaef30867240a66539e", size = 1139416, upload-time = "2026-08-26T08:04:52.087Z" },
+    { url = "https://files.pythonhosted.org/packages/09/d4/4ec209b9444c98dc85ffae5a4becf76b5e973e01be826467b1067dedff28/akari_bot_webui-0.4.5-py3-none-any.whl", hash = "sha256:099f428dcbc02f582ba2676248594a3a9a7140a8446f25a0dd1620c84ebf6063", size = 1143132, upload-time = "2026-09-09T08:03:47.378Z" },
 ]
 
 [[package]]
@@ -414,6 +428,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ee/67/531ea369ba64dcff5ec9c3402f9f51bf748cec26dde048a2f973a4eea7f5/annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89", size = 16081, upload-time = "2024-05-20T21:33:25.928Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53", size = 13643, upload-time = "2024-05-20T21:33:24.1Z" },
+]
+
+[[package]]
+name = "anthropic"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "docstring-parser" },
+    { name = "httpx2" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6e/43/6f3f6006f5216d43a059a1a856d275ef6536cdfa94883b64cc04d7873cb7/anthropic-1.5.0.tar.gz", hash = "sha256:b25f87f5758861f25993383a5c9bf274eb6e0f1b010c84019ad91854cb4e1bc6", size = 1156657, upload-time = "2026-09-10T17:45:35.93Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/1c/c32fce35ca0be0205f2377d2238e3ed73dea5abc2be09d15fbd032091d60/anthropic-1.5.0-py3-none-any.whl", hash = "sha256:d9ce04b29ad1f7025dda3e3bc478cde8d2924d2de5417d2d4a4bb0378ecbc2a6", size = 1235236, upload-time = "2026-09-10T17:45:34.216Z" },
 ]
 
 [[package]]
@@ -1107,6 +1139,15 @@ wheels = [
 ]
 
 [[package]]
+name = "docstring-parser"
+version = "0.18.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/4d/f332313098c1de1b2d2ff91cf2674415cc7cddab2ca1b01ae29774bd5fdf/docstring_parser-0.18.0.tar.gz", hash = "sha256:292510982205c12b1248696f44959db3cdd1740237a968ea1e2e7a900eeb2015", size = 29341, upload-time = "2026-04-14T04:09:19.867Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/5f/ed01f9a3cdffbd5a008556fc7b2a08ddb1cc6ace7effa7340604b1d16699/docstring_parser-0.18.0-py3-none-any.whl", hash = "sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b", size = 22484, upload-time = "2026-04-14T04:09:18.638Z" },
+]
+
+[[package]]
 name = "e2b"
 version = "2.21.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1591,6 +1632,21 @@ wheels = [
 ]
 
 [[package]]
+name = "httpx-ws"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "httpcore" },
+    { name = "httpx" },
+    { name = "wsproto" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cd/cd/ca91a07ae446451f7476bf3fcc909e98cb942ff032ebfda0e3fe449aca7b/httpx_ws-0.9.0.tar.gz", hash = "sha256:797373326f70eec1ae96f6e43ae9f12002fd7d73aee139a4985eaab964338a08", size = 107105, upload-time = "2026-03-28T14:11:10.781Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/f8/a6bc80313a9e93c888fa10534dfce2ad76ff86911b6f485777ce6de6a073/httpx_ws-0.9.0-py3-none-any.whl", hash = "sha256:71640d2fb1bf9a225775015b33cd755cfd4c5f7e21c885192fe3adc4c387b248", size = 15759, upload-time = "2026-03-28T14:11:11.887Z" },
+]
+
+[[package]]
 name = "httpx2"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1659,6 +1715,15 @@ wheels = [
 ]
 
 [[package]]
+name = "iniconfig"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
 name = "iso639-lang"
 version = "2.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1683,18 +1748,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9c/cb/8ac0172223afbccb63986cc25049b154ecfb5e85932587206f42317be31d/itsdangerous-2.2.0.tar.gz", hash = "sha256:e0050c0b7da1eea53ffaf149c0cfbb5c6e2e2b69c4bef22c81fa6eb73e5f6173", size = 54410, upload-time = "2024-04-16T21:28:15.614Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl", hash = "sha256:c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef", size = 16234, upload-time = "2024-04-16T21:28:14.499Z" },
-]
-
-[[package]]
-name = "japanera"
-version = "2.1.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "kanjize" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/23/1f/c51a13c2c65e56cac83935ea3327f12fbbfbc0019710fd3f5fe598ac7129/japanera-2.1.3.tar.gz", hash = "sha256:a54e1f50a66fd1a2a110a357e155e93f2cf6df7de9927d966f9f6bd2ad2c1738", size = 19986, upload-time = "2025-06-23T11:46:07.935Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/31/380d24ada9c81bb2abf5a963a2c94b90cc89f8afef9a729bbb592f094341/japanera-2.1.3-py3-none-any.whl", hash = "sha256:bc3ccadd1b6ef91732f2bf1ef74d240a28c3f7697fa0682283c7b84751352ccd", size = 20956, upload-time = "2025-06-23T11:46:05.884Z" },
 ]
 
 [[package]]
@@ -1832,15 +1885,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/49/f3/45890c1b314f0d04e19c1c83d534e611513150939a7cf039664d9ab1e649/justext-3.0.2.tar.gz", hash = "sha256:13496a450c44c4cd5b5a75a5efcd9996066d2a189794ea99a49949685a0beb05", size = 828521, upload-time = "2025-02-25T20:21:49.934Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f2/ac/52f4e86d1924a7fc05af3aeb34488570eccc39b4af90530dd6acecdf16b5/justext-3.0.2-py2.py3-none-any.whl", hash = "sha256:62b1c562b15c3c6265e121cc070874243a443bfd53060e869393f09d6b6cc9a7", size = 837940, upload-time = "2025-02-25T20:21:44.179Z" },
-]
-
-[[package]]
-name = "kanjize"
-version = "1.6.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b1/5d/08e4d0c98065cba564d62782fb6d17a71879b1ff1b1d70521c4a143f7810/kanjize-1.6.1.tar.gz", hash = "sha256:5e96a2df8af21f55e7e2b8f1042efb830a171a5cb9046f6239e89e03622b9756", size = 6558, upload-time = "2025-06-14T13:50:11.71Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/fb/6c4f91660a3b7e9e1d9d0a41e8976af7fb717449532f56d1b28a560dc9e5/kanjize-1.6.1-py3-none-any.whl", hash = "sha256:4f0318e94a947e0613ac68fba8c9822ff7bfd138ac58a68caa849879bb532f26", size = 6821, upload-time = "2025-06-14T13:50:17.07Z" },
 ]
 
 [[package]]
@@ -2239,6 +2283,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "milky-python-sdk"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/04/08/32992a338ca875085157f40357ab458a9e41844ff5b99c7dcd6183c2de52/milky_python_sdk-0.4.2.tar.gz", hash = "sha256:6203cbf63ea34655331841eb9219bea730bb3c217ec9ceea4762dd1fcb25d758", size = 72147, upload-time = "2026-05-19T13:28:58.344Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c8/e9/d8cb9f487ce22b9a5a2e42d87cfb2b1752b06401f505d7ec2a51eaeb6b4d/milky_python_sdk-0.4.2-py3-none-any.whl", hash = "sha256:fe82b3ee4a9b328865cfbc7425506b86c8bb8af8f84b6d5f4c84de9524fb0cfd", size = 21808, upload-time = "2026-05-19T13:28:56.824Z" },
 ]
 
 [[package]]
@@ -2677,6 +2735,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pluggy"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
 name = "pre-commit"
 version = "4.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3106,6 +3173,35 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest"
+version = "9.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
+]
+
+[[package]]
+name = "pytest-asyncio"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/7c/d36d04db312ecf4298932ef77e6e4a9e8ad017906e24e34f0b0c361a2473/pytest_asyncio-1.4.0.tar.gz", hash = "sha256:c6c0d2259945122819f171a32ecea2c349ead889ee28176caaf492143424be42", size = 58514, upload-time = "2026-05-26T09:56:04.083Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/03/e2/08a497ef684b88559c9cc5f4ad53a37e7b99e727094a86d6ea32536d5d3c/pytest_asyncio-1.4.0-py3-none-any.whl", hash = "sha256:933ca923a23075a87fb7070c0ec272a6848489824d887c85c812670932835aa1", size = 16930, upload-time = "2026-05-26T09:56:02.576Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -3232,17 +3328,30 @@ wheels = [
 
 [[package]]
 name = "qq-botpy-sdk"
-version = "2.0.3"
+version = "2.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiohttp" },
     { name = "apscheduler" },
     { name = "cryptography" },
+    { name = "httpx" },
+    { name = "httpx-ws" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8e/33/00e5abe2f5e1bf82a65652644df8501ce9d96a45a544d7f13f01dff704b0/qq_botpy_sdk-2.0.3.tar.gz", hash = "sha256:cb0f569e230b8632c9d438abaa0c9eabde29525b97a0a07ccf866986f7f2bab0", size = 113304, upload-time = "2026-08-17T18:22:11.14Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/df/03bad9d71192f29afb1a2b5ec340db8b47b91ed32c965a465865303e9448/qq_botpy_sdk-2.0.5.tar.gz", hash = "sha256:c618a8f0bf6fc2be4f528bb0ffd849321569f18e6e2f3a891b0ec6fd7e289b3c", size = 117647, upload-time = "2026-09-20T03:26:04.632Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/a2/60c2a2765d3c3d52ca49deabd76a54699bed1d138364261c5ade7aeec836/qq_botpy_sdk-2.0.3-py3-none-any.whl", hash = "sha256:ef0368dfddc946f3b2da09ba61b63968a3e3bb9110c9c045c205e4b03cfd1796", size = 139712, upload-time = "2026-08-17T18:22:09.517Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/d5/a44ff8d65a11f5076a12da3c1829d5c3e98c13f8225b17623cc95767f5ec/qq_botpy_sdk-2.0.5-py3-none-any.whl", hash = "sha256:bd9f05c819e8391d4a9db85f555ba651e8712231c584861292f2580efe22676d", size = 149423, upload-time = "2026-09-20T03:26:03.125Z" },
+]
+
+[[package]]
+name = "qrcode"
+version = "8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/b2/7fc2931bfae0af02d5f53b174e9cf701adbb35f39d69c2af63d4a39f81a9/qrcode-8.2.tar.gz", hash = "sha256:35c3f2a4172b33136ab9f6b3ef1c00260dd2f66f858f24d88418a015f446506c", size = 43317, upload-time = "2025-05-01T15:44:24.726Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/b8/d2d6d731733f51684bbf76bf34dab3b70a9148e8f2cef2bb544fccec681a/qrcode-8.2-py3-none-any.whl", hash = "sha256:16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f", size = 45986, upload-time = "2025-05-01T15:44:22.781Z" },
 ]
 
 [[package]]

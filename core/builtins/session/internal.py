@@ -1,44 +1,45 @@
-"""
-消息会话内部模块 - 提供消息会话的核心实现和方法。
-
-该模块定义了 MessageSession 和 FetchedMessageSession 类，提供了
-发送消息、接收回复、等待用户输入等消息交互的核心功能。
-"""
+"""消息会话内部模块 - 提供消息会话的核心实现和方法。"""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, UTC
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Coroutine, Match, NoReturn, TYPE_CHECKING, cast
+from typing import Any, Coroutine, Match, NoReturn, cast
 
-from akari_bot_i18n.i18n import Locale
+from akari_bot_i18n.i18n import Locale, safe_strftime
 from attrs import define, field
 from deprecated import deprecated
-from japanera import EraDate
 
 from core.builtins.filter import filter_badwords
 from core.builtins.message.chain import MessageChain, get_message_chain, Chainable, MessageNodes
 from core.builtins.message.internal import Button, ButtonFrame, I18NContext, PlainElement
 from core.builtins.session.info import SessionInfo, FetchedSessionInfo
+from core.builtins.session.bot_state import BotState
 from core.builtins.session.lock import ExecutionLockList, ExecutionState
 from core.builtins.session.tasks import SessionTaskManager
 from core.builtins.types import MessageElement
 from core.builtins.utils import confirm_command
-from core.config.base import CoreConfig
-from core.constants import SessionFinished, WaitCancelException, default_locale
-from core.exports import add_export, exports
+from core.config.base import BaseConfig, CoreConfig
+from core.constants import SessionContextUnavailable, SessionFinished, WaitCancelException
+from core.exports import add_export
 from core.logger import Logger
-from core.utils.button import bind_callback_reply_ids, build_button_rows
+from core.utils.button import bind_callback_reply_ids, build_button_rows, public_button_reply_ids
 from core.utils.func import is_int
 from core.utils.media import compress_media_chain
 from core.utils.random import Random
 
-if TYPE_CHECKING:
-    from core.queue.server import JobQueueServer
+from core.queue.contracts import PlatformAPI
+from core.queue.errors import RpcRemoteError
 
-# 快速确认模式 - 允许用户快速确认操作
+# 会话相关配置在导入期取一次快照，避免每次取文案都去读配置
+default_locale = BaseConfig.default_locale
 quick_confirm = CoreConfig.quick_confirm
+
+
+def _is_confirmation_message(msg: MessageSession) -> bool:
+    value = msg.as_display(text_only=True).strip()
+    return value in confirm_command
 
 
 def confirm_prompt_key(session_info: SessionInfo) -> str:
@@ -59,7 +60,6 @@ def confirm_prompt_key(session_info: SessionInfo) -> str:
 def _filter_message_chain_badwords(
     chain: MessageChain | MessageNodes, session_info: SessionInfo
 ) -> MessageChain | MessageNodes:
-    """在消息进入平台适配器前统一过滤可发送文本。"""
     if isinstance(chain, MessageNodes):
         chain.values = [cast(MessageChain, _filter_message_chain_badwords(node, session_info)) for node in chain.values]
         return chain
@@ -70,36 +70,41 @@ def _filter_message_chain_badwords(
     return chain
 
 
+async def normalize_outgoing_chain(session_info: SessionInfo, chain: Any, disable_secret_check: bool):
+    """对 hook 改写后的最终出站链完整执行发送规范化。"""
+    if not isinstance(chain, (MessageChain, MessageNodes)):
+        chain = get_message_chain(session_info, chain=chain)
+    chain = _filter_message_chain_badwords(chain, session_info)
+    if isinstance(chain, MessageNodes) and not session_info.support_handle_message_nodes:
+        from core.utils.image import msgnode2image
+
+        chain = MessageChain.assign(await msgnode2image(chain, session=session_info))
+    if isinstance(chain, MessageChain):
+        chain = await compress_media_chain(chain)
+        if chain is None:
+            return None
+    if not chain.is_safe and not disable_secret_check:
+        chain = MessageChain.assign(I18NContext("error.message.chain.unsafe"))
+    return chain
+
+
 @define
 class MessageSession:
-    """
-    消息会话类 - 处理与用户的交互。
+    """消息会话类 - 处理与用户的交互。"""
 
-    该类提供了一套完整的消息交互接口，包括发送消息、接收回复、等待用户输入等功能。
-    每个消息会话对应一个用户在某个平台的一条消息。
-
-    属性说明:
-        session_info: 会话信息对象，包含会话的所有基本信息
-        sent: 已发送消息链列表，用于跟踪消息历史
-        trigger_msg: 触发本会话的原始消息文本
-        matched_msg: 正则表达式或其他匹配的结果
-        parsed_msg: 已解析的消息内容（如命令参数）
-    """
-
-    # 会话信息 - 存储会话的所有基本信息
     session_info: SessionInfo
 
-    # 已发送消息列表 - 用于跟踪和管理已发送的消息
     sent: list[MessageChain] = field(factory=list)
 
-    # 触发消息 - 原始的触发消息文本内容
     trigger_msg: str = ""
 
-    # 匹配结果 - 正则匹配或其他处理的结果
     matched_msg: Match[str] | tuple[Any, ...] | None = None
 
-    # 解析后的消息 - 命令参数等解析结果
     parsed_msg: dict = field(factory=dict)
+
+    # 别名改写前用户实际输入的命令首词。模块别名可能把白名单命令并入其它模块
+    # （如 merge 现为 bind 的别名），退役策略解析后仍需据此判断放行与否。
+    command_original_word: str = field(default="", repr=False, eq=False)
 
     # 仅存在于 Server 进程中的命令执行状态。通过 wait_* 取得的回复会话会共享
     # 同一个对象，使嵌套等待可以释放／重获同一 lease，并由原始 parser 统一
@@ -108,12 +113,10 @@ class MessageSession:
     _execution_state_owner: bool = field(default=True, repr=False, eq=False)
 
     def _share_execution_state(self, result: "MessageSession") -> None:
-        """让等待结果加入当前命令执行域，但不取得最终清理所有权。"""
         result._execution_state = ExecutionLockList.state(self)
         result._execution_state_owner = False
 
     def _adopt_wait_result(self, result: "MessageSession") -> None:
-        """接管一个已经持有平台 context 的等待结果。"""
         self._share_execution_state(result)
         ExecutionLockList.state(self).held_contexts.append(result)
 
@@ -148,10 +151,7 @@ class MessageSession:
     @property
     @deprecated(reason="Use `session_info` instead.")
     def target(self) -> SessionInfo:
-        """
-        (已弃用) 获取会话信息。
-
-        使用 session_info 替代此属性。
+        """(已弃用) 获取会话信息。
 
         :return: 会话信息对象
         """
@@ -191,17 +191,7 @@ class MessageSession:
         callback_timeout: float | None = SessionTaskManager.CALLBACK_TTL,
         callback_once: bool = False,
     ) -> FinishedSession:
-        """
-        用于向消息用户返回消息。
-
-        该方法将消息发送给触发消息的用户，并返回一个 FinishedSession 对象
-        用于进一步操作（如删除消息、添加反应等）。
-
-        处理流程：
-        1. 将消息链转换为平台特定的格式
-        2. 进行安全检查（检查是否包含敏感信息）
-        3. 将消息发送到消息队列
-        4. 如果有回调函数，注册回调
+        """用于向消息用户返回消息。
 
         :param message_chain: 消息链，若传入 str 则自动创建一条带有 PlainElement 的消息链
         :param quote: 是否引用原始消息（默认为 True）
@@ -214,10 +204,7 @@ class MessageSession:
 
         :raises SessionFinished: 如果发送过程中抛出异常
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
 
-        # ========== 步骤 1: 转换消息链格式 ==========
-        # 根据平台和会话信息选择合适的消息链格式
         chain = get_message_chain(self.session_info, chain=message_chain)
         chain = _filter_message_chain_badwords(chain, self.session_info)
 
@@ -231,18 +218,33 @@ class MessageSession:
             if chain is None:
                 return cast(FinishedSession, None)
 
-        # ========== 步骤 2: 安全检查 ==========
-        # 检查消息是否包含敏感信息（如 API 密钥、密码等）
         if not chain.is_safe and not disable_secret_check:
-            # 包含敏感信息，替换为安全提示消息
             chain = MessageChain.assign(I18NContext("error.message.chain.unsafe"))
+
+        # 在 callback 登记之前，避免取消时遗留 pending 注册
+        from core.builtins.parser.hooks import (
+            OutgoingPayload,
+            Stop,
+            dispatch_outgoing_before_send,
+            dispatch_outgoing_result,
+        )
+
+        outgoing_payload = OutgoingPayload(chain=chain, quote=quote)
+        stop_send = await dispatch_outgoing_before_send(self, outgoing_payload)
+        if isinstance(stop_send, Stop):
+            return cast(FinishedSession, FinishedSession(self.session_info, []))
+        chain = outgoing_payload.chain
+        quote = outgoing_payload.quote
+
+        # 改写后的最终消息必须重新过完整发送规范化（含 MessageNodes 节点校验与平台转换）
+        chain = await normalize_outgoing_chain(self.session_info, chain, disable_secret_check)
+        if chain is None:
+            return cast(FinishedSession, None)
+        outgoing_payload.chain = chain
 
         callback_reply_ids = bind_callback_reply_ids(chain, callback_id) if callback else []
 
-        # 在平台发送前为每次 callback 建立独立注册。按钮的虚拟 reply_id 可立即
-        # 命中；即使暂时只有 bot_id fallback，也必须登记一个无主 ID 的 pending
-        # 记录，使同场景并发发送在回包前表现为歧义，而不是误把回复交给先登记者。
-        # callback handle 使用随机 token，因此空主 ID 的并发注册不会互相覆盖。
+        # 在平台发送前为每次 callback 建立独立注册。
         callback_handle = None
         if callback:
             callback_handle = SessionTaskManager.add_callback(
@@ -252,26 +254,26 @@ class MessageSession:
                 fallback_ids=self.session_info.bot_id,
                 timeout=callback_timeout,
                 once=callback_once,
+                allow_all_reply_ids=public_button_reply_ids(chain),
             )
 
-        # ========== 步骤 3: 发送消息 ==========
-        # 通过消息队列发送消息，并阻塞等待返回包含消息 ID 的字典
-
         try:
-            return_val = await _queue_server.client_send_message(
+            return_val = await PlatformAPI.send_message(
                 self.session_info,
                 chain,
                 quote=quote,
             )
-        except BaseException:
+        except (asyncio.CancelledError, SystemExit, KeyboardInterrupt):
             SessionTaskManager.remove_callback(callback_handle)
             raise
+        except BaseException:
+            SessionTaskManager.remove_callback(callback_handle)
+            await dispatch_outgoing_result(self, outgoing_payload, ok=False)
+            raise
 
-        # ========== 步骤 4: 处理回调 ==========
-        if "message_id" in return_val:
-            # 消息发送成功，如果有回调函数则注册
+        if return_val:
             if callback:
-                message_ids = return_val["message_id"]
+                message_ids = return_val
                 if isinstance(message_ids, (str, int)):
                     message_ids = [message_ids]
                 callback_targets = [str(message_id) for message_id in message_ids]
@@ -292,13 +294,17 @@ class MessageSession:
                             fallback_ids=self.session_info.bot_id,
                             timeout=callback_timeout,
                             once=callback_once,
+                            allow_all_reply_ids=public_button_reply_ids(chain),
                         )
                 else:
                     # 空 ID 表示平台发送失败，不能只凭 bot_id 为不存在的消息留下 callback。
                     SessionTaskManager.remove_callback(callback_handle)
 
-            return FinishedSession(self.session_info, return_val["message_id"])
+            # 观察快照带真实消息 ID 与最终发送内容；慢观察者不会延长 callback 未绑定窗口
+            await dispatch_outgoing_result(self, outgoing_payload, ok=True, message_ids=return_val)
+            return FinishedSession(self.session_info, return_val)
         SessionTaskManager.remove_callback(callback_handle)
+        await dispatch_outgoing_result(self, outgoing_payload, ok=False, message_ids=[])
         return FinishedSession(self.session_info, [])
 
     async def finish(
@@ -311,15 +317,7 @@ class MessageSession:
         callback_timeout: float | None = SessionTaskManager.CALLBACK_TTL,
         callback_once: bool = False,
     ) -> NoReturn:
-        """
-        用于向消息用户返回消息并终结会话（模块后续代码不再执行）。
-
-        该方法是处理消息并终止的最终操作。调用此方法后，会抛出 SessionFinished 异常
-        来终止当前会话的处理流程，后续代码不会执行。
-
-        处理流程：
-        1. 如果提供了消息链，先发送消息
-        2. 抛出 SessionFinished 异常终止会话
+        """用于向消息用户返回消息并终结会话（模块后续代码不再执行）。
 
         :param message_chain: 消息链，若传入 str 则自动创建一条带有 PlainElement 的消息链，可不填
         :param quote: 是否引用原始消息（默认为 True）
@@ -332,7 +330,6 @@ class MessageSession:
         """
         f = None
         if message_chain:
-            # 发送消息，但不返回，而是用于后续的 SessionFinished 异常
             f = await self.send_message(
                 message_chain,
                 disable_secret_check=disable_secret_check,
@@ -342,8 +339,6 @@ class MessageSession:
                 callback_timeout=callback_timeout,
                 callback_once=callback_once,
             )
-        # ========== 终止会话 ==========
-        # 抛出 SessionFinished 异常，包含已发送消息的信息
         raise SessionFinished(f)
 
     async def send_direct_message(
@@ -351,25 +346,12 @@ class MessageSession:
         message_chain: Chainable,
         disable_secret_check: bool = False,
     ):
-        """
-        用于向消息用户直接发送消息。
-
-        与 send_message 不同，直接发送消息不会等待消息队列的处理结果，
-        消息会以后台任务的形式发送。
-
-        处理流程：
-        1. 获取消息队列服务
-        2. 转换消息链格式
-        3. 进行安全检查
-        4. 以后台任务（非阻塞）方式发送消息
-        5. 注册回调函数（如有）
+        """用于向消息用户直接发送消息。
 
         :param message_chain: 消息链，若传入 str 则自动创建一条带有 PlainElement 的消息链
         :param disable_secret_check: 是否禁用消息安全检查（默认为 False）
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
 
-        # ========== 步骤 1: 转换和检查消息 ==========
         chain = get_message_chain(session=self.session_info, chain=message_chain)
         chain = _filter_message_chain_badwords(chain, self.session_info)
         if isinstance(chain, MessageNodes):
@@ -382,15 +364,31 @@ class MessageSession:
         if chain is None:
             return None
 
-        # ========== 步骤 2: 以后台任务方式发送消息 ==========
-        # wait=False 表示不等待返回，消息会异步发送。
-        # 须发送已归一化并通过安全检查的 chain，而非原始入参：后者可能是 bare 元素或字符串，
-        # 经队列的 MessageChain | MessageNodes 反序列化时会因缺少 values 而失败。
-        await _queue_server.client_send_message(
-            self.session_info,
-            chain,
-            wait=False,
+        from core.builtins.parser.hooks import (
+            OutgoingPayload,
+            Stop,
+            dispatch_outgoing_before_send,
+            dispatch_outgoing_result,
         )
+
+        outgoing_payload = OutgoingPayload(chain=chain)
+        stop_send = await dispatch_outgoing_before_send(self, outgoing_payload)
+        if isinstance(stop_send, Stop):
+            return None
+        chain = outgoing_payload.chain
+        chain = await normalize_outgoing_chain(self.session_info, chain, disable_secret_check)
+        if chain is None:
+            return None
+        outgoing_payload.chain = chain
+
+        try:
+            await PlatformAPI.send_message.submit(self.session_info, chain, quote=outgoing_payload.quote)
+        except (asyncio.CancelledError, SystemExit, KeyboardInterrupt):
+            raise
+        except BaseException:
+            await dispatch_outgoing_result(self, outgoing_payload, ok=False)
+            raise
+        # submit 仅代表接受投递，不能据此发布 sent
 
     async def send_private_message(
         self,
@@ -398,11 +396,7 @@ class MessageSession:
         user_id: str | None = None,
         disable_secret_check: bool = False,
     ) -> list[str]:
-        """
-        用于向指定用户单独发送私聊消息。
-
-        与 send_message 不同，消息不会发到当前会话所在的场景，而是私信给某个用户，
-        适用于绑定码一类不宜出现在公开场景的内容。
+        """用于向指定用户单独发送私聊消息。
 
         :param message_chain: 消息链，若传入 str 则自动创建一条带有 PlainElement 的消息链
         :param user_id: 目标用户 ID（带平台前缀），留空则发给触发本会话的用户
@@ -417,8 +411,6 @@ class MessageSession:
         if not self.session_info.support_private_msg:
             return []
 
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-
         chain = get_message_chain(self.session_info, chain=message_chain)
         chain = _filter_message_chain_badwords(chain, self.session_info)
         if isinstance(chain, MessageNodes):
@@ -432,12 +424,39 @@ class MessageSession:
         if chain is None:
             return []
 
-        return_val = await _queue_server.client_send_private_message(
-            self.session_info,
-            user_id,
-            chain,
+        from core.builtins.parser.hooks import (
+            OutgoingPayload,
+            Stop,
+            dispatch_outgoing_before_send,
+            dispatch_outgoing_result,
         )
-        return return_val.get("message_id") or []
+
+        outgoing_payload = OutgoingPayload(chain=chain, quote=False)
+        stop_send = await dispatch_outgoing_before_send(self, outgoing_payload)
+        if isinstance(stop_send, Stop):
+            return []
+        chain = outgoing_payload.chain
+        chain = await normalize_outgoing_chain(self.session_info, chain, disable_secret_check)
+        if chain is None:
+            return []
+        outgoing_payload.chain = chain
+        # 私信接口没有引用参数，观察内容始终反映实际的不引用发送。
+        outgoing_payload.quote = False
+
+        try:
+            return_val = await PlatformAPI.send_private_msg(
+                self.session_info,
+                user_id,
+                chain,
+            )
+        except (asyncio.CancelledError, SystemExit, KeyboardInterrupt):
+            raise
+        except BaseException:
+            await dispatch_outgoing_result(self, outgoing_payload, ok=False)
+            raise
+        # 观察入口拿快照，不能改写正式返回值
+        await dispatch_outgoing_result(self, outgoing_payload, ok=bool(return_val), message_ids=return_val or [])
+        return return_val
 
     def as_display(
         self, text_only: bool = False, element_filter: tuple[MessageElement, ...] | None = None, connector: str = "\n"
@@ -458,8 +477,7 @@ class MessageSession:
 
         :param reason: 删除原因（可选）
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_delete_message(self.session_info, self.session_info.message_id, reason)
+        await PlatformAPI.delete_message.submit(self.session_info, self.session_info.message_id, reason)
 
     async def restrict_member(
         self,
@@ -468,17 +486,14 @@ class MessageSession:
         reason: str | None = None,
         wait: bool = False,
     ):
-        """
-        用于禁言场景内成员，可能需要该场景的管理员权限。
-
-        该方法可以禁言单个或多个用户，禁言时长以秒为单位。
+        """用于禁言场景内成员，可能需要该场景的管理员权限。
 
         :param user_id: 用户 ID 或 ID 列表
         :param duration: 禁言时长（秒），为 None 时表示永久禁言
         :param reason: 禁言原因（可选）
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.client_restrict_member(self.session_info, user_id, duration, reason, wait=wait)
+        operation = PlatformAPI.restrict_member if wait else PlatformAPI.restrict_member.submit
+        return await operation(self.session_info, user_id, duration, reason)
 
     async def unrestrict_member(self, user_id: str | list[str], wait: bool = False):
         """
@@ -486,8 +501,8 @@ class MessageSession:
 
         :param user_id: 用户 ID 或 ID 列表
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.client_unrestrict_member(self.session_info, user_id, wait=wait)
+        operation = PlatformAPI.unrestrict_member if wait else PlatformAPI.unrestrict_member.submit
+        return await operation(self.session_info, user_id)
 
     async def kick_member(self, user_id: str | list[str], reason: str | None = None):
         """
@@ -496,8 +511,7 @@ class MessageSession:
         :param user_id: 用户 ID 或 ID 列表
         :param reason: 踢出原因（可选）
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_kick_member(self.session_info, user_id, reason)
+        await PlatformAPI.kick_member.submit(self.session_info, user_id, reason)
 
     async def ban_member(self, user_id: str | list[str], reason: str | None = None):
         """
@@ -506,8 +520,7 @@ class MessageSession:
         :param user_id: 用户 ID 或 ID 列表
         :param reason: 封禁原因（可选）
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_ban_member(self.session_info, user_id, reason)
+        await PlatformAPI.ban_member.submit(self.session_info, user_id, reason)
 
     async def unban_member(self, user_id: str | list[str]):
         """
@@ -515,8 +528,7 @@ class MessageSession:
 
         :param user_id: 用户 ID 或 ID 列表
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_unban_member(self.session_info, user_id)
+        await PlatformAPI.unban_member.submit(self.session_info, user_id)
 
     async def grant_permission_group(
         self,
@@ -526,13 +538,12 @@ class MessageSession:
         wait: bool = False,
     ):
         """为场景成员授予平台原生权限组或角色。"""
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.client_grant_permission_group(
+        operation = PlatformAPI.grant_permission_group if wait else PlatformAPI.grant_permission_group.submit
+        return await operation(
             self.session_info,
             user_id,
             permission_group_id,
             reason,
-            wait=wait,
         )
 
     async def revoke_permission_group(
@@ -543,26 +554,21 @@ class MessageSession:
         wait: bool = False,
     ):
         """移除场景成员的平台原生权限组或角色。"""
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.client_revoke_permission_group(
+        operation = PlatformAPI.revoke_permission_group if wait else PlatformAPI.revoke_permission_group.submit
+        return await operation(
             self.session_info,
             user_id,
             permission_group_id,
             reason,
-            wait=wait,
         )
 
     async def add_reaction(self, emoji: str) -> Any:
-        """
-        用于给这条消息添加反应。
-
-        支持的反应格式取决于具体平台。
+        """用于给这条消息添加反应。
 
         :param emoji: 反应内容（如表情符号、Unicode 字符等）
         :return: 平台返回的反应结果
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.client_add_reaction(self.session_info, self.session_info.message_id, emoji)
+        return await PlatformAPI.add_reaction(self.session_info, self.session_info.message_id, emoji)
 
     async def remove_reaction(self, emoji: str) -> Any:
         """
@@ -571,84 +577,54 @@ class MessageSession:
         :param emoji: 反应内容（如表情符号、Unicode 字符等）
         :return: 平台返回的删除结果
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.client_remove_reaction(self.session_info, self.session_info.message_id, emoji)
+        return await PlatformAPI.remove_reaction(self.session_info, self.session_info.message_id, emoji)
 
     async def check_native_permission(self) -> bool:
-        """
-        用于检查消息用户原本在聊天平台中是否具有管理员权限。
-
-        这检查的是原生平台权限（如 QQ 群管理员），而非 AkariBot 的权限。
+        """用于检查消息用户原本在聊天平台中是否具有管理员权限。
 
         :return: 如果用户是平台管理员返回 True，否则返回 False
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.client_check_native_permission(self.session_info)
+        return await PlatformAPI.check_native_permission(self.session_info)
+
+    async def check_bot_state(self) -> BotState:
+        """Return the bot's context membership and native permission state."""
+        return await PlatformAPI.check_bot_state(self.session_info)
 
     async def handle_error_signal(self):
-        """
-        用于处理错误信号。
-
-        通知消息队列服务这条消息的处理过程中出现了错误，
-        可以用于更新消息状态或执行错误恢复操作。
-        """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_error_signal(self.session_info)
+        """用于处理错误信号。"""
+        await PlatformAPI.error_signal.submit(self.session_info)
 
     async def hold(self):
-        """
-        用于持久化会话上下文，用于手动控制会话的生命周期，避免会话结束后资源被释放。
-
-        在需要保持会话活跃状态以处理异步操作时使用。
-        """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_hold_context(self.session_info)
+        """用于持久化会话上下文，用于手动控制会话的生命周期，避免会话结束后资源被释放。"""
+        try:
+            await PlatformAPI.hold_context(self.session_info)
+        except RpcRemoteError as exc:
+            if exc.remote_type == SessionContextUnavailable.__name__ or (
+                exc.remote_type == ValueError.__name__ and str(exc) == "Session not found in context"
+            ):
+                raise SessionContextUnavailable(str(exc)) from exc
+            raise
 
     async def release(self):
-        """
-        用于手动释放持久化的会话。
-
-        释放之前通过 `hold()` 方法保持的会话，允许系统回收相关资源。
-        """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_release_context(self.session_info)
+        """用于手动释放持久化的会话。"""
+        await PlatformAPI.release_context(self.session_info)
 
     async def start_typing(self):
-        """
-        用于在会话中开始输入状态。
-
-        显示“正在输入……”提示给其他用户，表示机器人正在处理消息。
-        """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_start_typing_signal(self.session_info)
+        """用于在会话中开始输入状态。"""
+        await PlatformAPI.start_typing(self.session_info)
 
     async def end_typing(self):
-        """
-        用于结束会话中的输入状态。
-
-        关闭“正在输入……”提示。
-        """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_end_typing_signal(self.session_info)
+        """用于结束会话中的输入状态。"""
+        await PlatformAPI.end_typing(self.session_info)
 
     async def _add_confirm_reaction(self, message_id: str | list[str]):
-        """
-        内部方法：添加确认反应。
-
-        自动为不同平台选择合适的确认反应（勾选和叉号）。
-
-        :param message_id: 消息 ID
-        """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
         if self.session_info.support_reaction:
             if self.session_info.client_name in ["QQ", "QQBot"]:
-                # QQ 平台使用特定的反应 ID
-                await _queue_server.client_add_reaction(self.session_info, message_id, "11093")
-                await _queue_server.client_add_reaction(self.session_info, message_id, "10060")
+                await PlatformAPI.add_reaction(self.session_info, message_id, "11093")
+                await PlatformAPI.add_reaction(self.session_info, message_id, "10060")
             else:
-                # 其他平台使用 Unicode 表情
-                await _queue_server.client_add_reaction(self.session_info, message_id, "⭕")
-                await _queue_server.client_add_reaction(self.session_info, message_id, "❌")
+                await PlatformAPI.add_reaction(self.session_info, message_id, "⭕")
+                await PlatformAPI.add_reaction(self.session_info, message_id, "❌")
 
     async def wait_confirm(
         self,
@@ -659,20 +635,9 @@ class MessageSession:
         append_instruction: bool = True,
         no_confirm_action: bool = True,
         release_execution_lock: bool = True,
+        consume_any_message: bool = False,
     ) -> bool:
-        """
-        一次性模板，用于等待触发对象确认。
-
-        该方法会发送一条消息并等待用户通过反应或确认指令来确认。
-        支持两种确认方式：反应确认（如果平台支持）或文本确认。
-
-        处理流程：
-        1. 移除执行锁，结束输入状态
-        2. 检查是否启用了无确认模式
-        3. 发送确认消息（如提供）
-        4. 添加反应按钮（如适用）
-        5. 等待用户响应
-        6. 返回确认结果
+        """一次性模板，用于等待触发对象确认。
 
         :param message_chain: 需要发送的确认消息，可不填（默认为通用确认提示）
         :param quote: 是否引用原始消息（默认为 True）
@@ -682,6 +647,7 @@ class MessageSession:
         :param no_confirm_action: 在 `no_confirm` 配置项启用后的默认行为（默认为 True）
         :param release_execution_lock: 等待期间是否释放执行锁。Union 合并在建立
                                        双方 barrier 后须保持锁，避免冲突选择期间重新并发。
+        :param consume_any_message: 是否将下一条任意消息作为否定结果消费，而不是仅消费确认词。
         :return: 若对象发送确认指令返回 True，反之返回 False
 
         :raises WaitCancelException: 如果超时或用户未确认
@@ -702,7 +668,13 @@ class MessageSession:
             chain.append(Button(self.session_info.locale.t("message.button.no"), "confirm_no"))
         send = None
         flag = asyncio.Event()
-        SessionTaskManager.add_task(self, flag, timeout=timeout)
+        SessionTaskManager.add_task(
+            self,
+            flag,
+            timeout=timeout,
+            task_type="wait",
+            matcher=None if consume_any_message else _is_confirmation_message,
+        )
         task_info = None
         try:
             # 等待任务须在跨进程发送提示前登记；平台可能已展示消息并收到用户操作，
@@ -738,17 +710,7 @@ class MessageSession:
         append_instruction: bool = True,
         possibly_choices: list[dict[str, str]] | None = None,
     ) -> MessageSession:
-        """
-        一次性模板，用于等待对象的下一条消息。
-
-        该方法会发送一条提示消息并等待用户发送下一条消息。
-
-        处理流程：
-        1. 移除执行锁，结束输入状态
-        2. 发送消息（如提供）
-        3. 添加提示指令（如启用）
-        4. 等待用户发送消息
-        5. 返回用户的消息作为新的 MessageSession
+        """一次性模板，用于等待对象的下一条消息。
 
         :param message_chain: 需要发送的提示消息，可不填
         :param quote: 是否引用原始消息（默认为 True）
@@ -764,7 +726,7 @@ class MessageSession:
         released_lease = ExecutionLockList.remove(self)
         await self.end_typing()
         flag = asyncio.Event()
-        SessionTaskManager.add_task(self, flag, timeout=timeout)
+        SessionTaskManager.add_task(self, flag, timeout=timeout, task_type="wait_next", allow_fallthrough=True)
         task_info = None
         try:
             if message_chain:
@@ -798,9 +760,6 @@ class MessageSession:
         delete: bool = True,
     ) -> bool:
         """验证当前操作是否由用户完成。
-
-        从 1 到 100 中抽取三个不重复的数字，并随机指定其中一个作为答案。支持按钮的平台会展示
-        三个数字按钮，不支持按钮的平台则要求用户发送目标数字。
 
         :param message_chain: 需要发送的提示消息，可不填
         :param timeout: 等待用户操作的超时时间（秒），默认为 120 秒。
@@ -839,10 +798,7 @@ class MessageSession:
         delete: bool = False,
         timeout: float | None = 120,
     ) -> MessageSession:
-        """
-        一次性模板，用于等待触发对象所属场景内任意成员的消息。
-
-        该方法会发送一条消息并等待该场景中的任何用户（不仅仅是原始触发者）发送消息。
+        """一次性模板，用于等待触发对象所属场景内任意成员的消息。
 
         :param message_chain: 需要发送的消息，可不填
         :param quote: 是否引用原始消息（默认为 False）
@@ -856,7 +812,14 @@ class MessageSession:
         released_lease = ExecutionLockList.remove(self)
         await self.end_typing()
         flag = asyncio.Event()
-        SessionTaskManager.add_task(self, flag, all_=True, timeout=timeout)
+        SessionTaskManager.add_task(
+            self,
+            flag,
+            all_=True,
+            timeout=timeout,
+            task_type="wait_anyone",
+            allow_fallthrough=True,
+        )
         task_info = None
         try:
             if message_chain:
@@ -886,19 +849,7 @@ class MessageSession:
         all_: bool = False,
         append_instruction: bool = True,
     ) -> MessageSession:
-        """
-        一次性模板，用于等待触发对象回复消息。
-
-        该方法会发送一条消息并等待用户以回复的形式响应（需要平台支持）。
-
-        如果平台不支持回复功能，会退化为 `wait_next_message` 或 `wait_anyone`。
-
-        处理流程：
-        1. 检查平台是否支持回复功能
-        2. 发送消息
-        3. 添加回复提示
-        4. 等待用户回复
-        5. 返回用户的回复消息
+        """一次性模板，用于等待触发对象回复消息。
 
         :param message_chain: 需要发送的消息
         :param quote: 是否引用原始消息（默认为 True）
@@ -912,7 +863,6 @@ class MessageSession:
         """
         if not self.session_info.support_quote:
             chain = get_message_chain(self.session_info, message_chain)
-            # 合并转发消息无从追加提示行，此时略过
             if append_instruction and isinstance(chain, MessageChain):
                 chain.append(I18NContext("message.wait.next_message.prompt"))
             if all_:
@@ -922,34 +872,21 @@ class MessageSession:
         released_lease = ExecutionLockList.remove(self)
         await self.end_typing()
         chain = get_message_chain(self.session_info, message_chain)
-        # 合并转发消息无从追加提示行，此时略过
         if append_instruction and isinstance(chain, MessageChain):
-            chain.append(I18NContext("message.reply.prompt"))
+            chain.append(I18NContext("message.wait.reply.prompt"))
         send = None
         flag = asyncio.Event()
-        # 先登记 pending reply，再把提示发往平台。用户可能在平台已展示
-        # 消息、而发送 action 的 message_id 尚未回到 Server 时立即回复。
         SessionTaskManager.add_task(self, flag, all_=all_, reply_pending=True, timeout=timeout)
-        task_info = None
         try:
-            # timeout 是整次交互的预算，而不是只从平台发送回包后才开始计时。
-            # 否则一个卡住的跨进程发送可让 pending reply task 和引用它的入站
-            # parser 一直阻塞到 JobQueue 的全局超时，远超调用方声明的等待时长。
             async with asyncio.timeout(timeout):
                 send = await self.send_message(chain, quote)
                 if not send.message_id or not SessionTaskManager.set_task_reply(self, send.message_id, all_=all_):
                     raise WaitCancelException
                 await flag.wait()
         except TimeoutError:
-            # timeout 与 incoming 完成可能落在同一事件循环拍。真正的线性化点是
-            # _complete_wait_task() 是否已经写入 result，而不是根 waiter 是否抢先
-            # 从 flag.wait() 恢复；finally 取回 task_info 后再据此决定成功或取消。
             pass
         finally:
             task_info = SessionTaskManager.remove_task(self, all_=all_)
-            # 平台消息可能已经发送成功，但等待任务随后被取消、超时清理或在补
-            # reply ID 前失效。delete=True 时统一在退出等待域时撤回提示，避免
-            # 留下已经无法交互的消息；删除失败不能覆盖原始等待结果或控制流。
             if send and delete:
                 try:
                     await send.delete()
@@ -984,10 +921,7 @@ class MessageSession:
         return bool(self.session_info.sender_union_info.superuser)
 
     async def check_permission(self) -> bool:
-        """
-        用于检查消息用户在场景内的权限。
-
-        检查用户是否拥有管理员权限（包括自定义管理员和平台原生管理员）。
+        """用于检查消息用户在场景内的权限。
 
         :return: 如果用户拥有管理员权限返回 True，否则返回 False
         """
@@ -999,17 +933,13 @@ class MessageSession:
         return await self.check_native_permission()
 
     async def call_onebot_api(self, api_name: str, **kwargs) -> Any:
-        """
-        调用 OneBot API。
-
-        该方法允许直接调用底层的 OneBot 兼容 API，用于在 QQ 平台进行更高级的操作。
+        """调用 OneBot API。
 
         :param api_name: API 名称
         :param kwargs: API 参数
         :return: API 返回结果
         """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        return await _queue_server.call_onebot_api(self.session_info, api_name=api_name, **kwargs)
+        return await PlatformAPI.call_onebot_api(self.session_info, api_name=api_name, **kwargs)
 
     @deprecated(reason="Use `call_onebot_api` instead.")
     async def call_api(self, api_name: str, **kwargs):
@@ -1026,44 +956,32 @@ class MessageSession:
     sendDirectMessage = send_direct_message
     asDisplay = as_display
     checkNativePermission = check_native_permission
+    checkBotState = check_bot_state
     callOneBotAPI = call_onebot_api
 
     def format_time(
         self,
         timestamp: float,
         date: bool = True,
-        iso: bool = False,
+        simple: bool = False,
         time: bool = True,
         seconds: bool = True,
         timezone: bool = True,
     ) -> str:
-        """
-        用于将时间戳转换为可读的时间格式。
-
-        根据会话的地区设置和时区进行本地化格式化。支持多种日期和时间格式。
+        """用于将时间戳转换为可读的时间格式。
 
         :param timestamp: UTC 时间戳
         :param date: 是否显示日期（默认为 True）
-        :param iso: 是否以 ISO 格式显示日期（默认为 False）
+        :param simple: 是否以简单格式显示日期（默认为 False）
         :param time: 是否显示时间（默认为 True）
         :param seconds: 是否显示秒（默认为 True）
         :param timezone: 是否显示时区（默认为 True）
         :return: 格式化后的时间字符串
-
-        示例：
-        ```
-            > session.format_time(1234567890, date=True, time=True)
-            'February 13, 2009 23:31:30 (UTC)'
-        ```
         """
-        dt = datetime.fromtimestamp(timestamp, UTC) + self.session_info.timezone_offset
         ftime_template = []
         if date:
-            if iso:
-                ftime_template.append(self.session_info.locale.t("time.date.iso.format"))
-            elif self.session_info.locale.locale == "ja_jp":
-                era_date = EraDate.from_date(dt).strftime(self.session_info.locale.t("time.date.format"))
-                ftime_template.append(era_date)
+            if simple:
+                ftime_template.append(self.session_info.locale.t("time.date.simple.format"))
             else:
                 ftime_template.append(self.session_info.locale.t("time.date.format"))
         if time:
@@ -1076,26 +994,17 @@ class MessageSession:
                 ftime_template.append("(UTC)")
             else:
                 ftime_template.append(f"(UTC{self.session_info._tz_offset})")
-        return (datetime.fromtimestamp(timestamp, UTC) + self.session_info.timezone_offset).strftime(
-            " ".join(ftime_template)
+        return safe_strftime(
+            datetime.fromtimestamp(timestamp, UTC) + self.session_info.timezone_offset,
+            " ".join(ftime_template),
         )
 
     def format_num(self, number: Decimal | int | str, precision: int = 0) -> str:
-        """
-        格式化数字为本地化的表示。
-
-        根据地区设置进行本地化处理，包括数字分隔符和单位符号的翻译。
-        支持自动缩放大数字（如 100万 -> 1百万 或 1M）。
+        """格式化数字为本地化的表示。
 
         :param number: 要格式化的数字
         :param precision: 保留小数点位数（默认为 0）
         :return: 本地化格式的数字字符串
-
-        示例：
-        ```
-            > session.format_num(1000000, precision=1)  # 中文: '100.0万'
-            > session.format_num(1000000, precision=1)  # 英文: '1.0M'
-        ```
         """
 
         def _get_cjk_unit(number: Decimal) -> tuple[int, Decimal] | None:
@@ -1119,7 +1028,6 @@ class MessageSession:
             return None
 
         def _fmt_num(number: Decimal, precision: int) -> str:
-            # 四舍五入并格式化为指定精度
             number = number.quantize(Decimal(f"1.{'0' * precision}"), rounding=ROUND_HALF_UP)
             num_str = f"{number:.{precision}f}".rstrip("0").rstrip(".")
             return num_str if precision > 0 else str(int(number))
@@ -1129,7 +1037,6 @@ class MessageSession:
         else:
             return str(number)
 
-        # 根据地区选择合适的单位系统
         if self.session_info.locale.locale in ["ja_jp", "ko_kr", "zh_cn", "zh_tw"]:
             unit_info = _get_cjk_unit(Decimal(number))
         else:
@@ -1146,10 +1053,7 @@ class MessageSession:
         return hash(self.session_info.session_id)
 
     def __eq__(self, other):
-        """
-        比较两个消息会话对象是否相等。
-
-        两个会话仅当会话 ID 相同时才认为相等。
+        """比较两个消息会话对象是否相等。
 
         :param other: 另一个对象
         :return: 如果相等返回 True，否则返回 False
@@ -1161,16 +1065,7 @@ class MessageSession:
 
 @define
 class FinishedSession:
-    """
-    结束会话类 - 表示已完成的消息发送会话。
-
-    该类封装了消息发送后的结果，包含发送到的会话和消息 ID。
-    可用于进一步的操作，如删除消息、添加反应等。
-
-    属性说明：
-        session: 消息被发送的会话信息
-        message_id: 发送的消息 ID（可能是列表，表示多条消息）
-    """
+    """结束会话类 - 表示已完成的消息发送会话。"""
 
     session: SessionInfo
     message_id: list[int] | list[str] | int | str | None = None
@@ -1189,11 +1084,8 @@ class FinishedSession:
         return cls(session, message_id)
 
     async def delete(self):
-        """
-        用于删除这条消息。
-        """
-        _queue_server: "JobQueueServer" = exports["JobQueueServer"]
-        await _queue_server.client_delete_message(self.session, self.message_id)
+        """用于删除这条消息。"""
+        await PlatformAPI.delete_message.submit(self.session, self.message_id)
 
     def __str__(self):
         """返回字符串表示"""
@@ -1202,15 +1094,7 @@ class FinishedSession:
 
 @define
 class FetchedMessageSession(MessageSession):
-    """
-    主动获取的消息会话。
-
-    该类用于表示机器人主动获取的消息会话（如通过 API 查询历史消息）。
-    继承自 MessageSession，提供相同的消息处理功能。
-
-    示例：
-        > session = await FetchedMessageSession.from_session_info(session_info)
-    """
+    """主动获取的消息会话。"""
 
     @classmethod
     async def from_session_info(cls, session: FetchedSessionInfo | SessionInfo):

@@ -37,23 +37,23 @@ WIKI_URL_RULE_TABLES = (
     ("module_wiki_block_list", GlobalURLBlocklist),
 )
 
+# v6：绑定表补充 OAuth 授权所需的列，水鱼、落雪两侧的取数方式都改由 OAuth 令牌决定。
+OAUTH_BIND_COLUMNS = (
+    ("module_maimai_diving_prober_bind_info", "refresh_token", "VARCHAR(1024)"),
+    ("module_maimai_diving_prober_bind_info", "subject", "VARCHAR(512)"),
+    ("module_maimai_lxns_prober_bind_info", "refresh_token", "VARCHAR(1024)"),
+)
+
+# v6：绑定方式换代后不再读写的历史列。落雪好友码曾用于免授权的查分接口，现已改为上传 OAuth 令牌，
+# 模型也不再声明该列；留着它只会让库结构与模型长期不一致（旧列带 NOT NULL 且无默认值，新写入会直接失败）。
+OBSOLETE_BIND_COLUMNS = (("module_maimai_lxns_prober_bind_info", "friend_code"),)
+
 
 def quote_ident(name: str) -> str:
-    """
-    按当前数据库类型给标识符加引号。
-
-    :param name: 表名或列名。
-    """
     return f'"{name}"' if db_type == "sqlite" else f"`{name}`"
 
 
 async def has_table(conn, table: str) -> bool:
-    """
-    判断某张表是否存在。
-
-    :param conn: 数据库连接。
-    :param table: 表名。
-    """
     if db_type == "sqlite":
         rows = await conn.execute_query_dict(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?;", [table]
@@ -67,13 +67,6 @@ async def has_table(conn, table: str) -> bool:
 
 
 async def has_column(conn, table: str, column: str) -> bool:
-    """
-    判断某张表中是否存在指定列，表不存在时同样返回 False。
-
-    :param conn: 数据库连接。
-    :param table: 表名。
-    :param column: 列名。
-    """
     if db_type == "sqlite":
         rows = await conn.execute_query_dict(f"PRAGMA table_info({quote_ident(table)});")
         return any(row["name"] == column for row in rows)
@@ -86,16 +79,6 @@ async def has_column(conn, table: str, column: str) -> bool:
 
 
 async def has_index(conn, table: str, column: str) -> bool:
-    """
-    判断某张表的指定列上是否已有索引（作为任意索引的首列即算）。
-
-    按列而非按索引名判断：新建的库由 ``generate_schemas`` 依模型声明建索引，索引名由 ORM 生成，
-    与迁移里显式指定的名字不同；若按名字判断，已有索引的库会被重复建一份。
-
-    :param conn: 数据库连接。
-    :param table: 表名。
-    :param column: 列名。
-    """
     if db_type == "sqlite":
         indexes = await conn.execute_query_dict(f"PRAGMA index_list({quote_ident(table)});")
         for index in indexes:
@@ -112,7 +95,6 @@ async def has_index(conn, table: str, column: str) -> bool:
 
 
 async def migrate_wiki_url_rules(conn) -> None:
-    """将旧 Wiki API 名单迁入全局 URL 用户规则文件。"""
     for table, rule_list in WIKI_URL_RULE_TABLES:
         if not await has_table(conn, table):
             continue
@@ -122,11 +104,6 @@ async def migrate_wiki_url_rules(conn) -> None:
 
 
 async def update_database_to_v3(conn):
-    """
-    将数据库升级至 v3：平台 ID 与数据解耦，数据改挂 union。
-
-    :param conn: 数据库连接。
-    """
     # 核心表改名。update_database() 已先跑过 generate_schemas()，按新模型建出的目标表此刻为空表，
     # 须先移除再改名，否则改名会与之冲突。目标表若已有数据，说明改名早已完成，跳过即可。
     for old_table, new_table in UNION_RENAME_CORE_TABLES.items():
@@ -241,6 +218,37 @@ async def update_database_to_v4(conn):
     await migrate_wiki_url_rules(conn)
 
 
+async def update_database_to_v5(conn):
+    """将数据库升级至 v5：丢弃旧任务队列表并按当前模型重新创建。
+
+    :param conn: 数据库连接。
+    """
+    await conn.execute_query(f"DROP TABLE IF EXISTS {quote_ident('job_queues')};")
+    await Tortoise.generate_schemas(safe=True)
+
+
+async def update_database_to_v6(conn):
+    """将数据库升级至 v6：为绑定表调整 OAuth 授权所需的列。
+
+    :param conn: 数据库连接。
+    """
+    for table, column, column_type in OAUTH_BIND_COLUMNS:
+        if not await has_table(conn, table):
+            # 未启用该模块时这张表可能根本不存在，此时无需迁移。
+            continue
+        if await has_column(conn, table, column):
+            continue
+        await conn.execute_query(
+            f"ALTER TABLE {quote_ident(table)} ADD COLUMN {quote_ident(column)} {column_type} NULL;"
+        )
+    for table, column in OBSOLETE_BIND_COLUMNS:
+        if not await has_table(conn, table):
+            continue
+        if not await has_column(conn, table, column):
+            continue
+        await conn.execute_query(f"ALTER TABLE {quote_ident(table)} DROP COLUMN {quote_ident(column)};")
+
+
 async def update_database():
     database_list = fetch_module_db()
     await Tortoise.init(db_url=get_db_link(), modules={"models": ["core.database.models"] + database_list})
@@ -328,4 +336,18 @@ async def update_database():
 
             await query_dbver.delete()
             await DBVersion.create(version=4)
+        if db_version < 5:
+            query_dbver = await DBVersion.first()
+
+            await update_database_to_v5(conn)
+
+            await query_dbver.delete()
+            await DBVersion.create(version=5)
+        if db_version < 6:
+            query_dbver = await DBVersion.first()
+
+            await update_database_to_v6(conn)
+
+            await query_dbver.delete()
+            await DBVersion.create(version=6)
     await Tortoise.close_connections()

@@ -20,6 +20,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger as APSchedulerIntervalTrigger
 
 from core.config.base import CoreConfig
+from core.module_runtime import ModuleRuntimeManager
 
 if TYPE_CHECKING:
     from core.types import Module
@@ -111,10 +112,16 @@ class SchedulerLifecycle:
                 cls._active_tasks[current] = spec.job_id
 
             try:
-                result = spec.function()
-                if inspect.isawaitable(result):
-                    return await result
-                return result
+                if spec.module_name is None:
+                    result = spec.function()
+                    if inspect.isawaitable(result):
+                        return await result
+                    return result
+                async with ModuleRuntimeManager.use(spec.module_name):
+                    result = spec.function()
+                    if inspect.isawaitable(result):
+                        return await result
+                    return result
             finally:
                 cls._active_tasks.pop(current, None)
 
@@ -272,11 +279,7 @@ class SchedulerLifecycle:
     @classmethod
     @asynccontextmanager
     async def maintenance_window(cls, module_names: Iterable[str] | None = None):
-        """暂停新触发并取消、等待目标范围内正在运行的 Job。
-
-        ``module_names=None`` 表示数据库级全局维护。窗口允许同一 Task 重入，
-        Loader 外层覆盖 Python reload 时，``reload_db()`` 可再次进入而不死锁。
-        """
+        """暂停新触发并取消、等待目标范围内正在运行的 Job。"""
         current = asyncio.current_task()
         if current is None:
             raise RuntimeError("Scheduler maintenance requires an asyncio task.")

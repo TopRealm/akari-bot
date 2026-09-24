@@ -24,12 +24,8 @@ from tomlkit.items import AoT, Table
 from core.constants.path import CONFIG_READONLY_ENV, config_path as default_config_path
 
 # 守护进程在 spawn 子进程之前置位，spawn 会继承环境。
-# 该闸门须赶在 core.config 被导入之前生效：core/config/update.py 的版本迁移是导入期执行的，
-# 而 go() 中的 Info.subprocess = True 置位过迟：其前一行的 core.logger 已导入 core.config。
 CONFIG_READONLY = bool(os.environ.get(CONFIG_READONLY_ENV))
 
-# 配置版本迁移只应发生在 pre_init 中。core.config.update 全仓仅此一处导入且为纯副作用导入，
-# 跳过该导入即可，无需改动其内部的顶层代码。
 if not CONFIG_READONLY:
     import core.config.update  # noqa
 
@@ -43,7 +39,6 @@ I18N_COMMENT_PATTERN = re.compile(r"^#\s*\{I18N:(?P<key>[^}]+)}\s*$")
 
 
 def _localized_config_text(locale: Locale, key: str) -> str | None:
-    """取得配置注释文本，无法翻译时返回 ``None``，避免把 i18n 标记写入配置。"""
     localized = locale.t(key, locale_failed_prompt=False)
     if localized in (key, f"{{I18N:{key}}}"):
         return None
@@ -63,7 +58,6 @@ class CFGManager:
 
     # 运行期只读状态统一取自该类属性，便于测试覆盖。
     readonly: bool = CONFIG_READONLY
-    # 授权写入的嵌套深度。用计数而非布尔：write() 内部会调用 save()，两层都须放行。
     _allow_write_depth = 0
 
     # 等待进入临界区的上限（秒）
@@ -75,16 +69,6 @@ class CFGManager:
     @classmethod
     @contextmanager
     def _exclusive(cls):
-        """
-        以配置目录下的锁文件在进程间互斥，可重入。
-
-        守护进程为每个平台各启动一个子进程，另有一个 server 进程，它们均会读写同一批配置文件，
-        而类属性形式的锁在每个进程中各有一份，无法约束跨进程的并发写入。此处改用锁文件，
-        使同一时刻仅有一个进程处于读写配置的临界区内。
-
-        可重入是必要的：一次改写须在同一个临界区内完成「重新加载 → 修改 → 保存」，
-        否则本进程会以过时的内存副本整体覆盖磁盘，致使其它进程期间写入的配置项丢失。
-        """
         if cls._lock_depth:
             cls._lock_depth += 1
             try:
@@ -121,7 +105,6 @@ class CFGManager:
     @classmethod
     @contextmanager
     def _writable(cls):
-        """临时解除只读限制，仅供 edit_* 使用。可重入。"""
         cls._allow_write_depth += 1
         try:
             yield
@@ -130,16 +113,6 @@ class CFGManager:
 
     @classmethod
     def _ensure_writable(cls, q: str | None = None, table_name: str | None = None, secret: bool = False):
-        """在只读进程中拒绝写入。
-
-        配置的生成统一由 bot.py 的 pre_init() 完成，bot 与 server 子进程一律只读，
-        以免同一批配置项被多个进程重复补写。交互式编辑须经 edit_write() / edit_delete()。
-
-        :param q: 配置项键名，仅用于组装错误信息。
-        :param table_name: 配置项表名，仅用于组装错误信息。
-        :param secret: 是否为密钥配置项，仅用于组装错误信息。
-        :raises ConfigOperationError: 当前进程只读，且不处于授权写入的作用域内。
-        """
         if not cls.readonly or cls._allow_write_depth:
             return
         process_name = multiprocessing.current_process().name
@@ -154,7 +127,7 @@ class CFGManager:
         )
 
     @classmethod
-    def load(cls):  # Load the config file
+    def load(cls):
         with cls._exclusive():
             try:
                 cls.config_file_list = [cfg.name for cfg in cls.config_path.glob("*.toml")]
@@ -175,7 +148,7 @@ class CFGManager:
                 raise ConfigValueError(e)
 
     @classmethod
-    def save(cls):  # Save the config files
+    def save(cls):
         cls._ensure_writable()
         with cls._exclusive():
             try:
@@ -195,16 +168,6 @@ class CFGManager:
 
     @staticmethod
     def _atomic_write(path: Path, content: str):
-        """
-        原子地写入配置文件。
-
-        以 ``"w"`` 直接打开会立即截断原文件，此后进程若被强制结束（守护进程重启子进程所用的
-        正是 SIGKILL），磁盘上将只剩一个空文件；而空 TOML 解析不会报错，下次加载即静默丢失全部配置。
-        因此先写入同目录下的临时文件，再由 ``os.replace()`` 原子替换。
-
-        :param path: 目标文件路径。
-        :param content: 文件内容。
-        """
         tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -216,7 +179,7 @@ class CFGManager:
             tmp_path.unlink(missing_ok=True)
 
     @classmethod
-    def watch(cls):  # Watch for changes in the config file and reload if necessary
+    def watch(cls):
         if cls._watch_lock:
             return
         # 若每次读取配置都对全部文件执行 stat，单次属性访问将产生数十次系统调用，
@@ -276,7 +239,6 @@ class CFGManager:
         document = cls.values.get(cfg_name)
         if not document:
             return False
-        # 表外的顶层键值对，例如 default_locale。
         if q in document and not isinstance(document[q], Table):
             return True
         table = document.get(target)
@@ -285,10 +247,6 @@ class CFGManager:
     @classmethod
     def repair_i18n_comments(cls) -> int:
         """翻译配置中遗留的 ``{I18N:key}`` 注释标记。
-
-        旧版 pre-init 在连接 i18n 快照之前补全配置，导致翻译器把原始标记写入 TOML。
-        已存在的配置项不会再次进入生成分支，因此须在模板扫描结束后显式修复。
-        找不到翻译的过时标记会被清空，避免继续把内部键名展示给用户；配置值不受影响。
 
         :return: 被替换或清空的注释数量。
         """
@@ -337,6 +295,7 @@ class CFGManager:
         table_name: str | None = None,
         _global: bool = False,
         _generate: bool = False,
+        standalone_comment_keys: tuple[str, ...] = (),
     ) -> Any:
         """
         获取配置文件中的配置项。
@@ -348,6 +307,7 @@ class CFGManager:
         :param table_name: 配置项表名。
         :param _global: 内部变量，是否在所有表中查找配置项。（默认为False）
         :param _generate: 内部变量，生成配置文件时使用。（默认为False）
+        :param standalone_comment_keys: 生成字段前独立注释块所使用的 i18n 键
 
         :return: 配置文件中对应配置项的值。
         """
@@ -356,11 +316,9 @@ class CFGManager:
         value = None
 
         if not table_name:
-            if not _global:  # if table_name is not provided, search for the value in config.toml tables
+            if not _global:
                 for t in cls.values["config"].keys():
                     if isinstance(cls.values["config"][t], Table):
-                        # [config]
-                        # foo = bar  <- get the value inside the table
                         if secret:
                             if "secret" in cls.values["config"]:
                                 value = cls.values["config"]["secret"].get(q)
@@ -372,13 +330,10 @@ class CFGManager:
                                 if value is not None:
                                     break
                     else:
-                        # foo = bar <- if the item is not a table, assume it is a key-value pair outside the table
-                        # [config]
-                        # foo = bar
                         if t == q:
                             value = cls.values["config"][t]
                             break
-            else:  # search for the value in all tables
+            else:
                 found = False
                 for t in cls.values:
                     for tt in cls.values[t].keys():
@@ -403,25 +358,23 @@ class CFGManager:
             if table_name.endswith("_secret"):
                 table_name, secret = table_name.removesuffix("_secret"), True
 
-            # if table_name is provided, write the value to the specified table
             if table_name != "config":
                 target = f"{table_name}{'_secret' if secret else ''}"
             else:
                 target = "secret" if secret else "config"
             try:
-                # if table_name is provided, get for the value in the specified table directly
                 value = cls.values[table_name].get(target).get(q)
             except (AttributeError, KeyError):
                 pass
 
-        if re.match(r"^<Replace me.*?>$", str(value)):  # if we get a placeholder value, return None
+        if re.match(r"^<Replace me.*?>$", str(value)):
             return None
 
-        if value is None:  # if the value is not found, write the default value to the config file
+        if value is None:
             if default is not None:
                 if isinstance(default, dict):
-                    default = orjson.dumps(default).decode()  # if the default value is dict, convert to json str
-                elif isinstance(default, tuple):  # if the default value is tuple, convert to list
+                    default = orjson.dumps(default).decode()
+                elif isinstance(default, tuple):
                     default = list(default)
                     cfg_type = cfg_type if cfg_type else list
                 elif not isinstance(default, ALLOWED_TYPES):
@@ -430,10 +383,9 @@ class CFGManager:
                 else:
                     cfg_type = cfg_type if cfg_type else type(default)
 
-            cls.write(q, default, cfg_type, secret, table_name, _generate)
+            cls.write(q, default, cfg_type, secret, table_name, _generate, standalone_comment_keys)
             return default
 
-        # if cfg_type provided, start type check
         if cfg_type:
             if isinstance(cfg_type, (type, tuple)):
                 if isinstance(cfg_type, tuple) and not all(issubclass(t, ALLOWED_TYPES) for t in cfg_type):
@@ -442,12 +394,11 @@ class CFGManager:
                 if isinstance(cfg_type, type) and not issubclass(cfg_type, ALLOWED_TYPES):
                     logger.error(f"[Config] Config {q} has an unsupported cfg_type {cfg_type.__name__}.")
                     return None
-                # check that value matches cfg_type type
                 if value is not None and not isinstance(value, cfg_type):
                     if list in (cfg_type if isinstance(cfg_type, tuple) else [cfg_type]) and isinstance(value, tuple):
-                        value = list(value)  # allow tuple as list
+                        value = list(value)
                     if (float in (cfg_type if isinstance(cfg_type, tuple) else [cfg_type])) and isinstance(value, int):
-                        pass  # allow int as float
+                        pass
                     else:
                         expected_type = (
                             ", ".join(map(lambda t: t.__name__, cfg_type))
@@ -460,8 +411,7 @@ class CFGManager:
                             }."
                         )
         elif default is not None and not isinstance(value, type(default)):
-            # if cfg_type is not provided but default is given, check that value is consistent with default type
-            if not (isinstance(default, float) and isinstance(value, int)):  # allow int as float
+            if not (isinstance(default, float) and isinstance(value, int)):
                 logger.warning(
                     f"[Config] Config {q} has a wrong type, expected {type(default).__name__}, got {
                         type(value).__name__
@@ -479,6 +429,7 @@ class CFGManager:
         secret: bool = False,
         table_name: str | None = None,
         _generate: bool = False,
+        standalone_comment_keys: tuple[str, ...] = (),
     ):
         """
         修改配置文件中的配置项。
@@ -488,11 +439,12 @@ class CFGManager:
         :param cfg_type: 配置项类型。
         :param secret: 是否为密钥配置项。（默认为False）
         :param table_name: 配置项表名。
+        :param standalone_comment_keys: 生成字段前独立注释块所使用的 i18n 键。
         """
         cls.watch()
         q = q.lower()
         if value is None:
-            if _generate:  # if the value is None when generating the config file, fill with a placeholder
+            if _generate:
                 logger.debug(f"[Config] Config {q} not found, filled with default value.")
                 cfg_type_str = None
                 if cfg_type:
@@ -509,7 +461,7 @@ class CFGManager:
                     value = f"<Replace me with {cfg_type_str} value>"
                 else:
                     value = "<Replace me>"
-            else:  # if the value is None, skip to autofill
+            else:
                 logger.debug(f"[Config] Config {q} has no default value, skipped to auto fill.")
                 return
 
@@ -524,12 +476,9 @@ class CFGManager:
                 cls.load()
 
             found = False
-            if not table_name:  # if table_name is not provided, search for the value in config.toml tables
+            if not table_name:
                 for t in cls.values["config"].keys():
                     if isinstance(cls.values["config"][t], Table):
-                        # [config]
-                        # foo = bar  <- get the value inside the table
-
                         if secret:
                             if "secret" in cls.values["config"]:
                                 if q in cls.values["config"]["secret"]:
@@ -543,16 +492,12 @@ class CFGManager:
                                     found = True
                                     break
                     else:
-                        # foo = bar <- if the item is not a table, assume it"s a key-value pair outside the table
-                        # [config]
-                        # foo = bar
                         if t == q:
                             cls.values["config"][t] = value
                             found = True
                             break
             else:
                 table_name = table_name.lower()
-                # if table_name is provided, write the value to the specified table
                 if table_name == "secret":
                     table_name = "config"
                     secret = True
@@ -565,17 +510,14 @@ class CFGManager:
                 else:
                     target = "secret" if secret else "config"
                 try:
-                    # if table_name is provided, get for the value in the specified table directly
                     if cls.values[table_name][target][q]:
                         cls.values[table_name][target][q] = value
                         found = True
                 except (AttributeError, KeyError):
                     pass
 
-            if not found:  # if the value is not found, write the default value to the config file
-                if (
-                    table_name and table_name != "config"
-                ):  # if table_name is provided, write the value to the specified table
+            if not found:
+                if table_name and table_name != "config":
                     cfg_name = table_name
                     target = f"{table_name}{'_secret' if secret else ''}"
                 else:
@@ -585,14 +527,12 @@ class CFGManager:
                 # 此处不可再经由 Config() 获取：配置文件一旦损坏，default_locale 同样无法取得，
                 # 将再次进入本分支，形成无限递归直至栈溢出。改为直接读取顶层键，取不到则使用默认值。
                 get_locale = Locale(cls.values.get("config", {}).get("default_locale") or default_locale)
-                if cfg_name not in cls.values:  # if the target table is not found, create a new table
+                if cfg_name not in cls.values:
                     cls.values[cfg_name] = toml_document()
                     for header_key in ("config.header.line.1", "config.header.line.2", "config.header.line.3"):
                         if header_comment := _localized_config_text(get_locale, header_key):
                             cls.values[cfg_name].add(toml_comment(header_comment))
-                if (
-                    target not in cls.values[cfg_name]
-                ):  # assume the child table name is the same as the parent table name
+                if target not in cls.values[cfg_name]:
                     if target == "config":
                         table_comment_key = "config.table.config"  # i18n comment
                     elif target == "secret":
@@ -614,6 +554,15 @@ class CFGManager:
                         cls.values[cfg_name][target].add(toml_comment(table_comment))
 
                 try:
+                    standalone_comments = [
+                        text
+                        for key in standalone_comment_keys
+                        if (text := _localized_config_text(get_locale, key)) is not None
+                    ]
+                    if standalone_comments:
+                        cls.values[cfg_name][target].add(nl())
+                        for standalone_comment in standalone_comments:
+                            cls.values[cfg_name][target].add(toml_comment(standalone_comment))
                     cls.values[cfg_name][target].add(q, value)
                 except KeyAlreadyPresent:
                     cls.values[cfg_name][target][q] = value
@@ -671,9 +620,6 @@ class CFGManager:
     ):
         """授权写入，供交互式编辑命令与启动期的密钥自举使用。
 
-        这是只读进程中唯一合法的写入途径。命名为 edit_* 而非给 write() 加参数，
-        是为了使全部合法写入点均可经检索穷举。
-
         :param q: 配置项键名。
         :param value: 修改值。
         :param cfg_type: 配置项类型。
@@ -710,10 +656,7 @@ CFGManager.load()
 
 
 def format_url(v: Any | None) -> Any | None:
-    """
-    将配置项中的地址补全为可直接请求的 URL。
-
-    缺少协议头时补上 ``http://``，并确保以斜杠结尾。空值原样返回。
+    """将配置项中的地址补全为可直接请求的 URL。
 
     :param v: 配置项的原始值。
     :return: 补全后的 URL。
@@ -736,6 +679,7 @@ def Config(
     get_url: bool = False,
     _global: bool = False,
     _generate: bool = False,
+    standalone_comment_keys: tuple[str, ...] = (),
 ) -> Any:
     """
     获取配置文件中的配置项。
@@ -748,12 +692,22 @@ def Config(
     :param get_url: 是否为URL配置项。（默认为False）
     :param _global: 内部变量，是否在所有表中查找配置项。（默认为False）
     :param _generate: 内部变量，生成配置文件时使用。（默认为False）
+    :param standalone_comment_keys: 生成字段前独立注释块所使用的 i18n 键
     :return: 配置文件中对应配置项的值。
     """
     if get_url:
-        v = format_url(CFGManager.get(q, default, str, secret, table_name, _global, _generate))
+        v = format_url(CFGManager.get(q, default, str, secret, table_name, _global, _generate, standalone_comment_keys))
     else:
-        v = CFGManager.get(q, default, cfg_type, secret, table_name, _global, _generate)
+        v = CFGManager.get(
+            q,
+            default,
+            cfg_type,
+            secret,
+            table_name,
+            _global,
+            _generate,
+            standalone_comment_keys,
+        )
     return v
 
 

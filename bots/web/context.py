@@ -20,8 +20,10 @@ from core.builtins.message.elements import (
 from core.builtins.session.context import ContextManager
 from core.builtins.session.features import Features
 from core.builtins.session.info import SessionInfo
+from core.builtins.session.bot_state import BotState
 from core.builtins.temp import Temp
 from core.logger import Logger
+from core.utils.media import resolve_media_path
 
 _MEDIA_URL_LIFETIME = 600
 _media_urls: dict[str, tuple[str, float]] = {}
@@ -46,28 +48,35 @@ def resolve_media_url(token: str) -> str | None:
 
 
 def _serialize_buttons(frame: ButtonFrameElement) -> list[list[dict]]:
-    """把按钮区序列化为二维数组，供前端渲染按钮行。"""
     rows = []
     for row in frame.rows:
         buttons = []
         for button in row.buttons:
             payload = button.payload
-            buttons.append(
-                {
-                    "show": button.show,
-                    "value": payload.value,
-                    "reply_id": payload.reply_id,
-                }
-            )
+            item = {"show": button.show, "value": payload.value, "reply_id": payload.reply_id}
+            if payload.permission.value == "all":
+                item["permission"] = payload.permission.value
+            if payload.click_limit != 1:
+                item["click_limit"] = payload.click_limit or 0
+            buttons.append(item)
         if buttons:
             rows.append(buttons)
     return rows
 
 
+async def _get_image_base64(image: ImageElement | None) -> str | None:
+    if image is None:
+        return None
+    try:
+        return await image.get_base64(mime=True)
+    except Exception:
+        Logger.exception(f"Unable to get image {image.path}, skipping it: ")
+        return None
+
+
 async def _serialize_embed(embed: EmbedElement, session_info: SessionInfo) -> dict:
-    """把 Embed 序列化为前端可直接渲染的富文本卡片数据。"""
-    image = await embed.image.get_base64(mime=True) if embed.image else None
-    thumbnail = await embed.thumbnail.get_base64(mime=True) if embed.thumbnail else None
+    image = await _get_image_base64(embed.image)
+    thumbnail = await _get_image_base64(embed.thumbnail)
 
     raw_fields = embed.fields
     if raw_fields is None:
@@ -98,18 +107,19 @@ async def _serialize_embed(embed: EmbedElement, session_info: SessionInfo) -> di
 
 
 async def _serialize_element(x, session_info: SessionInfo) -> dict | None:
-    """把单个可发送元素序列化为前端消息字典（发送规则的唯一落点）。
-
-    :return: 前端消息字典；无法识别的元素返回 None，由调用方跳过。
-    """
     if isinstance(x, PlainElement):
         return {"type": "text", "content": x.text}
     if isinstance(x, ImageElement):
-        return {"type": "image", "content": await x.get_base64(mime=True)}
-    if isinstance(x, AudioElement):
-        return {"type": "audio", "content": register_media_url(x.path)}
-    if isinstance(x, VideoElement):
-        return {"type": "video", "content": register_media_url(x.path)}
+        content = await _get_image_base64(x)
+        if content is None:
+            return None
+        return {"type": "image", "content": content}
+    if isinstance(x, (AudioElement, VideoElement)):
+        media_path = await resolve_media_path(x)
+        if media_path is None:
+            return None
+        kind = "audio" if isinstance(x, AudioElement) else "video"
+        return {"type": kind, "content": register_media_url(media_path)}
     if isinstance(x, ActionTextElement):
         return {
             "type": "action_text",
@@ -124,7 +134,6 @@ async def _serialize_element(x, session_info: SessionInfo) -> dict | None:
 
 
 async def _serialize_chain(chain: MessageChain, session_info: SessionInfo) -> list[dict]:
-    """把消息链序列化为前端消息数组，并逐元素记录发送日志。"""
     sends = []
     for x in chain.as_sendable(session_info):
         item = await _serialize_element(x, session_info)
@@ -160,13 +169,28 @@ class WebContextManager(ContextManager):
         return True
 
     @classmethod
-    def _get_websocket(cls, session_info: SessionInfo) -> WebSocket | None:
-        """Return the socket which owns this session.
+    async def check_bot_state(cls, session_info: SessionInfo) -> BotState:
+        """WebUI sessions are backed by the trusted local bot interface."""
+        return BotState(
+            available=True,
+            joined=True,
+            is_owner=True,
+            is_admin=True,
+            can_read_messages=True,
+            can_read_all_messages=True,
+            can_send_messages=True,
+            can_send_proactive_messages=True,
+            can_manage_messages=True,
+            can_manage_members=True,
+            can_restrict_members=True,
+            can_react=True,
+            can_send_private_messages=True,
+            permissions={"webui": True},
+            raw={"platform": "webui"},
+        )
 
-        A normal session must keep using the socket from which its message
-        arrived.  Only fetched sessions (scheduled or otherwise proactive
-        messages) may fall back to the most recently connected console.
-        """
+    @classmethod
+    def _get_websocket(cls, session_info: SessionInfo) -> WebSocket | None:
         if not getattr(session_info, "fetch", False):
             context = cls.context.get(session_info.session_id)
             if isinstance(context, dict):
@@ -336,8 +360,6 @@ class WebContextManager(ContextManager):
 
     @classmethod
     async def end_typing(cls, session_info: SessionInfo) -> None:
-        # if session_info.session_id not in cls.context:
-        #     raise ValueError("Session not found in context")
         flag = cls.typing_flags.pop(session_info.session_id, None)
         if flag:
             flag.set()
@@ -345,7 +367,6 @@ class WebContextManager(ContextManager):
         if task:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        # 这里可以添加结束输入状态的逻辑
         try:
             websocket = cls._get_websocket(session_info)
 
@@ -359,7 +380,6 @@ class WebContextManager(ContextManager):
     async def error_signal(cls, session_info: SessionInfo) -> None:
         if session_info.session_id not in cls.context:
             raise ValueError("Session not found in context")
-        # 这里可以添加错误处理逻辑
         try:
             websocket = cls._get_websocket(session_info)
 

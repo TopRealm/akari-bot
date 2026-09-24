@@ -8,28 +8,34 @@ from core.builtins.message.chain import MessageChain
 from core.builtins.message.internal import ActionText, I18NContext, Plain
 from core.utils.http import get_url
 from core.utils.random import Random
+from .divingfish_oauth import diving_fish_bind_usable, fill_bind_username
 from .maimaidx_apidata import get_record, get_song_record, get_total_record, get_plate
 from .maimaidx_mapping import *
 from .maimaidx_music import TotalList
+from .source import GAME_MAIMAI, SOURCE_LXNS, pick_source
 from ..database.models import DivingProberBindInfo
 
 total_list = TotalList()
 
 
 async def get_diving_prober_bind_info(msg: Bot.MessageSession, **kwargs):
+    if pick_source(msg, GAME_MAIMAI) == SOURCE_LXNS:
+        return dict(kwargs)
     bind_info = await DivingProberBindInfo.get_by_sender_id(msg, create=False)
-    if not bind_info:
+    # 记录存在但没有可用的授权（如配置刚由公开客户端改为机密客户端，旧行里只有 refresh token）
+    # 时同样按未绑定处理：QQ 用户能退回 `qq` 直接查，其它平台则只能重新绑定一次。
+    if not diving_fish_bind_usable(bind_info):
         if msg.session_info.sender_from == "QQ":
             return {"qq": msg.session_info.get_common_sender_id()} | kwargs
         await msg.finish(
             I18NContext(
                 "maimai.message.user_unbound",
-                prefix=msg.session_info.prefixes[0],
-                cmd=ActionText(f"{msg.session_info.prefixes[0]}maimai bind"),
+                cmd=ActionText(f"{msg.session_info.prefixes[0]}maimai bind df"),
             )
         )
-    else:
-        return {"username": bind_info.username} | kwargs
+    if not bind_info.username:
+        await fill_bind_username(bind_info)
+    return {"username": bind_info.username} | kwargs
 
 
 def get_diff(diff: str) -> int:
@@ -125,7 +131,7 @@ async def get_rank(msg: Bot.MessageSession, payload: dict, use_cache: bool = Tru
     rank_data = await get_url(url, 200, fmt="json")
     rank_data = sorted(rank_data, key=lambda x: x.get("ra", 0), reverse=True)  # 根据rating排名并倒序
 
-    player_data: dict = await get_record(msg, payload, use_cache)
+    player_data: dict = await get_record(msg, payload, use_cache=use_cache)
     username = player_data.get("username", "")
 
     rating = 0
@@ -178,7 +184,7 @@ async def get_player_score(
     level_scores = {level: [] for level in range(len(music["level"]))}  # 获取歌曲难度列表
 
     try:
-        res: dict = await get_song_record(msg, payload, input_id, use_cache)
+        res: dict = await get_song_record(msg, input_id, use_cache)
         for sid, records in res.items():
             if str(sid) == input_id:
                 for entry in records:
@@ -203,7 +209,7 @@ async def get_player_score(
                         (diffs[level_index], achievements, score_rank, combo_rank, sync_rank, dxscore, dxscore_max)
                     )
     except Exception:
-        res = await get_total_record(msg, payload, True, use_cache)
+        res = await get_total_record(msg, True, use_cache)
         records = res["records"]
 
         for entry in records:
@@ -268,10 +274,10 @@ async def get_player_score(
 async def get_score_list(
     msg: Bot.MessageSession, payload: dict, level: str, page: int, use_cache: bool = True
 ) -> tuple[MessageChain, bool]:
-    res: dict = await get_total_record(msg, payload, use_cache=use_cache)
+    res: dict = await get_total_record(msg, use_cache=use_cache)
     records = res["records"]
 
-    player_data: dict = await get_record(msg, payload, use_cache)
+    player_data: dict = await get_record(msg, payload, use_cache=use_cache)
     song_list = []
     for song in records:
         if song["level"] == level:
@@ -314,7 +320,7 @@ async def get_level_process(
     song_played = []
     song_remain = []
 
-    res: dict = await get_total_record(msg, payload, use_cache=use_cache)
+    res: dict = await get_total_record(msg, use_cache=use_cache)
     verlist = res["records"]
 
     goal = goal.upper()  # 输入强制转换为大写以适配字典

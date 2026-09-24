@@ -1,14 +1,15 @@
-"""modules.core.bind 单元测试 - bind start 的私聊与群组分支（需要数据库）。"""
+"""modules.core.common_tools.bind 单元测试 - bind start 的私聊与群组分支（需要数据库）。"""
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-import modules.core.bind as bind
+import modules.core.common_tools.bind as bind
 from core.utils.union_merge import generate_code
 from core.builtins.session.info import SessionInfo
 from core.builtins.session.internal import MessageSession
 from core.constants.exceptions import SessionFinished
 from core.database.models import SenderUnionInfo, TargetUnionInfo
+from core.queue.contracts import PlatformAPI
 from core.tester import func_case, Tester
 
 
@@ -25,9 +26,6 @@ async def _session(prefix: str, is_private: bool) -> MessageSession:
 
 
 def _issue_private_code(msg: MessageSession) -> dict:
-    """
-    以私聊身份生成一枚绑定码并立即取出，返回绑定码携带的信息。
-    """
     code = generate_code(
         bind._sender_bind_codes,
         msg.session_info.sender_union_info.union_id,
@@ -38,19 +36,17 @@ def _issue_private_code(msg: MessageSession) -> dict:
 
 
 def _answer_confirm(result: bool):
-    """
-    把 wait_confirm 固定成给定答复，绕开交互。
-    """
     return patch.object(MessageSession, "wait_confirm", new=lambda self, *a, **k: asyncio.sleep(0, result=result))
 
 
 async def _test_private_binds_both_unions():
-    """测试 bind start - 私聊绑定须同时并入账号组与场景组"""
     try:
         initiator = await _session("BINDA", True)
         entry = _issue_private_code(initiator)
+        send = AsyncMock(return_value=["bind-success"])
         try:
-            with _answer_confirm(True):
+            # 本用例验证真实数据库合并；模拟平台接收最终成功提示。
+            with _answer_confirm(True), patch.object(PlatformAPI, "send_message", new=send):
                 await bind._bind_private(await _session("BINDB", True), entry)
         except SessionFinished:
             pass
@@ -58,14 +54,19 @@ async def _test_private_binds_both_unions():
         # 私聊中的用户身份与私聊场景应同时合并，否则部分数据仍会保留在原组。
         senders = [(await SenderUnionInfo.resolve_union(f"{p}|1")).union_id for p in ("BINDA", "BINDB")]
         targets = [(await TargetUnionInfo.resolve_union(f"{p}|X|1")).union_id for p in ("BINDA", "BINDB")]
-        return senders[0] == senders[1] and targets[0] == targets[1]
+        send.assert_awaited_once()
+        sent_keys = {getattr(element, "key", None) for element in send.await_args.args[1].values}
+        return (
+            senders[0] == senders[1]
+            and targets[0] == targets[1]
+            and {"core.message.bind.self.success", "core.message.bind.target.success"} <= sent_keys
+        )
 
     except Exception:
         return False
 
 
 async def _test_cancel_leaves_nothing_bound():
-    """测试 bind start - 取消确认时两侧都不应发生变动"""
     try:
         initiator = await _session("BINDC", True)
         current = await _session("BINDD", True)
@@ -95,8 +96,7 @@ async def _test_cancel_leaves_nothing_bound():
         return False
 
 
-async def _test_scene_mismatch_rejected():
-    """测试 bind start - 私聊码与群组码不得跨场景兑换"""
+async def _test_context_mismatch_rejected():
     try:
         entry = _issue_private_code(await _session("BINDE", True))
         # 群组场景兑换私聊码会把整个群的数据并进对方的私聊，必须拦下
@@ -109,9 +109,9 @@ async def _test_scene_mismatch_rejected():
 
 @func_case
 async def test_bind_start(tester: Tester):
-    """modules.core.bind: bind start 测试"""
+    """modules.core.common_tools.bind: bind start 测试"""
     await tester.test(_test_private_binds_both_unions, "私聊同时绑定两组测试")
     await tester.test(_test_cancel_leaves_nothing_bound, "取消不留半绑状态测试")
-    await tester.test(_test_scene_mismatch_rejected, "跨场景兑换拦截测试")
+    await tester.test(_test_context_mismatch_rejected, "跨场景兑换拦截测试")
 
     return tester

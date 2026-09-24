@@ -5,13 +5,14 @@ from akari_bot_webrender.functions.options import (
     ElementScreenshotOptions,
     PageScreenshotOptions,
     SourceOptions,
+    StatusOptions,
     SectionScreenshotOptions,
     LegacyScreenshotOptions,
     RawOptions,
 )
 
 from core.config import format_url
-from core.config.base import WebRenderConfig
+from core.config.webrender import WebRenderConfig
 from core.constants.path import logs_path
 from core.logger import Logger
 
@@ -73,6 +74,7 @@ __all__ = [
     "ElementScreenshotOptions",
     "PageScreenshotOptions",
     "SourceOptions",
+    "StatusOptions",
     "SectionScreenshotOptions",
     "LegacyScreenshotOptions",
     "RawOptions",

@@ -2,18 +2,22 @@
 
 import asyncio
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from apscheduler.triggers.interval import IntervalTrigger
 
 import core.loader as loader_module
-from core.constants import PrivateAssets
+from core.config import CFGManager
+from core.constants import PrivateData
 from core.database.models import ModuleStatus
 from core.loader import ModulesManager
+from core.module_runtime import ModuleRuntimeManager
+from core.queue.server import JobQueueServer
 from core.scheduler import SchedulerLifecycle
 from core.tester import func_case, Tester
 from core.types import Module
@@ -42,8 +46,13 @@ RENAMED_MODULES = {
 }
 
 
+# 每次热重载都会重建依赖图（遍历并解析全部模块源码，实测 0.6~0.9 秒），
+# 冷文件缓存或高负载环境下会明显超过 1 秒，故等待步骤统一留出余量，
+# 避免把「慢」误判成「卡住」。
+RELOAD_WAIT_TIMEOUT = 10
+
+
 def _test_add_module():
-    """ModulesManager.add_module: 添加模块"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_mod_1", alias=None, recommend_modules=None, developers=None
@@ -58,7 +67,6 @@ def _test_add_module():
 
 
 def _test_add_module_duplicate():
-    """ModulesManager.add_module: 重复添加应抛出 ValueError"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_mod_2", alias=None, recommend_modules=None, developers=None
@@ -81,7 +89,6 @@ def _test_add_module_duplicate():
 
 
 def _test_remove_modules():
-    """ModulesManager.remove_modules: 移除模块"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_mod_3", alias=None, recommend_modules=None, developers=None
@@ -94,7 +101,6 @@ def _test_remove_modules():
 
 
 def _test_remove_nonexistent_module():
-    """ModulesManager.remove_modules: 移除不存在的模块应抛出 ValueError"""
     try:
         ModulesManager.remove_modules(["__nonexistent_module_xyz_12345__"])
         return False
@@ -105,7 +111,6 @@ def _test_remove_nonexistent_module():
 
 
 def _test_bind_to_module_command():
-    """ModulesManager.bind_to_module: 绑定 CommandMeta"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_bind_1", alias=None, recommend_modules=None, developers=None
@@ -126,7 +131,6 @@ def _test_bind_to_module_command():
 
 
 def _test_bind_to_module_regex():
-    """ModulesManager.bind_to_module: 绑定 RegexMeta"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_bind_2", alias=None, recommend_modules=None, developers=None
@@ -147,7 +151,6 @@ def _test_bind_to_module_regex():
 
 
 def _test_bind_to_nonexistent_module():
-    """ModulesManager.bind_to_module: 绑定到不存在的模块应静默忽略"""
     try:
         meta = CommandMeta(function=lambda m: None, command_template=[])
         ModulesManager.bind_to_module("__nonexistent_xyz__", meta)
@@ -157,7 +160,6 @@ def _test_bind_to_nonexistent_module():
 
 
 def _test_return_modules_list():
-    """ModulesManager.return_modules_list: 返回所有模块"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_list_1", alias=None, recommend_modules=None, developers=None
@@ -174,7 +176,6 @@ def _test_return_modules_list():
 
 
 def _test_return_modules_list_filter_platform():
-    """ModulesManager.return_modules_list: 按平台过滤"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_filter_1",
@@ -203,7 +204,6 @@ def _test_return_modules_list_filter_platform():
 
 
 def _test_refresh_aliases():
-    """ModulesManager.refresh_modules_aliases: 刷新别名"""
     try:
         test_module = Module.assign(
             module_name="__test_loader_alias_1",
@@ -222,7 +222,6 @@ def _test_refresh_aliases():
 
 
 def _test_get_module_and_alias_first_words():
-    """ModulesManager.get_module_and_alias_first_words: 查找模块与别名首词"""
     module_name = "__test_loader_related"
     try:
         test_module = Module.assign(
@@ -253,7 +252,6 @@ def _test_get_module_and_alias_first_words():
 
 
 def _test_renamed_modules_keep_legacy_aliases():
-    """带下划线的旧模块名应保留为新主名的命令别名。"""
     return all(
         new_name in ModulesManager.modules and ModulesManager.modules_aliases.get(old_name) == new_name
         for new_name, old_name in RENAMED_MODULES.items()
@@ -261,7 +259,6 @@ def _test_renamed_modules_keep_legacy_aliases():
 
 
 async def _test_module_status_alias_migration():
-    """ModuleStatus 应在主名迁移时保留旧模块的加载状态。"""
     new_name = "__test-loader-status-new"
     old_name = "__test_loader_status_old"
     current_modules = await ModuleStatus.get_all_modules()
@@ -298,6 +295,41 @@ def _restore_module_manager(snapshot):
     ModulesManager.refresh()
 
 
+@asynccontextmanager
+async def _patch_database_reload(prepare):
+    with patch.multiple(
+        loader_module,
+        prepare_db_reload=prepare,
+        activate_db_reload=MagicMock(),
+        close_prepared_db_reload=AsyncMock(),
+        close_previous_db_context=AsyncMock(),
+    ) as patched:
+        yield patched
+
+
+@asynccontextmanager
+async def _isolated_reload_lifecycle():
+
+    @asynccontextmanager
+    async def maintenance_window(*_args, **_kwargs):
+        yield
+
+    with (
+        patch.object(ModulesManager, "_reload_lock", new=asyncio.Lock()),
+        patch.object(JobQueueServer, "maintenance_window", new=maintenance_window),
+        patch.object(SchedulerLifecycle, "maintenance_window", new=maintenance_window),
+    ):
+        yield
+
+
+async def _cancel_reload_task(task: asyncio.Task | None):
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
 def _reload_test_module(name: str, alias: str, origin: str, hook_function, event_function, load: bool = True):
     module = Module.assign(
         module_name=name,
@@ -313,7 +345,6 @@ def _reload_test_module(name: str, alias: str, origin: str, hook_function, event
 
 
 async def _test_reload_preserves_mixed_status_and_rebuilds_registries():
-    """同包模块重载后须分别保留启用状态，并重建 origin、别名、Hook 与 Event。"""
     package = "modules.__test_loader_reload_success"
     first_name = "__test_loader_reload_success_first"
     second_name = "__test_loader_reload_success_second"
@@ -360,11 +391,9 @@ async def _test_reload_preserves_mixed_status_and_rebuilds_registries():
             [ModuleStatus(module_name=first_name, load=False), ModuleStatus(module_name=second_name, load=True)]
         )
 
-        with (
-            patch.object(ModulesManager, "reload_py_module", side_effect=reload_python),
-            patch.object(loader_module, "reload_db", new=AsyncMock(return_value=True)),
-        ):
-            success, count = await ModulesManager.reload_module(first_name)
+        with patch.object(ModulesManager, "reload_py_module", side_effect=reload_python):
+            async with _patch_database_reload(AsyncMock(return_value=object())):
+                success, count = await ModulesManager.reload_module(first_name)
 
         statuses = dict(await ModuleStatus.filter(module_name__in=test_names).values_list("module_name", "load"))
         event_entries = ModulesManager.modules_events.get("reload-event", [])
@@ -390,8 +419,77 @@ async def _test_reload_preserves_mixed_status_and_rebuilds_registries():
         _restore_module_manager(snapshot)
 
 
+async def _test_reload_accepts_new_aliasless_module():
+    package = "modules.__test_loader_reload_aliasless"
+    module_name = "__test_loader_reload_aliasless"
+    snapshot = _snapshot_module_manager()
+
+    async def hook():
+        return "hook"
+
+    async def event(_):
+        return "event"
+
+    def reload_python(_):
+        _reload_test_module(module_name, None, f"{package}.entry", hook, event)
+        return 1
+
+    try:
+        old_module = _reload_test_module(
+            module_name,
+            "__test_loader_reload_aliasless_old",
+            f"{package}.entry",
+            hook,
+            event,
+        )
+        old_module._db_load = False
+        await ModuleStatus.filter(module_name=module_name).delete()
+
+        with patch.object(ModulesManager, "reload_py_module", side_effect=reload_python):
+            async with _patch_database_reload(AsyncMock(return_value=object())):
+                success, count = await ModulesManager.reload_module(module_name)
+
+        return (
+            success
+            and count == 1
+            and ModulesManager.modules[module_name].alias is None
+            and ModulesManager.modules[module_name]._db_load
+        )
+    finally:
+        await ModuleStatus.filter(module_name=module_name).delete()
+        _restore_module_manager(snapshot)
+
+
+async def _test_reload_drains_queue_before_scheduler_maintenance():
+    order = []
+
+    @asynccontextmanager
+    async def queue_window(*, exclusive=True):
+        order.append("queue")
+        order.append(f"queue_exclusive={exclusive}")
+        yield
+
+    @asynccontextmanager
+    async def scheduler_window():
+        order.append("scheduler")
+        yield
+
+    reload_impl = AsyncMock(return_value=(True, 1))
+    with (
+        patch.object(JobQueueServer, "maintenance_window", new=queue_window),
+        patch.object(SchedulerLifecycle, "maintenance_window", new=scheduler_window),
+        patch.object(ModulesManager, "_reload_module", new=reload_impl),
+    ):
+        result = await ModulesManager.reload_module("__test_loader_lock_order")
+
+    return (
+        result == (True, 1)
+        and order == ["queue", "queue_exclusive=False", "scheduler"]
+        and reload_impl.await_count == 1
+    )
+
+
 async def _test_reload_python_failure_restores_all_registries():
-    """Python 重载中途失败时，部分新注册不能污染旧模块、别名、Hook 或 Event。"""
     package = "modules.__test_loader_reload_python_failure"
     module_name = "__test_loader_reload_python_failure"
     partial_name = "__test_loader_reload_partial"
@@ -414,7 +512,7 @@ async def _test_reload_python_failure_restores_all_registries():
         _reload_test_module(partial_name, "__partial_alias", f"{package}.partial", partial_hook, partial_event)
         return -999
 
-    reload_database = AsyncMock(return_value=True)
+    prepare_database = AsyncMock(return_value=object())
     try:
         old_module = _reload_test_module(
             module_name,
@@ -427,11 +525,9 @@ async def _test_reload_python_failure_restores_all_registries():
         await ModuleStatus.filter(module_name__in=test_names).delete()
         await ModuleStatus.create(module_name=module_name, load=False)
 
-        with (
-            patch.object(ModulesManager, "reload_py_module", side_effect=reload_python),
-            patch.object(loader_module, "reload_db", new=reload_database),
-        ):
-            success, count = await ModulesManager.reload_module(module_name)
+        with patch.object(ModulesManager, "reload_py_module", side_effect=reload_python):
+            async with _patch_database_reload(prepare_database):
+                success, count = await ModulesManager.reload_module(module_name)
 
         status = await ModuleStatus.get_or_none(module_name=module_name)
         events = ModulesManager.modules_events.get("reload-event", [])
@@ -447,7 +543,7 @@ async def _test_reload_python_failure_restores_all_registries():
             and any(name == module_name and meta.function is old_event for name, meta in events)
             and status is not None
             and not status.load
-            and reload_database.await_count == 0
+            and prepare_database.await_count == 0
         )
     finally:
         await ModuleStatus.filter(module_name__in=test_names).delete()
@@ -455,7 +551,6 @@ async def _test_reload_python_failure_restores_all_registries():
 
 
 async def _test_reload_reports_database_reinitialization_failure():
-    """新数据库模型失败时须恢复旧模块注册和原 ModuleStatus，而不是只返回失败。"""
     package = "modules.__test_loader_reload_database_failure"
     module_name = "__test_loader_reload_database_failure"
     snapshot = _snapshot_module_manager()
@@ -504,11 +599,9 @@ async def _test_reload_reports_database_reinitialization_failure():
         ModulesManager.refresh()
         await ModuleStatus.filter(module_name=module_name).delete()
         await ModuleStatus.create(module_name=module_name, load=True)
-        with (
-            patch.object(ModulesManager, "reload_py_module", side_effect=reload_python),
-            patch.object(loader_module, "reload_db", new=AsyncMock(return_value=False)),
-        ):
-            success, count = await ModulesManager.reload_module(module_name)
+        with patch.object(ModulesManager, "reload_py_module", side_effect=reload_python):
+            async with _patch_database_reload(AsyncMock(return_value=None)):
+                success, count = await ModulesManager.reload_module(module_name)
 
         status = await ModuleStatus.get_or_none(module_name=module_name)
         return (
@@ -528,8 +621,118 @@ async def _test_reload_reports_database_reinitialization_failure():
         _restore_module_manager(snapshot)
 
 
+async def _test_reload_failure_restores_entire_python_module_tree():
+    package = "modules.__test_loader_reload_module_tree_rollback"
+    module_name = "__test_loader_reload_module_tree_rollback"
+    snapshot = _snapshot_module_manager()
+    old_python_module = ModuleType(package)
+    new_python_module = ModuleType(package)
+
+    async def old_hook():
+        return "old-hook"
+
+    async def old_event(_):
+        return "old-event"
+
+    async def new_hook():
+        return "new-hook"
+
+    async def new_event(_):
+        return "new-event"
+
+    def reload_python(_):
+        sys.modules[package] = new_python_module
+        _reload_test_module(module_name, None, f"{package}.entry", new_hook, new_event)
+        return 1
+
+    try:
+        old_module = _reload_test_module(module_name, None, f"{package}.entry", old_hook, old_event)
+        old_module._db_load = True
+        sys.modules[package] = old_python_module
+        await ModuleStatus.filter(module_name=module_name).delete()
+        await ModuleStatus.create(module_name=module_name, load=True)
+        with (
+            patch.object(ModulesManager, "reload_py_module", side_effect=reload_python),
+            patch.object(ModulesManager, "_model_schema_fingerprint", return_value=()),
+        ):
+            async with _patch_database_reload(AsyncMock(return_value=None)):
+                success, count = await ModulesManager.reload_module(module_name)
+        return (
+            not success
+            and count == 1
+            and ModulesManager.modules[module_name] is old_module
+            and sys.modules[package] is old_python_module
+        )
+    finally:
+        sys.modules.pop(package, None)
+        await ModuleStatus.filter(module_name=module_name).delete()
+        _restore_module_manager(snapshot)
+
+
+async def _test_reload_stops_runtime_before_database_swap():
+    package = "modules.__test_loader_reload_db_order"
+    module_name = "__test_loader_reload_db_order"
+    snapshot = _snapshot_module_manager()
+    order = []
+
+    async def old_hook():
+        return "old"
+
+    async def old_event(_):
+        return "old"
+
+    async def new_hook():
+        return "new"
+
+    async def new_event(_):
+        return "new"
+
+    def reload_python(_):
+        _reload_test_module(module_name, None, f"{package}.entry", new_hook, new_event)
+        return 1
+
+    async def commit_runtime(*_args, **_kwargs):
+        order.append("runtime-stop")
+
+    def activate_database(_prepared):
+        order.append("database-activate")
+
+    async def close_previous(_prepared):
+        order.append("database-close-previous")
+
+    try:
+        old_module = _reload_test_module(module_name, None, f"{package}.entry", old_hook, old_event)
+        old_module._db_load = True
+        await ModuleStatus.filter(module_name=module_name).delete()
+        await ModuleStatus.create(module_name=module_name, load=True)
+        with (
+            patch.object(ModulesManager, "reload_py_module", side_effect=reload_python),
+            patch.object(loader_module, "prepare_db_reload", new=AsyncMock(return_value=object())),
+            patch.object(loader_module, "activate_db_reload", new=activate_database),
+            patch.object(loader_module, "close_previous_db_context", new=close_previous),
+            patch.object(loader_module, "close_prepared_db_reload", new=AsyncMock()),
+            patch.object(ModuleRuntimeManager, "commit_reload", new=commit_runtime),
+        ):
+            success, count = await ModulesManager.reload_module(module_name)
+        return (
+            success
+            and count == 1
+            and order
+            == [
+                "runtime-stop",
+                "database-activate",
+                "database-close-previous",
+            ]
+        )
+    finally:
+        await ModuleStatus.filter(module_name=module_name).delete()
+        ModuleRuntimeManager._staging.clear()
+        ModuleRuntimeManager._reload_created.clear()
+        ModuleRuntimeManager._reload_in_progress = False
+        _restore_module_manager(snapshot)
+
+
 def _test_reload_defers_cross_module_bindings():
-    """兄弟文件先执行的装饰器须等目标模块重新注册后再绑定。"""
     package = "modules.__test_loader_reload_deferred"
     module_name = "__test_loader_reload_deferred"
     snapshot = _snapshot_module_manager()
@@ -552,7 +755,6 @@ def _test_reload_defers_cross_module_bindings():
 
 
 def _test_related_modules_respect_package_boundary():
-    """名称互为前缀的包（如 wiki / wikilog）不能被当作同一个热重载范围。"""
     snapshot = _snapshot_module_manager()
     first_name = "__test_loader_package_boundary_first"
     second_name = "__test_loader_package_boundary_second"
@@ -566,65 +768,202 @@ def _test_related_modules_respect_package_boundary():
         _restore_module_manager(snapshot)
 
 
+def _test_reload_dependency_closure_is_dependency_first():
+    with (
+        patch.object(ModulesManager, "_rebuild_dependency_graph"),
+        patch.dict(
+            ModulesManager._dependency_graph,
+            {
+                "modules.wiki": set(),
+                "modules.wikilog": {"modules.wiki"},
+                "modules.wiki-audit": {"modules.wiki"},
+            },
+            clear=True,
+        ),
+    ):
+        closure = ModulesManager._reload_closure("modules.wiki")
+    return closure == ["modules.wiki", "modules.wiki-audit", "modules.wikilog"]
+
+
+def _test_dependency_scan_covers_from_import_and_dynamic_import():
+    package = "modules.__test_loader_dependency_scan"
+    with TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        (root / "entry.py").write_text(
+            "\n".join(
+                (
+                    "from modules import alpha",
+                    "import importlib",
+                    'importlib.import_module("modules.beta.child")',
+                    'importlib.import_module(name="modules.gamma")',
+                )
+            ),
+            encoding="utf-8",
+        )
+        module = ModuleType(package)
+        module.__path__ = [temp_dir]
+        module.__file__ = str(root / "__init__.py")
+        with patch.dict(sys.modules, {package: module}):
+            dependencies = ModulesManager._scan_package_dependencies(package)
+    return dependencies == {"modules.alpha", "modules.beta", "modules.gamma"}
+
+
+def _test_locale_fingerprint_detects_removed_files():
+    package = "modules.__test_loader_locale_removal"
+    with TemporaryDirectory() as temp_dir:
+        module_file = Path(temp_dir) / "__init__.py"
+        module_file.write_text("", encoding="utf-8")
+        locale_file = Path(temp_dir) / "locales" / "zh_cn.json"
+        locale_file.parent.mkdir()
+        locale_file.write_text('{"key": "value"}', encoding="utf-8")
+        module = ModuleType(package)
+        module.__file__ = str(module_file)
+        with patch.dict(sys.modules, {package: module}):
+            before = ModulesManager._locale_fingerprint(package)
+            locale_file.unlink()
+            after = ModulesManager._locale_fingerprint(package)
+    return bool(before) and after == () and before != after
+
+
+def _test_reload_syncs_missing_module_config_fields():
+    package = "modules.__test_loader_config_sync"
+    config_module_name = f"{package}.config"
+
+    class ProbeConfig:
+        __config_fields__ = {
+            "probe_value": {
+                "default": 42,
+                "cfg_type": int,
+                "secret": False,
+                "table_name": "module_probe",
+            }
+        }
+
+    config_module = ModuleType(config_module_name)
+    config_module.ProbeConfig = ProbeConfig
+    edit_write = MagicMock()
+    try:
+        with (
+            patch.dict(sys.modules, {config_module_name: config_module}),
+            patch.object(CFGManager, "has", return_value=False),
+            patch.object(CFGManager, "edit_write", edit_write),
+        ):
+            errors = ModulesManager._sync_config_fields(package)
+        return not errors and edit_write.call_args_list == [call("probe_value", 42, int, False, "module_probe")]
+    finally:
+        sys.modules.pop(config_module_name, None)
+
+
+def _test_schema_fingerprint_covers_schema_attributes():
+
+    class ProbeField:
+        def __init__(self, **overrides):
+            self.metadata = {
+                "field_type": "tortoise.fields.data.CharField",
+                "db_column": "value",
+                "nullable": False,
+                "unique": False,
+                "indexed": False,
+                "constraints": {"max_length": 32},
+                "db_field_types": {"": "VARCHAR(32)"},
+                "db_default": "NOT_PROVIDED",
+            }
+            self.metadata.update(overrides)
+
+        def describe(self, serializable=False):
+            return dict(self.metadata)
+
+    baseline = ModulesManager._field_schema_fingerprint(ProbeField())
+    changes = [
+        ProbeField(unique=True),
+        ProbeField(indexed=True),
+        ProbeField(db_column="renamed"),
+        ProbeField(constraints={"max_length": 64}),
+        ProbeField(db_default=42),
+        ProbeField(on_delete="CASCADE", db_constraint=True),
+    ]
+    return all(ModulesManager._field_schema_fingerprint(field) != baseline for field in changes)
+
+
 def _test_reload_py_module_visits_nested_modules_once():
-    """递归重载只遍历直接子级，嵌套模块不能被祖先和父级重复执行。"""
     root_name = "__test_loader_reload_tree"
     module_names = [root_name, f"{root_name}.child", f"{root_name}.child.grandchild", f"{root_name}.sibling"]
     fake_modules = {name: ModuleType(name) for name in module_names}
     reload_order = []
 
-    def reload_python(module):
-        reload_order.append(module.__name__)
+    def import_python(name):
+        reload_order.append(name)
+        module = fake_modules[name]
+        sys.modules[name] = module
         return module
 
     with (
         patch.dict(sys.modules, fake_modules),
-        patch.object(loader_module.importlib, "reload", side_effect=reload_python),
+        patch.object(loader_module.importlib, "import_module", side_effect=import_python),
     ):
         count = ModulesManager.reload_py_module(root_name)
 
-    return (
-        count == len(module_names)
-        and reload_order == [f"{root_name}.child.grandchild", f"{root_name}.child", f"{root_name}.sibling", root_name]
-        and len(reload_order) == len(set(reload_order))
-    )
+    return count == len(module_names) and reload_order == module_names and len(reload_order) == len(set(reload_order))
 
 
 def _test_reload_py_module_propagates_child_failure():
-    """任一子模块失败都须让整个包返回 -999，不能被其它成功计数抵消。"""
     root_name = "__test_loader_reload_failure_tree"
     child_name = f"{root_name}.child"
     fake_modules = {root_name: ModuleType(root_name), child_name: ModuleType(child_name)}
     reload_order = []
 
-    def reload_python(module):
-        reload_order.append(module.__name__)
-        if module.__name__ == child_name:
+    def import_python(name):
+        reload_order.append(name)
+        if name == child_name:
             raise RuntimeError("child reload failed")
+        module = fake_modules[name]
+        sys.modules[name] = module
         return module
 
     with (
         patch.dict(sys.modules, fake_modules),
-        patch.object(loader_module.importlib, "reload", side_effect=reload_python),
+        patch.object(loader_module.importlib, "import_module", side_effect=import_python),
     ):
         count = ModulesManager.reload_py_module(root_name)
+        restored = set(fake_modules) <= set(sys.modules)
 
-    return count == -999 and reload_order == [child_name]
+    return count == -999 and root_name in reload_order and child_name in reload_order and restored
+
+
+def _test_reload_py_module_uses_fresh_namespace():
+    module_name = "__test_loader_fresh_namespace"
+    old_module = ModuleType(module_name)
+    old_module.version = "old"
+    new_module = ModuleType(module_name)
+    new_module.version = "new"
+
+    def import_python(name):
+        sys.modules[name] = new_module
+        return new_module
+
+    with (
+        patch.dict(sys.modules, {module_name: old_module}),
+        patch.object(loader_module.importlib, "import_module", side_effect=import_python),
+    ):
+        count = ModulesManager.reload_py_module(module_name)
+        replaced = sys.modules[module_name] is new_module
+
+    return count == 1 and replaced and old_module.version == "old" and new_module.version == "new"
 
 
 async def _test_concurrent_reload_fails_before_mutation():
-    """第二个模块重载必须立即失败，不能等待锁后与数据库维护流程互锁。"""
 
     package = "modules.__test_loader_reload_concurrent"
     module_name = "__test_loader_reload_concurrent"
     snapshot = _snapshot_module_manager()
     entered_database_reload = asyncio.Event()
     release_database_reload = asyncio.Event()
+    first = None
 
-    async def reload_database():
+    async def prepare_database():
         entered_database_reload.set()
         await release_database_reload.wait()
-        return True
+        return object()
 
     def reload_python(_):
         module = Module.assign(module_name=module_name, alias=None, recommend_modules=None, developers=None)
@@ -637,16 +976,23 @@ async def _test_concurrent_reload_fails_before_mutation():
         ModulesManager.add_module(module, f"{package}.entry")
         await ModuleStatus.filter(module_name=module_name).delete()
         await ModuleStatus.create(module_name=module_name, load=True)
-        with (
-            patch.object(ModulesManager, "reload_py_module", new=reload_py_module),
-            patch.object(loader_module, "reload_db", new=reload_database),
-        ):
-            first = asyncio.create_task(ModulesManager.reload_module(module_name))
-            await asyncio.wait_for(entered_database_reload.wait(), timeout=1)
-            second_result = await asyncio.wait_for(ModulesManager.reload_module("second"), timeout=1)
-            untouched = second_result == (False, 0) and reload_py_module.call_count == 1
-            release_database_reload.set()
-            first_result = await asyncio.wait_for(first, timeout=1)
+        with patch.object(ModulesManager, "reload_py_module", new=reload_py_module):
+            async with _patch_database_reload(prepare_database), _isolated_reload_lifecycle():
+                try:
+                    first = asyncio.create_task(ModulesManager.reload_module(module_name))
+                    # The full suite can delay task scheduling while other async tests are unwinding.
+                    # This gate only observes entry into our database reload stub, so use a test-level
+                    # timeout that tolerates CI contention without allowing a real deadlock to hang.
+                    await asyncio.wait_for(entered_database_reload.wait(), timeout=RELOAD_WAIT_TIMEOUT)
+                    second_result = await asyncio.wait_for(
+                        ModulesManager.reload_module("second"), timeout=RELOAD_WAIT_TIMEOUT
+                    )
+                    untouched = second_result == (False, 0) and reload_py_module.call_count == 1
+                    release_database_reload.set()
+                    first_result = await asyncio.wait_for(first, timeout=RELOAD_WAIT_TIMEOUT)
+                finally:
+                    release_database_reload.set()
+                    await _cancel_reload_task(first)
         return untouched and first_result == (True, 1)
     finally:
         release_database_reload.set()
@@ -655,7 +1001,6 @@ async def _test_concurrent_reload_fails_before_mutation():
 
 
 async def _test_initial_load_rolls_back_partial_registration():
-    """启动导入失败时不能留下半注册模块；仅配置模块本身缺失才可忽略。"""
     broken_package = "modules.__test_loader_initial_broken"
     optional_package = "modules.__test_loader_initial_optional"
     broken_name = "__test_loader_initial_broken"
@@ -693,7 +1038,7 @@ async def _test_initial_load_rolls_back_partial_registration():
                 patch.object(loader_module.importlib, "import_module", side_effect=import_module),
                 patch.object(ModuleStatus, "init_modules", new=AsyncMock()),
                 patch.object(ModuleStatus, "all", return_value=status_query),
-                patch.object(PrivateAssets, "path", Path(temp_dir)),
+                patch.object(PrivateData, "path", Path(temp_dir)),
             ):
                 await loader_module.load_modules()
                 loader_result = (Path(temp_dir) / ".cache_loader").read_text(encoding="utf-8")
@@ -709,11 +1054,11 @@ async def _test_initial_load_rolls_back_partial_registration():
 
 
 async def _test_cancelled_reload_restores_registry_and_status():
-    """取消已修改状态的热重载时，须恢复旧注册表与持久化启用状态。"""
     package = "modules.__test_loader_reload_cancelled"
     module_name = "__test_loader_reload_cancelled"
     snapshot = _snapshot_module_manager()
     entered_database_reload = asyncio.Event()
+    task = None
 
     async def old_hook():
         return "old"
@@ -731,7 +1076,7 @@ async def _test_cancelled_reload_restores_registry_and_status():
         _reload_test_module(module_name, "__cancelled_new", f"{package}.entry", new_hook, new_event)
         return 1
 
-    async def reload_database():
+    async def prepare_database():
         entered_database_reload.set()
         await asyncio.Event().wait()
 
@@ -747,19 +1092,20 @@ async def _test_cancelled_reload_restores_registry_and_status():
         await ModuleStatus.filter(module_name=module_name).delete()
         await ModuleStatus.create(module_name=module_name, load=False)
 
-        with (
-            patch.object(ModulesManager, "reload_py_module", side_effect=reload_python),
-            patch.object(loader_module, "reload_db", new=reload_database),
-        ):
-            task = asyncio.create_task(ModulesManager.reload_module(module_name))
-            await asyncio.wait_for(entered_database_reload.wait(), timeout=1)
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            else:
-                return False
+        with patch.object(ModulesManager, "reload_py_module", side_effect=reload_python):
+            async with _patch_database_reload(prepare_database), _isolated_reload_lifecycle():
+                try:
+                    task = asyncio.create_task(ModulesManager.reload_module(module_name))
+                    # The full suite can delay task scheduling while other async tests are unwinding.
+                    # This gate only observes entry into our database reload stub, so use a test-level
+                    # timeout that tolerates CI contention without allowing a real deadlock to hang.
+                    await asyncio.wait_for(entered_database_reload.wait(), timeout=RELOAD_WAIT_TIMEOUT)
+                    task.cancel()
+                    (result,) = await asyncio.gather(task, return_exceptions=True)
+                    if not isinstance(result, asyncio.CancelledError):
+                        return False
+                finally:
+                    await _cancel_reload_task(task)
 
         status = await ModuleStatus.get_or_none(module_name=module_name)
         return (
@@ -774,8 +1120,84 @@ async def _test_cancelled_reload_restores_registry_and_status():
         _restore_module_manager(snapshot)
 
 
+async def _test_cancelled_commit_keeps_committed_generation():
+    package = "modules.__test_loader_reload_commit_cancel"
+    module_name = "__test_loader_reload_commit_cancel"
+    snapshot = _snapshot_module_manager()
+    entered_commit = asyncio.Event()
+    release_commit = asyncio.Event()
+    task = None
+
+    async def old_hook():
+        return "old"
+
+    async def old_event(_):
+        return "old"
+
+    async def new_hook():
+        return "new"
+
+    async def new_event(_):
+        return "new"
+
+    def reload_python(_):
+        _reload_test_module(module_name, "__commit_cancel_new", f"{package}.entry", new_hook, new_event)
+        return 1
+
+    async def commit_reload(*_args, **_kwargs):
+        entered_commit.set()
+        await release_commit.wait()
+
+    try:
+        old_module = _reload_test_module(
+            module_name,
+            "__commit_cancel_old",
+            f"{package}.entry",
+            old_hook,
+            old_event,
+        )
+        old_module._db_load = True
+        ModulesManager.refresh()
+        await ModuleStatus.filter(module_name=module_name).delete()
+        await ModuleStatus.create(module_name=module_name, load=True)
+        with (
+            patch.object(ModulesManager, "reload_py_module", side_effect=reload_python),
+            patch.object(ModuleRuntimeManager, "commit_reload", new=commit_reload),
+        ):
+            async with _patch_database_reload(AsyncMock(return_value=object())), _isolated_reload_lifecycle():
+                try:
+                    task = asyncio.create_task(ModulesManager.reload_module(module_name))
+                    # The full suite can delay task scheduling while other async tests are unwinding.
+                    # This gate only observes entry into our commit stub, so use a test-level timeout
+                    # that is long enough for CI contention without allowing a real deadlock to hang.
+                    await asyncio.wait_for(entered_commit.wait(), timeout=RELOAD_WAIT_TIMEOUT)
+                    task.cancel()
+                    release_commit.set()
+                    (result,) = await asyncio.gather(task, return_exceptions=True)
+                    if not isinstance(result, asyncio.CancelledError):
+                        return False
+                finally:
+                    release_commit.set()
+                    await _cancel_reload_task(task)
+
+        status = await ModuleStatus.get_or_none(module_name=module_name)
+        return (
+            ModulesManager.modules.get(module_name) is not old_module
+            and ModulesManager.modules_aliases.get("__commit_cancel_new") == module_name
+            and "__commit_cancel_old" not in ModulesManager.modules_aliases
+            and status is not None
+            and status.load
+        )
+    finally:
+        release_commit.set()
+        await ModuleStatus.filter(module_name=module_name).delete()
+        ModuleRuntimeManager._staging.clear()
+        ModuleRuntimeManager._reload_created.clear()
+        ModuleRuntimeManager._reload_in_progress = False
+        _restore_module_manager(snapshot)
+
+
 async def _test_load_state_changes_only_after_persistence():
-    """全局加载状态持久化失败时，内存标志不能提前翻转。"""
     module_name = "__test_loader_persisted_state"
     snapshot = _snapshot_module_manager()
     try:
@@ -811,6 +1233,50 @@ async def _test_load_state_changes_only_after_persistence():
         _restore_module_manager(snapshot)
 
 
+async def _test_unload_drains_queue_before_stopping_runtime():
+    module_name = "__test_loader_unload_order"
+    snapshot = _snapshot_module_manager()
+    order = []
+
+    @asynccontextmanager
+    async def queue_window(*, exclusive=True):
+        order.append(f"queue:{exclusive}")
+        yield
+
+    @asynccontextmanager
+    async def scheduler_window(module_names=None):
+        order.append(f"scheduler:{tuple(module_names or ())}")
+        yield
+
+    async def persist(*_args, **_kwargs):
+        order.append("persist")
+
+    async def suspend(name):
+        order.append(f"suspend:{name}")
+
+    try:
+        module = Module.assign(module_name=module_name, alias=None, recommend_modules=None, developers=None)
+        module._db_load = True
+        ModulesManager.add_module(module, f"modules.{module_name}")
+        with (
+            patch.object(JobQueueServer, "maintenance_window", new=queue_window),
+            patch.object(SchedulerLifecycle, "maintenance_window", new=scheduler_window),
+            patch.object(SchedulerLifecycle, "reconcile_modules", side_effect=lambda *_args: order.append("reconcile")),
+            patch.object(ModuleStatus, "set_module_loaded", new=persist),
+            patch.object(ModuleRuntimeManager, "suspend", new=suspend),
+        ):
+            success = await ModulesManager.unload_module(module_name)
+        return success and order == [
+            "queue:False",
+            f"scheduler:('{module_name}',)",
+            "persist",
+            "reconcile",
+            f"suspend:{module_name}",
+        ]
+    finally:
+        _restore_module_manager(snapshot)
+
+
 @func_case
 async def test_loader(tester: Tester):
     """core.loader: 模块加载器测试"""
@@ -831,14 +1297,44 @@ async def test_loader(tester: Tester):
     await tester.test(_test_renamed_modules_keep_legacy_aliases, "模块主名连字符迁移别名测试")
     await tester.test(_test_module_status_alias_migration, "ModuleStatus 旧主名加载状态迁移测试")
     await tester.test(_test_reload_preserves_mixed_status_and_rebuilds_registries, "模块重载保留混合状态与注册表")
+    await tester.test(_test_reload_accepts_new_aliasless_module, "模块重载接受无别名的新模块")
+    await tester.test(
+        _test_reload_drains_queue_before_scheduler_maintenance,
+        "模块重载先排空队列再进入 Scheduler 维护",
+    )
     await tester.test(_test_reload_python_failure_restores_all_registries, "Python 重载失败恢复完整注册表")
     await tester.test(_test_reload_reports_database_reinitialization_failure, "数据库重载失败恢复旧状态")
+    await tester.test(
+        _test_reload_failure_restores_entire_python_module_tree,
+        "reload 后置失败恢复完整 Python 模块树",
+    )
+    await tester.test(
+        _test_reload_stops_runtime_before_database_swap,
+        "reload 先停止旧 runtime 再切换数据库",
+    )
     await tester.test(_test_reload_defers_cross_module_bindings, "跨模块装饰器延迟绑定")
     await tester.test(_test_related_modules_respect_package_boundary, "热重载包名前缀边界")
+    await tester.test(_test_reload_dependency_closure_is_dependency_first, "热重载依赖闭包顺序")
+    await tester.test(
+        _test_dependency_scan_covers_from_import_and_dynamic_import,
+        "热重载依赖扫描覆盖动态导入形式",
+    )
+    await tester.test(
+        _test_locale_fingerprint_detects_removed_files,
+        "热重载检测 Locale 文件删除",
+    )
+    await tester.test(_test_reload_syncs_missing_module_config_fields, "热重载补写新增配置字段")
+    await tester.test(
+        _test_schema_fingerprint_covers_schema_attributes,
+        "热重载 schema 指纹覆盖结构属性",
+    )
     await tester.test(_test_reload_py_module_visits_nested_modules_once, "嵌套 Python 模块只重载一次")
     await tester.test(_test_reload_py_module_propagates_child_failure, "子模块重载失败向上传播")
+    await tester.test(_test_reload_py_module_uses_fresh_namespace, "Python 重载使用新模块命名空间")
     await tester.test(_test_concurrent_reload_fails_before_mutation, "并发模块重载在改动前快速失败")
     await tester.test(_test_initial_load_rolls_back_partial_registration, "启动加载失败回滚半注册模块")
     await tester.test(_test_cancelled_reload_restores_registry_and_status, "取消热重载恢复注册表与状态")
+    await tester.test(_test_cancelled_commit_keeps_committed_generation, "取消 commit 等待完成且不回滚新代")
     await tester.test(_test_load_state_changes_only_after_persistence, "全局加载状态持久化后更新内存")
+    await tester.test(_test_unload_drains_queue_before_stopping_runtime, "unload 先排空 Queue 再停止 runtime")
     return tester

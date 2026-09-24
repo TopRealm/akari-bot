@@ -1,4 +1,4 @@
-"""modules.core.analytics 单元测试 - 折线图数值标注的排版。"""
+"""modules.core.su_tools.analytics 单元测试 - 折线图数值标注的排版。"""
 
 import matplotlib
 
@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from core.tester import func_case, Tester
-from modules.core.analytics import annotate_points
+from modules.core.su_tools.analytics import annotate_points
 
 FIGSIZES = ((6.4, 4.8), (4, 3), (12, 8))
 CASES = (
@@ -19,9 +19,6 @@ CASES = (
 
 
 def _max_overflow(data_y: list[int], figsize: tuple[float, float]) -> float:
-    """
-    按 analytics 折线图的画法出图，返回标注顶端超出坐标区上沿的最大像素数。
-    """
     data_x = [str(i) for i in range(1, len(data_y) + 1)]
     figure = plt.figure(figsize=figsize)
     try:
@@ -39,7 +36,6 @@ def _max_overflow(data_y: list[int], figsize: tuple[float, float]) -> float:
 
 
 def _test_annotation_stays_inside_axes():
-    """测试 analytics 折线图 - 最高点的数值标注不应顶出坐标区"""
     try:
         # 标注按像素偏移放置，不参与坐标轴自动缩放，因此要覆盖不同数据量级与图幅。
         return all(_max_overflow(data_y, figsize) < 0 for data_y in CASES for figsize in FIGSIZES)
@@ -50,7 +46,7 @@ def _test_annotation_stays_inside_axes():
 
 @func_case
 async def test_analytics_plot(tester: Tester):
-    """modules.core.analytics: 折线图标注排版测试"""
+    """modules.core.su_tools.analytics: 折线图标注排版测试"""
     await tester.test(_test_annotation_stays_inside_axes, "数值标注不超出坐标区测试")
 
     return tester

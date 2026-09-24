@@ -1,21 +1,13 @@
-"""
-服务器后台任务模块。
-
-定义服务器启动后运行的后台任务，包括：
-- 定期的会话检查和清理
-- 过期临时数据清理
-- IP 信息获取
-- WebRender 初始化
-"""
+"""服务器后台任务模块。"""
 
 import asyncio
 
 from core.builtins.session.tasks import SessionTaskManager
-from core.constants import Info
+from core.constants import Info, Secret
 from core.database.models import JobQueuesTable
-from core.utils.ip import fetch_ip_info
 from core.logger import Logger
 from core.utils.container import ExpiringTempDict
+from core.utils.http import get_url
 from core.utils.web_render import check_web_render_status, init_web_render
 
 
@@ -23,26 +15,56 @@ _background_task: asyncio.Task[None] | None = None
 
 
 async def hourly_background_task():
-    """每小时执行一次的后台检查任务。
-
-    功能：
-    - 执行会话的后台检查
-    - 清理已完成的任务队列
-    - 清理过期的临时数据
-    """
+    """每小时执行一次的后台检查任务。"""
     await SessionTaskManager.bg_check()
     await JobQueuesTable.clear_task()
     await ExpiringTempDict.clear_all()
 
 
-async def init_background_task():
-    """初始化后台任务。
+async def _fetch_public_ip() -> str | None:
+    providers = [
+        "https://api.ip.sb/ip",
+        "https://api.ipify.org",
+        "https://icanhazip.com",
+        "https://checkip.amazonaws.com",
+    ]
 
-    启动以下服务：
-    1. IP信息获取
-    2. WebRender 初始化
-    3. 检查并记录 WebRender 状态
-    """
+    Logger.info("Fetching public IP...")
+    for url in providers:
+        try:
+            data = await get_url(url, timeout=5, fmt="text")
+            ip = data.strip() if isinstance(data, str) else None
+            if ip:
+                Logger.success("Successfully fetched public IP.")
+                return ip
+
+        except Exception:
+            continue
+    else:
+        Logger.exception("Failed to fetch public IP.")
+        return None
+
+
+async def fetch_ip_info():
+    try:
+        ip = await _fetch_public_ip()
+        if not ip:
+            return
+
+        Secret.add(ip)
+        Secret.ip_address = ip
+
+        Logger.info("Getting IP information...")
+        ip_info = await get_url("http://ip-api.com/json/{ip}", timeout=10, fmt="json")
+        if ip_info and ip_info.get("country"):
+            Secret.ip_country = ip_info.get("country")
+        Logger.success("Successfully get IP information.")
+    except Exception:
+        Logger.exception("Failed to get IP information.")
+
+
+async def init_background_task():
+    """初始化后台任务。"""
 
     async def _init_web_render():
         Logger.info("Starting WebRender...")
@@ -51,8 +73,8 @@ async def init_background_task():
             Info.web_render_status = await check_web_render_status()
             if Info.web_render_status:
                 Logger.success("WebRender started successfully.")
-        except asyncio.CancelledError:
-            raise
+        except asyncio.CancelledError as e:
+            raise e
         except Exception:
             Info.web_render_status = False
             Logger.exception("Failed to initialize WebRender.")
@@ -65,7 +87,6 @@ async def init_background_task():
 
 
 def _background_task_done(task: asyncio.Task[None]) -> None:
-    """取回后台初始化任务的异常，避免出现 ``Task exception was never retrieved``。"""
     try:
         task.result()
     except asyncio.CancelledError:

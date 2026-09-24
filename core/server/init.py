@@ -1,33 +1,26 @@
-"""
-服务器初始化模块。
-
-该模块负责服务器启动时的初始化工作，包括：
-- 数据库初始化
-- 模块加载和注册
-- 调度器启动
-- 密钥和提示信息加载
-"""
+"""服务器初始化模块。"""
 
 import asyncio
 import logging
 
 import orjson
-from core.alive import Alive
 from core.builtins.bot import Bot
 from core.builtins.converter import converter
 from core.builtins.message.chain import MessageChain
 from core.builtins.message.internal import Plain, I18NContext
 from core.builtins.session.info import SessionInfo
 from core.config import CFGManager
-from core.constants import Info, PrivateAssets, Secret
+from core.constants import assets_path, Info, PrivateData, Secret
 from core.database import init_db
 from core.loader import load_modules, ModulesManager
 from core.logger import Logger
+from core.queue.server import JobQueueServer
+from core.queue.backend import create_jobqueue_backend
 from core.scheduler import IntervalTrigger, SchedulerLifecycle
 from core.utils.bash import run_sys_command
 from .background_tasks import hourly_background_task, start_background_task
 
-# 等待发起重启的客户端重新上报保活的秒数上限。server 与各 bot 子进程一同重启，
+# 等待发起重启的客户端重新注册为 ready 的秒数上限。server 与各 bot 子进程一同重启，
 # 提示投递时客户端往往尚未就绪；但重启提示并非关键路径，客户端确已掉线时不应无限等待。
 RESTART_PROMPT_TIMEOUT = 60
 
@@ -35,25 +28,21 @@ RESTART_PROMPT_TIMEOUT = 60
 async def init_async(start_scheduler=True, send_prompt=True) -> None:
     """初始化服务器。
 
-    执行服务器启动的所有初始化步骤：
-    1. 设置客户端信息和日志
-    2. 初始化数据库
-    3. 加载所有模块
-    4. 初始化定时任务
-    5. 初始化后台任务
-    6. 加载密钥和启动提示
-
     Args:
         start_scheduler: 是否启动定时任务（默认True）
-        send_prompt: 是否发送重启提示（默认True）。提示须等目标客户端重新上报保活方能投递，
-                     而保活信号经队列轮询取回，故由调用方在轮询启动后自行调用 `load_prompt`
+        send_prompt: 是否发送重启提示（默认True）。提示须等目标客户端重新注册为 ready 方能投递，
+                     故由调用方在数据库和队列启动后自行调用 `load_prompt`
     """
-    # 设置客户端信息为 "Server"
     Info.client_name = "Server"
+    JobQueueServer.configure_backend(create_jobqueue_backend())
+    JobQueueServer.configure_peer(
+        role="server",
+        service=Info.client_name,
+        capabilities=["rpc", "signals", "modules", "scheduler"],
+    )
     Logger.rename(Info.client_name)
 
-    # 读取版本信息
-    version_path = PrivateAssets.path / ".version"
+    version_path = assets_path / ".version"
     if version_path.exists():
         with open(version_path, "r") as f:
             Info.version = f.read()
@@ -63,14 +52,12 @@ async def init_async(start_scheduler=True, send_prompt=True) -> None:
             Info.version = f"git:{commit_hash}"
         else:
             Logger.warning("Failed to get Git commit hash, is it a Git repository?")
-    # 初始化数据库
     Logger.info("Initializing database...")
     if not await init_db(generate_schemas=False):
         # pre-init 已统一完成建表；Server 初始化只负责注册连接和全部模块模型。
         raise RuntimeError("Failed to initialize server database.")
     Logger.success("Database initialized successfully.")
 
-    # 加载所有模块
     await load_modules()
     modules = ModulesManager.return_modules_list()
 
@@ -83,25 +70,17 @@ async def init_async(start_scheduler=True, send_prompt=True) -> None:
         hourly_background_task,
         IntervalTrigger(minutes=60),
     )
-    # 初始化后台任务（如 IP 查询、WebRender 等）
     start_background_task()
 
-    # 启动调度器
     if start_scheduler:
         SchedulerLifecycle.start()
     logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
 
-    # 加载密钥和启动提示
     await load_secret()
     Logger.info(f"Hello, {Info.client_name}!")
 
 
 async def load_secret():
-    """从配置文件中加载所有密钥信息。
-
-    扫描配置中所有带有 "secret" 后缀的配置项，
-    将非占位符的值添加到密钥管理系统中，用于内容过滤。
-    """
     for x in CFGManager.values:
         for y in CFGManager.values[x].keys():
             if y == "secret" or y.endswith("_secret"):
@@ -114,39 +93,40 @@ async def load_secret():
                             Secret.update(w)
 
 
-async def _wait_for_client_online(client_name: str, timeout: float) -> bool:
-    """等待客户端重新上报保活。
+async def _wait_for_client_online(
+    client_name: str,
+    timeout: float,
+    previous_peer_id: str | None = None,
+) -> str | None:
 
-    :param client_name: 目标客户端名称
-    :param timeout: 等待的秒数上限
-    :return: 客户端是否已上线
-    """
+    from core.queue.peer import PeerSelector
 
     async def _poll():
-        while not Alive.is_alive(client_name):
+        selector = PeerSelector(roles=("client",), services=(client_name,))
+        if previous_peer_id:
+            selector = selector.excluding(previous_peer_id)
+        while True:
+            records = await JobQueueServer.registry.resolve(selector)
+            if records:
+                for record in records:
+                    JobQueueServer._update_peer_cache(record.snapshot())
+                return records[0].peer_id
             await asyncio.sleep(0.5)
 
     try:
-        await asyncio.wait_for(_poll(), timeout=timeout)
+        return await asyncio.wait_for(_poll(), timeout=timeout)
     except asyncio.TimeoutError:
-        return False
-    return True
+        return None
 
 
 async def load_prompt(locale_load_error, timeout: float | None = None) -> None:
     """加载并发送启动提示信息。
 
-    如果存在缓存的发送重启命令的对象信息，发送加载成功或失败的提示。
-    清理缓存文件。
-
-    保活表随 server 进程内存一并清空，重启后须等目标客户端重新上报保活方能投递提示，
-    否则 `JobQueueServer.add_job` 会以「客户端掉线」为由将其丢弃。
-
     :param locale_load_error: 语言文件加载过程中产生的错误信息
     :param timeout: 等待目标客户端上线的秒数上限，默认为 `RESTART_PROMPT_TIMEOUT`
     """
-    author_cache = PrivateAssets.path / ".cache_restart_author"
-    loader_cache = PrivateAssets.path / ".cache_loader"
+    author_cache = PrivateData.path / ".cache_restart_author"
+    loader_cache = PrivateData.path / ".cache_loader"
     if author_cache.exists():
         try:
             author_data = author_cache.read_bytes()
@@ -164,14 +144,23 @@ async def load_prompt(locale_load_error, timeout: float | None = None) -> None:
             Logger.exception("Failed to decode restart prompt author cache, skipped restart prompt.")
             return
 
+        # 数据库后端中的旧 Client peer 在进程退出后可能仍保留一段有效租约。它虽然
+        # 已无法消费任务，却仍会被普通服务路由视为 ready，因此须明确排除缓存中的旧实例，
+        # 并把提示固定投递给本轮重启后实际注册的新实例。
+        previous_peer_id = author_session.owner_peer_id
+
         try:
-            if not await _wait_for_client_online(
-                author_session.client_name, timeout if timeout is not None else RESTART_PROMPT_TIMEOUT
-            ):
+            replacement_peer_id = await _wait_for_client_online(
+                author_session.client_name,
+                timeout if timeout is not None else RESTART_PROMPT_TIMEOUT,
+                previous_peer_id=previous_peer_id,
+            )
+            if replacement_peer_id is None:
                 Logger.warning(
                     f"Client {author_session.client_name} did not come online in time, skipped restart prompt."
                 )
                 return
+            author_session.owner_peer_id = replacement_peer_id
 
             await author_session.refresh_info()
             message = []

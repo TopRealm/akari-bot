@@ -12,9 +12,6 @@ MARKER = "webui_analytics_probe"
 
 
 async def _add_record(hours_ago: float) -> None:
-    """
-    写入一条指定时间的统计记录。timestamp 是 auto_now_add 字段，只能建好之后再改写。
-    """
     record = await AnalyticsData.create(
         module_name=MARKER,
         module_type="command",
@@ -27,7 +24,6 @@ async def _add_record(hours_ago: float) -> None:
 
 
 async def _test_analytics_counts_records_in_window():
-    """测试统计接口 - 窗口内的记录应被计入而非始终返回空"""
     # 单元测试验证接口业务逻辑，不经过 SlowAPI 的 Request 类型与限流状态检查。
     # inspect.unwrap 可兼容装饰器层数变化，不依赖固定数量的 __wrapped__ 属性。
     endpoint = inspect.unwrap(web_api.get_analytics)
@@ -47,6 +43,61 @@ async def _test_analytics_counts_records_in_window():
             after["count"] - before["count"] == 2
             and len(after["data"]) - len(before["data"]) == 2
             and sum(1 for row in after["data"] if row["module_name"] == MARKER) == 2
+        )
+
+    finally:
+        await AnalyticsData.filter(module_name=MARKER).delete()
+
+
+@func_case
+async def test_webui_analytics_modules(tester: Tester):
+    """bots.web.api: 模块调用数量统计接口测试"""
+    await tester.test(_test_analytics_modules_counts_in_window, "模块统计时间窗口测试")
+    await tester.test(_test_analytics_modules_respects_limit, "模块统计 limit 测试")
+
+    return tester
+
+
+async def _test_analytics_modules_counts_in_window():
+    endpoint = inspect.unwrap(web_api.get_analytics_modules)
+    try:
+        with patch.object(web_api, "verify_jwt", lambda request: None):
+            before = await endpoint(None, days=1, limit=200)
+
+            await _add_record(hours_ago=1)
+            # 落在一天窗口之外，不应被计入。
+            await _add_record(hours_ago=30)
+
+            after = await endpoint(None, days=1, limit=200)
+
+        records = {row["module_name"]: row for row in after["modules"]}
+        marker = records.get(MARKER)
+        return (
+            after["count"] - before["count"] == 1
+            # limit 足够大时结果未被截断
+            and after["total_modules"] == len(after["modules"])
+            and marker is not None
+            and marker["count"] == 1
+            and 0 < marker["percent"] <= 100
+        )
+
+    finally:
+        await AnalyticsData.filter(module_name=MARKER).delete()
+
+
+async def _test_analytics_modules_respects_limit():
+    endpoint = inspect.unwrap(web_api.get_analytics_modules)
+    try:
+        await _add_record(hours_ago=1)
+        with patch.object(web_api, "verify_jwt", lambda request: None):
+            result = await endpoint(None, days=1, limit=1)
+        return (
+            len(result["modules"]) == 1
+            and result["total_modules"] >= 1
+            and result["days"] == 1
+            # 返回项的计数不会超过窗口总数
+            and 0 < result["modules"][0]["count"] <= result["count"]
+            and 0 < result["modules"][0]["percent"] <= 100
         )
 
     finally:

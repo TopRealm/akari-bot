@@ -50,6 +50,7 @@ class RegexMeta(ModuleMeta):
     text_only: bool = True
     element_filter: tuple[MessageElement, ...] | None = None
     trigger_once_startup: bool = False
+    skip_long_message_confirm: bool = False
     # 注册期编译好的模式，避免每条消息都去 re 模块的全局缓存里查一次
     compiled: re.Pattern | None = field(default=None, init=False, repr=False, eq=False)
 
@@ -71,8 +72,20 @@ class ScheduleMeta(ModuleMeta):
 
 @define
 class HookMeta(ModuleMeta):
+    """模块 hook 元数据。"""
+
     function: Callable = field(default=None)
     name: str | None = None
+    # 入口订阅字段；具名 hook 保持默认即可
+    point: str | None = None
+    priority: int = 100
+    available_for: list = field(default=["*"], converter=convert_list)
+    exclude_from: list = field(default=[], converter=convert_list)
+    load: bool = True
+    # 单次执行预算（秒）；<=0 表示不限时
+    timeout: float = 5.0
+    # server 作用域：免场景 enabled_modules，仍遵守全局停用与平台约束
+    server_scope: bool = False
 
 
 @define

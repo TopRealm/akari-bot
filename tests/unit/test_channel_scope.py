@@ -7,7 +7,7 @@ from core.builtins.session.info import SessionInfo
 from core.builtins.session.internal import MessageSession
 from core.builtins.session.tasks import SessionTaskManager
 from core.utils.cooldown import CoolDown, _cd_dict
-from core.constants import SessionFinished
+from core.builtins.parser.hooks import HookPoint, Stop, dispatch_parser_hook
 from core.database.models import SenderUnionInfo, StoredData, TargetUnionInfo, TargetUnionBind
 from core.utils.game import PlayState
 import core.utils.petal as petal_module
@@ -26,9 +26,6 @@ async def _session(target_id: str, client: str) -> MessageSession:
 
 
 async def _states_shared(prefix: str) -> tuple[bool, bool, bool]:
-    """
-    判断同一 union 下的两个平台场景是否共用冷却、游戏状态与等待任务。
-    """
     first = await _session(f"{prefix}1|Group|x", f"{prefix}1")
     second = await _session(f"{prefix}2|Group|y", f"{prefix}2")
 
@@ -53,7 +50,6 @@ async def _states_shared(prefix: str) -> tuple[bool, bool, bool]:
 
 
 async def _test_states_isolated_across_channels():
-    """测试作用域 - 同 union 但通道号不同的场景不应共用内存态"""
     try:
         union = await TargetUnionInfo.resolve_union("CHA1|Group|x")
         await union.bind_id("CHA2|Group|y")
@@ -65,7 +61,6 @@ async def _test_states_isolated_across_channels():
 
 
 async def _test_states_shared_within_channel():
-    """测试作用域 - 并入同一消息通道后应共用内存态"""
     try:
         union = await TargetUnionInfo.resolve_union("CHB1|Group|x")
         await union.bind_id("CHB2|Group|y")
@@ -76,8 +71,30 @@ async def _test_states_shared_within_channel():
         return False
 
 
+async def _test_play_state_running_lifecycle():
+    msg = await _session("CHGAME|Group|x", "CHGAME")
+    failed = PlayState("managed_failure", msg)
+    try:
+        with failed.running():
+            if not failed.check():
+                return False
+            raise RuntimeError("game failed")
+    except RuntimeError:
+        pass
+    if failed.check():
+        return False
+
+    old_game = PlayState("managed_replacement", msg)
+    new_game = PlayState("managed_replacement", msg)
+    with old_game.running():
+        old_game.disable()
+        new_game.enable()
+    replacement_survived = new_game.check()
+    new_game.disable()
+    return replacement_survived
+
+
 async def _test_petal_quota_shared_across_platforms():
-    """测试作用域 - 花瓣每日额度按 union 共享，不随平台账号翻倍"""
     union = await SenderUnionInfo.resolve_union("PETALA|1")
     await union.bind_id("PETALB|2")
 
@@ -106,8 +123,6 @@ async def _test_petal_quota_shared_across_platforms():
 
 
 async def _test_parser_cooldown_shared_within_channel_and_user_union():
-    """Parser 手动冷却应同时按消息通道和用户 Union 共享。"""
-    from core.builtins.parser.message import _check_target_cooldown, target_cooldown_counter
     from core.tester.mock.session import MockMessageSession
 
     target = await TargetUnionInfo.resolve_union("CDSCOPEA|Group|1")
@@ -136,16 +151,18 @@ async def _test_parser_cooldown_shared_within_channel_and_user_union():
 
     first = await make_session("CDSCOPEA|Group|1", "CDSCOPEA|1", "CDSCOPEA")
     second = await make_session("CDSCOPEB|Group|2", "CDSCOPEB|2", "CDSCOPEB")
-    target_cooldown_counter.clear()
+    from core.module_runtime import ModuleRuntimeManager
+
+    runtime = ModuleRuntimeManager._current.get("parser_policies")
+    if runtime is not None:
+        runtime.state.get("target_cooldown_counter", {}).clear()
     try:
-        await _check_target_cooldown(first)
-        try:
-            await _check_target_cooldown(second)
-        except SessionFinished:
-            return True
-        return False
+        first_result = await dispatch_parser_hook(HookPoint.COMMAND_PREPARE, first, data={})
+        second_result = await dispatch_parser_hook(HookPoint.COMMAND_PREPARE, second, data={})
+        return not isinstance(first_result.result, Stop) and isinstance(second_result.result, Stop)
     finally:
-        target_cooldown_counter.clear()
+        if runtime is not None:
+            runtime.state.get("target_cooldown_counter", {}).clear()
 
 
 @func_case
@@ -153,6 +170,7 @@ async def test_channel_scope(tester: Tester):
     """core: union 与消息通道的作用域测试"""
     await tester.test(_test_states_isolated_across_channels, "跨通道内存态隔离测试")
     await tester.test(_test_states_shared_within_channel, "同通道内存态共享测试")
+    await tester.test(_test_play_state_running_lifecycle, "游戏状态异常清理与新局隔离测试")
     await tester.test(_test_petal_quota_shared_across_platforms, "花瓣额度按 union 共享测试")
     await tester.test(
         _test_parser_cooldown_shared_within_channel_and_user_union,

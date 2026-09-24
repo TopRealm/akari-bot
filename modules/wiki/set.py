@@ -9,8 +9,25 @@ from core.utils.image_table import image_table_render, ImageTable
 from . import wiki
 from .database.models import WikiTargetInfo
 from .utils.wikilib import WikiLib
+from .wiki import WIKI_RENDER_MODE_AUTO, WIKI_RENDER_MODE_BUTTON, WIKI_RENDER_MODE_KEY, WIKI_RENDER_MODE_OFF
 
 wiki_allowlist_url = WikiConfig.wiki_allowlist_url
+
+
+@wiki.command("render <mode> {{I18N:wiki.help.render}}", required_admin=True)
+async def _(msg: Bot.MessageSession, mode: str):
+    mode = mode.lower()
+    aliases = {
+        "button": WIKI_RENDER_MODE_BUTTON,
+        "auto": WIKI_RENDER_MODE_AUTO,
+        "off": WIKI_RENDER_MODE_OFF,
+    }
+    mode = aliases.get(mode)
+    if mode is None:
+        await msg.finish(I18NContext("wiki.message.render.invalid"))
+    if await msg.session_info.target_union_info.edit_target_data(WIKI_RENDER_MODE_KEY, mode):
+        await msg.finish(I18NContext(f"wiki.message.render.{mode}"))
+    await msg.finish(I18NContext("message.failed"))
 
 
 @wiki.command("set <wikiurl> {{I18N:wiki.help.set}}", required_admin=True)
@@ -97,7 +114,7 @@ async def _(msg: Bot.MessageSession, interwiki: str):
     "iw list [--legacy] {{I18N:wiki.help.iw.list}}",
     options_desc={"--legacy": "{I18N:help.option.legacy}"},
 )
-async def _(msg: Bot.MessageSession):
+async def _(msg: Bot.MessageSession, legacy: bool = False):
     target = await WikiTargetInfo.get_by_target_id(msg.session_info.target_id)
     query = target.interwikis
     start_wiki = target.api_link
@@ -109,7 +126,7 @@ async def _(msg: Bot.MessageSession):
             base_interwiki_link = wiki_info.link
     result = []
     if query != {}:
-        if not msg.parsed_msg.get("--legacy", False) and msg.session_info.support_image:
+        if not legacy and msg.session_info.support_image:
             columns = [[x, query[x]] for x in query]
             imgs = await image_table_render(ImageTable(columns, ["Interwiki", "Url"]))
         else:
@@ -119,7 +136,6 @@ async def _(msg: Bot.MessageSession):
             mt = [
                 I18NContext(
                     "wiki.message.iw.list",
-                    prefix=msg.session_info.prefixes[0],
                     cmd=ActionText(f"{msg.session_info.prefixes[0]}wiki iw get "),
                 )
             ]
@@ -144,7 +160,6 @@ async def _(msg: Bot.MessageSession):
         result.append(
             I18NContext(
                 "wiki.message.iw.list.none",
-                prefix=msg.session_info.prefixes[0],
                 cmd=ActionText(f"{msg.session_info.prefixes[0]}wiki iw add"),
             )
         )
@@ -177,7 +192,6 @@ async def _(msg: Bot.MessageSession, interwiki: str):
         await msg.finish(
             I18NContext(
                 "wiki.message.iw.list.none",
-                prefix=msg.session_info.prefixes[0],
                 cmd=ActionText(f"{msg.session_info.prefixes[0]}wiki iw add"),
             )
         )
@@ -190,8 +204,8 @@ async def _(msg: Bot.MessageSession):
         I18NContext(
             "wiki.message.headers.show",
             headers=orjson.dumps(target.headers).decode(),
-            prefix=msg.session_info.prefixes[0],
             cmd=ActionText(f"{msg.session_info.prefixes[0]}wiki headers add"),
+            prefix=msg.session_info.prefixes[0],
         )
     )
 

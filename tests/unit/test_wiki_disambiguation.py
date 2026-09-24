@@ -41,7 +41,7 @@ def _msg(client_name: str, *, table: bool, action: bool = True):
     return SimpleNamespace(
         session_info=SimpleNamespace(
             client_name=client_name,
-            support_markdown_table=table,
+            support_markdown_extension=table,
             support_action_text=action,
             prefixes=["~"],
             locale=Locale("zh_cn"),
@@ -66,15 +66,16 @@ class _FakeGroupMessage(GroupMessage):
     def __init__(self):
         self.id = "source-message"
         self.group_openid = "wiki-disambiguation"
-        self.message_scene = None
+        self.message_context = None
 
 
 class _FakeClient:
     def __init__(self):
         self.calls = []
 
-    async def send_markdown(self, target, content, keyboard=None):
-        self.calls.append({"content": content, "keyboard": keyboard})
+    async def send(self, target, **kwargs):
+        markdown = kwargs.get("markdown") or {}
+        self.calls.append({"content": markdown.get("content"), "keyboard": kwargs.get("keyboard")})
         return {"id": "sent-1"}
 
 
@@ -163,7 +164,7 @@ async def _test_long_qqbot_payload_keeps_table_and_actions():
         locale=Locale("zh_cn"),
         prefixes=["~"],
         support_markdown=True,
-        support_markdown_table=True,
+        support_markdown_extension=True,
         support_action_text=True,
     )
     output = _build_disambiguation_output(SimpleNamespace(session_info=session_info), _long_page(), "")

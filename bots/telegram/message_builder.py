@@ -1,7 +1,6 @@
 """Telegram 消息聚合负载构建。"""
 
 import asyncio
-import re
 from html import escape
 from html.parser import HTMLParser
 
@@ -9,6 +8,7 @@ from aiogram.types import FSInputFile, InputMediaAudio, InputMediaPhoto
 from attrs import define, field
 
 from bots.telegram.info import client_name
+from core.builtins.message.mention import InlineMention, iter_at_code
 from core.builtins.message.chain import MessageChain
 from core.builtins.message.elements import (
     ActionTextElement,
@@ -23,6 +23,7 @@ from core.builtins.message.elements import (
 from core.builtins.session.info import SessionInfo
 from core.logger import Logger
 from core.utils.image_split import image_split
+from core.utils.media import resolve_media_path
 
 
 @define(frozen=True)
@@ -105,25 +106,17 @@ class _HTMLAtomParser(HTMLParser):
         self.atoms.append(_HTMLAtom(raw, tuple(self.contexts)))
 
 
-AT_CODE_PATTERN = re.compile(r"<(?:AT|@):([^\|]+)\|(?:.*?\|)?([^\|>]+)>")
-
-
 def _escape_telegram_text(text: str, parse_mentions: bool = True) -> str:
-    """转义普通文本，仅将本平台 AT 码转换为受控的 Telegram HTML。"""
     if not parse_mentions:
         return escape(text)
 
     result = []
-    start = 0
-    for match in AT_CODE_PATTERN.finditer(text):
-        result.append(escape(text[start : match.start()]))
-        if match.group(1) == client_name:
-            user_id = escape(match.group(2), quote=True)
+    for part in iter_at_code(text):
+        if isinstance(part, InlineMention) and part.client == client_name:
+            user_id = escape(part.id, quote=True)
             result.append(f'<a href="tg://user?id={user_id}">@{user_id}</a>')
         else:
-            result.append(escape(match.group(0)))
-        start = match.end()
-    result.append(escape(text[start:]))
+            result.append(escape(part.raw if isinstance(part, InlineMention) else part))
     return "".join(result)
 
 
@@ -167,7 +160,6 @@ def split_telegram_html(text: str, limit: int) -> list[str]:
 
 
 def _split_plain_telegram_text(text: str, limit: int) -> list[str]:
-    """纯文本快速拆分，避免为每个字符创建 HTML atom 对象。"""
     chunks = []
     start = 0
     while start < len(text):
@@ -220,15 +212,24 @@ async def collect_telegram_content(
                 text_parts.append(f'<a href="tg://user?id={user_id}">@{user_id}</a>')
             inline_pending = False
         elif isinstance(element, ImageElement):
-            image_elements = await image_split(element) if element.allow_split else [element]
-            for image in image_elements:
-                images.append(FSInputFile(await image.get()))
+            split = [element]
+            if element.allow_split:
+                try:
+                    split = await image_split(element)
+                except Exception:
+                    # 图片不可读（本地文件缺失或下载失败）时跳过该元素
+                    Logger.exception(f"Unable to split image {element.path}, skipping this element: ")
+                    split = []
+            for image in split:
+                image_path = await resolve_media_path(image)
+                if image_path is not None:
+                    images.append(FSInputFile(image_path))
             inline_pending = False
-        elif isinstance(element, AudioElement):
-            audio.append(FSInputFile(element.path))
-            inline_pending = False
-        elif isinstance(element, VideoElement):
-            audio.append(FSInputFile(element.path))
+        elif isinstance(element, (AudioElement, VideoElement)):
+            # 底层文件不可得时跳过该元素
+            media_path = await resolve_media_path(element)
+            if media_path is not None:
+                audio.append(FSInputFile(media_path))
             inline_pending = False
     text = "\n".join(text_parts)
     if not text and button_rows and not images and not audio:

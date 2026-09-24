@@ -1,9 +1,4 @@
-"""
-会话信息模块 - 定义和管理消息会话的信息和上下文。
-
-该模块定义了 SessionInfo 类，用于承载一个消息会话的所有相关信息，
-包括场景、用户、平台特性、权限信息等。
-"""
+"""会话信息模块 - 定义和管理消息会话的信息和上下文。"""
 
 from __future__ import annotations
 
@@ -19,19 +14,23 @@ from core.builtins.message.chain import MessageChain
 from core.builtins.session.event_types import EventName
 from core.builtins.session.features import Features
 from core.builtins.utils import command_prefix
-from core.config.base import CoreConfig
-from core.constants.default import default_locale
+from core.config.base import BaseConfig, CoreConfig
 from core.database.models import TargetUnionInfo, SenderUnionInfo
 from core.i18n import Locale
 from core.utils.func import parse_time_string
 from core.utils.session import inject_features
 
+default_locale = BaseConfig.default_locale
+
 
 async def _none():
-    """
-    并发解析时用于占位的空协程，使 gather 的两路返回值位置保持固定。
-    """
     return None
+
+
+def _current_client_peer_id() -> str | None:
+    from core.constants import Info
+
+    return (Info.peer_id or None) if Info.peer_role == "client" else None
 
 
 @define
@@ -43,6 +42,7 @@ class EventInfo:
     target_id: str | None = None
     target_from: str | None = None
     client_name: str | None = None
+    owner_peer_id: str | None = None
     sender_id: str | None = None
     sender_from: str | None = None
     target_union_info: TargetUnionInfo | None = None
@@ -59,6 +59,7 @@ class EventInfo:
         target_id: str | None = None,
         target_from: str | None = None,
         client_name: str | None = None,
+        owner_peer_id: str | None = None,
         sender_id: str | None = None,
         sender_from: str | None = None,
         create: bool = True,
@@ -84,6 +85,7 @@ class EventInfo:
             target_id=target_id,
             target_from=target_from,
             client_name=client_name,
+            owner_peer_id=owner_peer_id or _current_client_peer_id(),
             sender_id=sender_id,
             sender_from=sender_from,
             target_union_info=target_union_info,
@@ -123,6 +125,9 @@ class SessionInfo:
     target_id: str
     target_from: str
     client_name: str
+    # 与平台 SDK 上下文绑定的入站会话必须回到原始 Client 实例；
+    # 主动会话留空以使用服务组 anycast。
+    owner_peer_id: str | None = None
     sender_id: str | None = None
     sender_from: str | None = None
     sender_name: str | None = None
@@ -139,7 +144,7 @@ class SessionInfo:
     support_manage: bool = False
     support_permission_group: bool = False
     support_markdown: bool = False
-    support_markdown_table: bool = False
+    support_markdown_extension: bool = False
     support_reaction: bool = False
     support_quote: bool = False
     support_rss: bool = False
@@ -197,6 +202,7 @@ class SessionInfo:
         cls,
         target_id: str,
         client_name: str | None = None,
+        owner_peer_id: str | None = None,
         target_from: str | None = None,
         sender_id: str | None = None,
         bot_id: str | None = None,
@@ -251,6 +257,7 @@ class SessionInfo:
             target_id=target_id,
             target_from=target_from,
             client_name=client_name,
+            owner_peer_id=owner_peer_id or (None if fetch else _current_client_peer_id()),
             sender_id=sender_id,
             sender_from=sender_from,
             sender_name=sender_name,
@@ -287,10 +294,32 @@ class SessionInfo:
             _c = inject_features(session=_c, features=features)
 
         if fetch:
-            get_params = Alive.get_infos(client_name)
+            get_params = {}
+            if client_name:
+                from core.queue.peer import ServiceRoute
+                from core.queue.rpc import get_default_peer
+
+                routed_peer = await get_default_peer().registry.select_route(
+                    ServiceRoute(service=client_name, routing_key=target_id, role="client")
+                )
+                if routed_peer is not None:
+                    Alive.refresh_peer(
+                        routed_peer.peer_id,
+                        routed_peer.service,
+                        role=routed_peer.role,
+                        state=routed_peer.state,
+                        capabilities=list(routed_peer.capabilities),
+                        metadata=routed_peer.metadata,
+                        lease_until=routed_peer.lease_until,
+                    )
+                    get_params = routed_peer.metadata
             if get_params:
                 _c.ctx_slot = get_params.get("ctx_slot_index", 999)
                 features = get_params.get("features", None)
+                if isinstance(features, dict):
+                    from core.builtins.converter import converter
+
+                    features = converter.structure(features, Features)
                 if features:
                     _c = inject_features(session=_c, features=features)
 
@@ -340,28 +369,18 @@ class SessionInfo:
         self.target_channel_id = bind.channel_id if bind else 1
 
     def get_common_target_id(self) -> str:
-        """
-        获取场景的常用 ID。
-        """
+        """获取场景的常用 ID。"""
         return self.target_id.split("|")[-1]
 
     def get_common_sender_id(self) -> str:
-        """
-        获取用户的常用 ID。
-        """
+        """获取用户的常用 ID。"""
         if self.sender_id:
             return self.sender_id.split("|")[-1]
         return ""
 
     @property
     def channel_key(self) -> str:
-        """
-        现实场景的标识，形如 ``UTID|8B1F...|1``。
-
-        union 只表示若干平台场景共享同一份数据，并不等于它们是现实中的同一个场景；
-        组内 ``target_channel_id`` 相同才是，而默认各占一号即默认谁也不与谁合并。
-        冷却、游戏状态、等待任务这类「同一个现实场景内共享」的内存态须按此建键：
-        只按 union 建键会把仅仅共享配置、实为不同现实场景的双方错误地并作一处。
+        """现实场景的标识，形如 ``UTID|8B1F...|1``。
 
         :return: union ID 与消息通道号拼成的键。
         """
@@ -388,16 +407,12 @@ class SessionInfo:
 
 @define
 class FetchedSessionInfo(SessionInfo):
-    """
-    主动获取的消息会话信息。
-    """
+    """主动获取的消息会话信息。"""
 
 
 @define
 class ModuleHookContext:
-    """
-    模块任务上下文。主要用于传递模块任务的参数。
-    """
+    """模块任务上下文。主要用于传递模块任务的参数。"""
 
     args: dict
     session_info: SessionInfo | None = None
