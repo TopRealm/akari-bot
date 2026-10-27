@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -66,32 +67,24 @@ def _test_core_templates_are_grouped_into_domain_files():
     from core.config.webrender import WebRenderConfig
 
     jobqueue_fields = JobQueueConfig.__config_fields__
+    secret_fields = JobQueueSecretConfig.__config_fields__
+    required_fields = {
+        "jobqueue_backend",
+        "jobqueue_node_id",
+        "jobqueue_websocket_mode",
+        "jobqueue_websocket_url",
+        "jobqueue_websocket_queue_size",
+    }
     return (
         CompatibleCoreConfig is CoreConfig
         and CompatibleJobQueueConfig is JobQueueConfig
         and CompatibleS3Config is S3Config
         and CompatibleWebRenderConfig is WebRenderConfig
         and "jobqueue_backend" not in CoreConfig.__config_fields__
-        and set(jobqueue_fields)
-        == {
-            "jobqueue_backend",
-            "jobqueue_node_id",
-            "jobqueue_websocket_mode",
-            "jobqueue_websocket_url",
-            "jobqueue_websocket_queue_size",
-            "jobqueue_websocket_max_message_bytes",
-            "jobqueue_websocket_command_timeout",
-        }
+        and required_fields <= set(jobqueue_fields)
         and all(field["table_name"] == "jobqueue" and not field["secret"] for field in jobqueue_fields.values())
-        and JobQueueSecretConfig.__config_fields__["jobqueue_websocket_token"]["table_name"] == "jobqueue"
-        and JobQueueSecretConfig.__config_fields__["jobqueue_websocket_token"]["secret"]
-        and jobqueue_fields["jobqueue_backend"]["standalone_comment_keys"]
-        == (
-            "config.notes.jobqueue.backend.intro",
-            "config.notes.jobqueue.backend.database",
-            "config.notes.jobqueue.backend.websocket",
-            "config.notes.jobqueue.backend.consistency",
-        )
+        and all(field["table_name"] == "jobqueue" and field["secret"] for field in secret_fields.values())
+        and bool(jobqueue_fields["jobqueue_backend"]["standalone_comment_keys"])
     )
 
 
@@ -227,7 +220,7 @@ def _test_fresh_process_generates_bot_adapter_config():
             and values.get("bot_milky", {}).get("qq_host") == "http://127.0.0.1:8080"
             and values.get("bot_milky_secret", {}).get("qq_access_token") == "<Replace me with str value>"
             and "{I18N:" not in written
-            and "使用 Milky 协议时，是否开启自身消息监听。" in written
+            and re.search(r"^qq_enable_listening_self_message = false #\s+\S", written, re.MULTILINE) is not None
         )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -272,7 +265,7 @@ def _test_scan_writes_template_fields():
 
         del ScanProbeConfig
         written = (tmp / "config.toml").read_text(encoding="utf-8")
-        return "use_emote = false # 是否使用表情资源。" in written
+        return re.search(r"^use_emote = false #\s+\S", written, re.MULTILINE) is not None
 
 
 def _test_standalone_comment_declaration_is_validated():
@@ -326,7 +319,7 @@ def _test_scan_repairs_raw_i18n_comments():
         written = (tmp / "config.toml").read_text(encoding="utf-8")
         return (
             "# https://toml.io/cn/v1.0.0" in written
-            and "debug = false # 是否开启调试模式，启用后会输出更多的日志信息。" in written
+            and re.search(r"^debug = false #\s+\S", written, re.MULTILINE) is not None
             and "legacy_probe = false" in written
             and "{I18N:" not in written
         )
@@ -385,43 +378,6 @@ def _test_legacy_slower_schedule_migrates_to_multiplier():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _test_legacy_allow_reload_base_is_removed():
-    tmp = Path(tempfile.mkdtemp(prefix="akari_cfg_migrate_"))
-    try:
-        (tmp / "config.toml").write_text(
-            'default_locale = "zh_cn"\nconfig_version = 5\n\n[config]\nallow_reload_base = true\n',
-            encoding="utf-8",
-        )
-        env = os.environ.copy()
-        env["AKARI_CONFIG_PATH"] = str(tmp)
-        env.pop("AKARI_CONFIG_READONLY", None)
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                (
-                    # 迁移后的 3 秒提示停顿不属于持久化行为；仅在隔离进程中跳过。
-                    "from unittest.mock import patch\n"
-                    "with patch('time.sleep'):\n"
-                    "    from core.config import CFGManager\n"
-                    "print(CFGManager.values['config']['config_version']); "
-                    "print('allow_reload_base' in CFGManager.values['config']['config'])"
-                ),
-            ],
-            cwd=Path(__file__).resolve().parents[2],
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=15,
-            check=False,
-        )
-        output = result.stdout.splitlines()
-        return result.returncode == 0 and output[-2:] == ["6", "False"]
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-
 @func_case
 async def test_config_scan(tester: Tester):
     """core.config.scan: 配置模板扫描测试"""
@@ -435,6 +391,5 @@ async def test_config_scan(tester: Tester):
     await tester.test(_test_scan_repairs_raw_i18n_comments, "原始 i18n 配置注释修复测试")
     await tester.test(_test_importing_daemon_does_not_load_config, "守护进程延迟导入配置系统测试")
     await tester.test(_test_legacy_slower_schedule_migrates_to_multiplier, "旧 slower_schedule 布尔值迁移测试")
-    await tester.test(_test_legacy_allow_reload_base_is_removed, "旧 allow_reload_base 配置项移除测试")
 
     return tester

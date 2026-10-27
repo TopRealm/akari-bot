@@ -1,7 +1,7 @@
 import asyncio
 import re
-
-import filetype
+import time
+import urllib.parse
 
 from core.builtins.bot import Bot
 from core.builtins.message.chain import MessageChain
@@ -13,11 +13,12 @@ from core.builtins.message.internal import (
     Markdown,
     Plain,
     Image,
-    Audio,
-    Video,
     Url,
 )
 from core.builtins.session.internal import FinishedSession, MessageSession, confirm_prompt_key
+from core.builtins.session.tasks import SessionTaskManager
+from core.builtins.parser.args import parse_argv, parse_template
+from core.builtins.parser.command import _split_command
 from core.builtins.utils import confirm_command
 from core.component import module
 from core.constants.exceptions import (
@@ -28,13 +29,12 @@ from core.constants.exceptions import (
 )
 from core.logger import Logger
 from core.utils.func import is_int
-from core.utils.http import download
-from core.utils.image import svg_render
+from core.utils.dirty_check import check
+from core.utils.image import msgchain2image
 from core.utils.image_table import image_table_render, ImageTable
 from core.utils.url_audit import evaluate_url_policy
 from core.utils.button import build_button_rows
 from .database.models import WikiSiteInfo, WikiTargetInfo
-from .utils.mapping import generate_screenshot_v2_blocklist
 from .utils.forum import build_forum_markdown_table, build_section_markdown_table
 from .utils.disambiguation import (
     build_disambiguation_table,
@@ -42,8 +42,26 @@ from .utils.disambiguation import (
     is_disambiguation_overlong,
 )
 from .utils.recommend import finish_with_start_wiki_not_set
-from .utils.screenshot_image import generate_screenshot_v1, generate_screenshot_v2
-from .utils.utils import check_svg
+from .utils.media import file_preview
+from .utils.magic import (
+    MAX_EXPRESSION_LENGTH,
+    MAX_INLINE_MAGIC_RESULTS,
+    MAX_RESULT_LENGTH,
+    MAGIC_TIMEOUT,
+    MagicWordError,
+    expand_magic,
+    extract_expressions,
+    get_registry,
+)
+from .utils.screenshot_image import generate_screenshot
+from .utils.template_preview import (
+    MAX_TEMPLATE_LENGTH,
+    TEMPLATE_PREVIEW_TTL,
+    TemplateInvocation,
+    TemplatePreviewError,
+    generate_template_preview,
+    template_parameters,
+)
 from .utils.wikilib import BlockedWikiError, MAX_RESEARCH_SUGGESTIONS, WikiLib, PageInfo, InvalidWikiError, QueryInfo
 
 wiki = module(
@@ -106,6 +124,98 @@ def _wiki_render_mode(session: Bot.MessageSession | QueryInfo) -> str:
     return configured
 
 
+def _template_invocation(page, source, headers, language=None, *, allow_empty=False):
+    if not source or not page.status or page.id <= 0 or not page.title or page.selected_section:
+        return None
+    if not evaluate_url_policy(page.info.api).allowed:
+        return None
+    namespace, _, _ = page.title.partition(":")
+    if page.info.namespaces.get(namespace, 10 if namespace.casefold() == "template" else None) != 10:
+        return None
+    try:
+        template_parameters(source, allow_empty=allow_empty)
+    except TemplatePreviewError:
+        return None
+    return TemplateInvocation(source, page.info.api, page.title, page.id, page.info, dict(headers), language)
+
+
+def _build_template_preview_callback(invocation, tracker, *, source=None, invocations=None, preload_session=None):
+    created = time.monotonic()
+    attempted = False
+    task = None
+    start_lock = asyncio.Lock()
+
+    async def prepare(session):
+        try:
+            kwargs = {}
+            if source is not None:
+                kwargs["source"] = source
+            if invocations is not None:
+                kwargs["invocations"] = invocations
+            return Image(await generate_template_preview(invocation, session, **kwargs))
+        except TemplatePreviewError as error:
+            return I18NContext(error.key)
+        except Exception:
+            Logger.exception("Failed to preload Wiki template preview: ")
+            return I18NContext("wiki.message.template_preview.unavailable")
+
+    async def preload(session=None):
+        nonlocal task
+        async with start_lock:
+            if task is None and not tracker.deleted:
+                session = session or preload_session
+                if session is None:
+                    return None
+                task = await _start_background_with_release(
+                    session, lambda: prepare(session), name="wiki-template-preview-preload"
+                )
+                if tracker.deleted and task and not task.done():
+                    task.cancel()
+        return task
+
+    async def callback(session):
+        nonlocal attempted, task
+        owner = tracker.session_info
+        incoming = session.session_info
+        if (incoming.client_name, incoming.target_id, incoming.sender_id) != (
+            owner.client_name,
+            owner.target_id,
+            owner.sender_id,
+        ):
+            return
+        action = session.as_display(text_only=True).strip()
+        if action == "wiki_render_delete":
+            await tracker.delete()
+            if task and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            return
+        if action != "wiki_template_preview" or attempted or tracker.deleted:
+            return
+        attempted = True
+
+        if time.monotonic() - created > TEMPLATE_PREVIEW_TTL:
+            if task and not task.done():
+                task.cancel()
+            result = I18NContext("wiki.message.template_preview.expired")
+        elif (
+            _wiki_render_mode(session) == WIKI_RENDER_MODE_OFF
+            or not Bot.Info.web_render_status
+            or not evaluate_url_policy(invocation.api).allowed
+        ):
+            result = I18NContext("wiki.message.template_preview.unavailable")
+        else:
+            pending = await preload(session)
+            if pending is None:
+                return
+            result = await asyncio.shield(pending)
+        if not tracker.deleted:
+            await tracker.add(await session.send_message(result, quote=False))
+
+    callback.preload = preload
+    return callback
+
+
 async def _render_preview_items(
     session: Bot.MessageSession,
     items: list[dict],
@@ -116,23 +226,17 @@ async def _render_preview_items(
     result = MessageChain.create()
     for item in items:
         try:
-            link = item["link"]
-            if item.get("section"):
-                if item["url"] in generate_screenshot_v2_blocklist:
-                    images = await generate_screenshot_v1(item["url"], link, headers, section=item["section"])
-                else:
-                    images = await generate_screenshot_v2(
-                        link, section=item["section"], locale=session.session_info.locale.locale
-                    )
-            elif item["url"] not in generate_screenshot_v2_blocklist:
-                images = await generate_screenshot_v2(
-                    link,
-                    allow_special_page=item["is_allowed"],
-                    content_mode=item.get("content_mode", False),
-                    locale=session.session_info.locale.locale,
-                )
-            else:
-                images = await generate_screenshot_v1(item["url"], link, headers, allow_special_page=item["is_allowed"])
+            images = await generate_screenshot(
+                item["link"],
+                wiki_info=item["wiki_info"],
+                title=item["title"],
+                headers=headers,
+                section=item.get("section"),
+                allow_special_page=item["is_allowed"],
+                content_mode=item.get("content_mode", False),
+                diff_data=item.get("diff_data"),
+                locale=session.session_info.locale.locale,
+            )
             if images:
                 result.extend([Image(image) for image in images])
             elif report_failure:
@@ -144,20 +248,38 @@ async def _render_preview_items(
     return result
 
 
-def _build_render_preview_callback(items: list[dict], headers: dict, tracker: _WikiMessageTracker):
+def _build_render_preview_callback(
+    items: list[dict],
+    headers: dict,
+    tracker: _WikiMessageTracker,
+    pre_render_task: asyncio.Task | None = None,
+):
 
     async def _callback(session: Bot.MessageSession):
         action = session.as_display(text_only=True).strip()
         if action == "wiki_render_delete":
             try:
                 await tracker.delete()
+                if pre_render_task and not pre_render_task.done():
+                    pre_render_task.cancel()
+                    await asyncio.gather(pre_render_task, return_exceptions=True)
             except Exception:
                 Logger.exception("Failed to delete Wiki result messages: ")
             return
         if action != "wiki_render_preview":
             return
         try:
-            rendered = await _render_preview_items(session, items, headers)
+            rendered = None
+            if pre_render_task is not None:
+                try:
+                    rendered = await asyncio.shield(pre_render_task)
+                except asyncio.CancelledError:
+                    if not pre_render_task.cancelled():
+                        raise
+                except Exception:
+                    Logger.exception("Wiki WebRender preview preload failed: ")
+            if not rendered:
+                rendered = await _render_preview_items(session, items, headers)
             if rendered:
                 await tracker.add(await session.send_message(rendered, quote=False))
         except Exception:
@@ -231,6 +353,8 @@ async def _gather_background(*awaitables):
 
 def _build_section_callback(page: PageInfo):
     title = page.title
+    if page.revision_id:
+        title += f"?oldid={page.revision_id}"
     sections = tuple(page.sections or ())
     api = page.info.api
 
@@ -303,13 +427,6 @@ def _build_not_found_choice_prompt(
     return prompt
 
 
-def _build_not_found_choice_rows(possible_titles: list[str], start_index: int = 1) -> list[dict[str, str]]:
-    return [
-        {possible_title: str(index)}
-        for index, possible_title in enumerate(possible_titles[:MAX_RESEARCH_SUGGESTIONS], start=start_index)
-    ]
-
-
 def _normalize_page_name(pagename: str) -> str:
     if match := re.fullmatch(r"\[{1,2}\s*(.*?)\s*\]{1,2}", pagename):
         return match.group(1).split("|", 1)[0].strip()
@@ -354,8 +471,181 @@ async def _(msg: Bot.MessageSession):
 
 @wiki.command("<pagename> [-l <lang>] {{I18N:wiki.help}}", options_desc={"-l": "{I18N:wiki.help.option.l}"})
 async def _(msg: Bot.MessageSession, pagename: str, lang: str | None = None):
+    await _query_page_input(msg, pagename, lang)
+
+
+async def _query_page_input(msg: Bot.MessageSession, pagename: str, lang: str | None = None):
+    if extract_expressions(pagename):
+        await query_expressions(msg, pagename, lang=lang)
+        return
     pagename = _normalize_page_name(pagename)
     await query_pages(msg, pagename, lang=lang)
+
+
+@wiki.command(
+    "magic <expression> [-p <page>] {{I18N:wiki.help.magic}}",
+    options_desc={"-p": "{I18N:wiki.help.magic.option.p}"},
+)
+async def magic_words(msg: Bot.MessageSession, expression: str, page: str | None = None):
+    tokens = _split_command(msg.trigger_msg.partition(" ")[2])
+    if tokens and tokens[0] != "magic":
+        parsed = parse_argv(tokens, parse_template(["<pagename> [-l <lang>]"])).args
+        option = parsed.get("-l")
+        await _query_page_input(msg, parsed["<pagename>"], option.get("<lang>") if isinstance(option, dict) else None)
+        return
+    await query_expressions(msg, expression, page=page, magic_only=True)
+
+
+async def query_expressions(
+    msg: Bot.MessageSession,
+    text: str,
+    *,
+    page: str | None = None,
+    magic_only: bool = False,
+    inline: bool = False,
+    lang: str | None = None,
+):
+    if not inline:
+        text = text.strip()
+    if magic_only and not text.startswith("{{"):
+        text = "{{" + text + "}}"
+    length_limit = MAX_EXPRESSION_LENGTH if magic_only else MAX_TEMPLATE_LENGTH
+    if not inline and (len(text) > length_limit or (page and len(page) > MAX_EXPRESSION_LENGTH)):
+        await msg.finish(I18NContext("wiki.message.magic.input_long"))
+    expressions = extract_expressions(text[: MAX_TEMPLATE_LENGTH * 5])
+    if not inline and (
+        not expressions or (magic_only and (len(expressions) != 1 or expressions[0].span != (0, len(text))))
+    ):
+        await msg.finish(I18NContext("wiki.message.magic.invalid"))
+    if not expressions:
+        return
+    target = await WikiTargetInfo.get_by_target_id(msg.session_info.target_id)
+    if not target.api_link:
+        await finish_with_start_wiki_not_set(msg)
+    await finish_if_wiki_blocked(msg, target.api_link)
+    site = WikiLib(target.api_link, target.headers, locale=msg.session_info.locale.locale)
+    registry = None
+    try:
+        async with asyncio.timeout(MAGIC_TIMEOUT):
+            registry = await get_registry(site)
+    except BlockedWikiError as error:
+        await finish_if_wiki_blocked(msg, error.url)
+        raise
+    except Exception:
+        Logger.exception("Failed to discover Wiki magic words: ")
+    magic_nodes = []
+    template_names = []
+    template_invocations = {}
+    template_namespaces = {"template"} | {name.casefold() for name, ns in site.wiki_info.namespaces.items() if ns == 10}
+    for node in expressions:
+        is_magic = registry.lookup(node) is not None if registry else type(node).__name__ == "ParserFunction"
+        if magic_only or is_magic or str(node)[2:-2].lstrip().startswith("#"):
+            magic_nodes.append(node)
+        else:
+            name = node.name.strip()
+            if ":" in name and name.split(":", 1)[0].casefold() in template_namespaces:
+                name = name.split(":", 1)[1].strip()
+            if name and "{" not in name:
+                template_invocations.setdefault(name, str(node))
+    template_names = list(template_invocations)[:5]
+    if len(template_invocations) > 5:
+        template_invocations = {}
+    magic_nodes = list({str(node): node for node in magic_nodes}.values())[:MAX_INLINE_MAGIC_RESULTS]
+    messages = MessageChain.create()
+    errors = set()
+    multiple = len(magic_nodes) > 1
+    limit = MAX_RESULT_LENGTH if not multiple else (MAX_RESULT_LENGTH - 30 * len(magic_nodes)) // len(magic_nodes)
+    for node in magic_nodes:
+        try:
+            if registry is None:
+                raise MagicWordError("unavailable")
+            value, is_url = await expand_magic(
+                site, registry, str(node), page, limit=limit, max_lines=1 if multiple else 3
+            )
+            if not site.wiki_info.is_allowed and site.should_check_content(msg):
+                checked = await check([str(node), value], session=msg)
+                if any(not item["status"] for item in checked):
+                    raise MagicWordError("filtered")
+            if not value:
+                raise MagicWordError("empty")
+            if is_url:
+                trusted = (
+                    site.wiki_info.is_allowed
+                    and urllib.parse.urlsplit(value).netloc == urllib.parse.urlsplit(site.wiki_info.realurl).netloc
+                )
+                result = Url(value, trusted=True if trusted else None)
+            else:
+                result = Plain(value, allow_parse=False)
+            if multiple:
+                call = registry.lookup(node)
+                if not is_url:
+                    result = Plain(f"{call.label[:24]} = {value}", allow_parse=False)
+                messages.append(result)
+            else:
+                messages.append(result)
+        except MagicWordError as error:
+            if error.key.endswith(".output_long") and error.content and not error.is_url:
+                if not site.wiki_info.is_allowed and site.should_check_content(msg):
+                    try:
+                        checked = await check([str(node), error.content], session=msg)
+                    except Exception:
+                        Logger.exception("Failed to check long Wiki magic result: ")
+                        error = MagicWordError("unavailable")
+                    else:
+                        if any(not item["status"] for item in checked):
+                            error = MagicWordError("filtered")
+                if (
+                    error.key.endswith(".output_long")
+                    and error.content
+                    and isinstance(msg, Bot.MessageSession)
+                    and msg.session_info.support_wait
+                    and msg.session_info.support_image
+                    and Bot.Info.web_render_status
+                ):
+                    try:
+                        confirmed = await msg.wait_confirm(
+                            I18NContext("wiki.message.magic.output_long.confirm"),
+                            no_confirm_action=False,
+                        )
+                    except (WaitCancelException, SessionContextUnavailable):
+                        confirmed = False
+                    if confirmed:
+                        try:
+                            images = await msgchain2image(
+                                MessageChain.assign(Plain(error.content, allow_parse=False)),
+                                session=msg,
+                            )
+                        except Exception:
+                            Logger.exception("Failed to render long Wiki magic result: ")
+                            images = False
+                        if images:
+                            messages.extend(MessageChain.assign(images))
+                            continue
+                        error = MagicWordError("output_long_unavailable")
+            key = error.key
+            if key not in errors:
+                messages.append(I18NContext(key))
+                errors.add(key)
+        except BlockedWikiError as error:
+            await finish_if_wiki_blocked(msg, error.url)
+            raise
+        except Exception:
+            Logger.exception("Failed to expand Wiki magic word: ")
+            if "wiki.message.magic.unavailable" not in errors:
+                messages.append(I18NContext("wiki.message.magic.unavailable"))
+                errors.add("wiki.message.magic.unavailable")
+    if template_names:
+        await query_pages(
+            msg,
+            template_names,
+            template=True,
+            preset_message=messages,
+            lang=lang,
+            template_invocations=template_invocations,
+            template_preview_source=text,
+        )
+    elif messages:
+        await msg.finish(messages)
 
 
 @wiki.command(
@@ -390,6 +680,8 @@ async def query_pages(
     use_prefix: bool = True,
     inline_mode: bool = False,
     random_page: bool = False,
+    template_invocations: dict[str, str] | None = None,
+    template_preview_source: str | None = None,
 ):
     """在查询全过程中保持平台上下文，避免慢请求期间被消息清理流程释放。"""
     if not isinstance(session, MessageSession):
@@ -406,6 +698,8 @@ async def query_pages(
             use_prefix=use_prefix,
             inline_mode=inline_mode,
             random_page=random_page,
+            template_invocations=template_invocations,
+            template_preview_source=template_preview_source,
         )
 
     try:
@@ -427,6 +721,8 @@ async def query_pages(
             use_prefix=use_prefix,
             inline_mode=inline_mode,
             random_page=random_page,
+            template_invocations=template_invocations,
+            template_preview_source=template_preview_source,
         )
     finally:
         await _release_background_session(session)
@@ -445,6 +741,8 @@ async def _query_pages_impl(
     use_prefix: bool = True,
     inline_mode: bool = False,
     random_page: bool = False,
+    template_invocations: dict[str, str] | None = None,
+    template_preview_source: str | None = None,
 ):
     if isinstance(session, MessageSession):
         target = await WikiTargetInfo.get_by_target_id(session.session_info.target_id)
@@ -489,11 +787,12 @@ async def _query_pages_impl(
     elif title:
         if isinstance(title, str):
             title = [title]
-        title = list(set(title))
+        title = list(dict.fromkeys(title))
         if len(title) > 15:
             raise AbuseWarning("{I18N:tos.message.reason.wiki_abuse}")
         query_task = {start_wiki: {"query": [], "iw_prefix": ""}}
         for t in title:
+            invocation_source = (template_invocations or {}).get(t)
             if prefix and use_prefix:
                 t = prefix + t
             if not t:
@@ -501,6 +800,8 @@ async def _query_pages_impl(
             if t[0] == ":":
                 if len(t) > 1:
                     query_task[start_wiki]["query"].append(t[1:])
+                    if invocation_source:
+                        query_task[start_wiki].setdefault("invocations", {})[t[1:]] = invocation_source
             else:
                 match_interwiki = re.match(r"^(.*?):(.*)", t)
                 matched = False
@@ -512,9 +813,13 @@ async def _query_pages_impl(
                         if interwiki_url not in query_task:
                             query_task[interwiki_url] = {"query": [], "iw_prefix": g1}
                         query_task[interwiki_url]["query"].append(g2)
+                        if invocation_source:
+                            query_task[interwiki_url].setdefault("invocations", {})[g2] = invocation_source
                         matched = True
                 if not matched:
                     query_task[start_wiki]["query"].append(t)
+                    if invocation_source:
+                        query_task[start_wiki].setdefault("invocations", {})[t] = invocation_source
     elif pageid:
         if not iw:
             query_task = {start_wiki: {"queryid": [pageid], "iw_prefix": ""}}
@@ -545,6 +850,25 @@ async def _query_pages_impl(
     render_infobox_list = []
     render_section_list = []
     render_button_items = []
+    preview_invocations = []
+    preview_source = template_preview_source or (
+        next(iter(template_invocations.values())) if len(template_invocations or {}) == 1 else None
+    )
+    preview_page_count = len(template_invocations or {})
+    preview_template_count = preview_page_count
+    if preview_source:
+        preview_template_count = sum(type(node).__name__ == "Template" for node in extract_expressions(preview_source))
+    preview_has_parameters = False
+    for source in (template_invocations or {}).values():
+        try:
+            preview_has_parameters = preview_has_parameters or bool(template_parameters(source, allow_empty=True))
+        except TemplatePreviewError:
+            continue
+    preview_enabled = (
+        bool(preview_source)
+        and len(preview_source) <= MAX_TEMPLATE_LENGTH
+        and (preview_template_count > 1 or preview_has_parameters)
+    )
     dl_list = []
     if preset_message:
         msg_list.extend(preset_message)
@@ -568,6 +892,7 @@ async def _query_pages_impl(
                             title=rd,
                             inline=inline_mode,
                             lang=lang,
+                            _explicit=1 if iw_prefix else 0,
                             session=session if isinstance(session, Bot.MessageSession) else None,
                             check_render=render_mode == WIKI_RENDER_MODE_BUTTON,
                         )
@@ -580,15 +905,48 @@ async def _query_pages_impl(
                             pageid=int(rdp),
                             inline=inline_mode,
                             lang=lang,
+                            _explicit=1 if iw_prefix else 0,
                             session=session if isinstance(session, Bot.MessageSession) else None,
                             check_render=render_mode == WIKI_RENDER_MODE_BUTTON,
                         )
                     )
                 )
-            query = await asyncio.gather(*tasks)
-            for result in query:
+            query = await asyncio.gather(*tasks, return_exceptions=True)
+            reported_error = False
+            for result_index, result in enumerate(query):
+                if isinstance(result, BaseException):
+                    if not isinstance(result, Exception) or isinstance(result, (BlockedWikiError, AbuseWarning)):
+                        raise result
+                    if not reported_error:
+                        if isinstance(result, InvalidWikiError):
+                            msg_list.extend([I18NContext("message.error"), Plain(str(result))])
+                        else:
+                            Logger.error(f"Wiki page query failed: {result}")
+                            msg_list.append(I18NContext("wiki.message.error.query"))
+                        reported_error = True
+                    continue
                 Logger.debug(result)
                 r: PageInfo = result
+                if (
+                    template
+                    and preview_enabled
+                    and isinstance(session, Bot.MessageSession)
+                    and session.session_info.support_button
+                    and session.session_info.support_image
+                    and Bot.Info.web_render_status
+                    and render_mode != WIKI_RENDER_MODE_OFF
+                    and result_index < len(ready_for_query_pages)
+                ):
+                    source = current_task.get("invocations", {}).get(ready_for_query_pages[result_index])
+                    invocation = _template_invocation(
+                        r,
+                        source,
+                        headers,
+                        lang,
+                        allow_empty=preview_template_count > 1,
+                    )
+                    if invocation:
+                        preview_invocations.append(invocation)
                 display_title = None
                 display_before_title = None
                 if r.title:
@@ -639,6 +997,8 @@ async def _query_pages_impl(
                         section_item = {
                             "link": r.link,
                             "url": r.info.realurl,
+                            "wiki_info": r.info,
+                            "title": r.title,
                             "section": r.selected_section,
                             "is_allowed": render_allowed,
                         }
@@ -655,6 +1015,8 @@ async def _query_pages_impl(
                                 {
                                     r.link: {
                                         "url": r.info.realurl,
+                                        "wiki_info": r.info,
+                                        "title": r.title,
                                         "section": r.selected_section,
                                         "is_allowed": render_allowed,
                                     }
@@ -679,8 +1041,11 @@ async def _query_pages_impl(
                             infobox_item = {
                                 "link": r.link,
                                 "url": r.info.realurl,
+                                "wiki_info": r.info,
+                                "title": r.title,
                                 "is_allowed": render_allowed,
                                 "content_mode": content_mode,
+                                "diff_data": r.diff_data,
                             }
                             if render_mode == WIKI_RENDER_MODE_BUTTON:
                                 if (
@@ -695,8 +1060,11 @@ async def _query_pages_impl(
                                     {
                                         r.link: {
                                             "url": r.info.realurl,
+                                            "wiki_info": r.info,
+                                            "title": r.title,
                                             "is_allowed": render_allowed,
                                             "content_mode": content_mode,
+                                            "diff_data": r.diff_data,
                                         }
                                     }
                                 )
@@ -920,10 +1288,6 @@ async def _query_pages_impl(
                                 namespace=r.invalid_namespace,
                             )
                         )
-                    if r.before_page_property == "template":
-                        title_parts = r.before_title.split(":")
-                        if len(title_parts) > 1 and title_parts[1].isupper():
-                            plain_slice.append(I18NContext("wiki.message.magic_word"))
                     if plain_slice:
                         msg_list.extend(plain_slice)
                     if wait_plain_slice:
@@ -942,8 +1306,44 @@ async def _query_pages_impl(
                 msg_list.extend(error_message)
     if isinstance(session, Bot.MessageSession):
         render_callback = None
+        preview_ready = (
+            preview_enabled
+            and len(preview_invocations) == preview_page_count
+            and len({item.api for item in preview_invocations}) == 1
+        )
+        if preview_ready:
+            render_infobox_list.clear()
+            render_section_list.clear()
+            render_button_items.clear()
         has_message_content = bool(msg_list) or bool(render_button_items)
-        if render_mode == WIKI_RENDER_MODE_BUTTON and session.session_info.support_button and has_message_content:
+        if preview_ready and has_message_content:
+            preview_label = session.t("wiki.message.template_preview.button")
+            msg_list.append(
+                ButtonFrame(
+                    [
+                        ButtonRows.assign(
+                            [
+                                Button(
+                                    preview_label,
+                                    "wiki_template_preview",
+                                    click_limit=1,
+                                ),
+                                Button(
+                                    session.t("wiki.message.render.action.delete"), "wiki_render_delete", click_limit=1
+                                ),
+                            ]
+                        )
+                    ]
+                )
+            )
+            render_callback = _build_template_preview_callback(
+                preview_invocations[0],
+                message_tracker,
+                source=preview_source,
+                invocations=preview_invocations,
+                preload_session=session,
+            )
+        elif render_mode == WIKI_RENDER_MODE_BUTTON and session.session_info.support_button and has_message_content:
             render_buttons = []
             if render_button_items:
                 render_buttons.append(
@@ -962,7 +1362,25 @@ async def _query_pages_impl(
                 )
             )
             msg_list.append(ButtonFrame([ButtonRows.assign(render_buttons)]))
-            render_callback = _build_render_preview_callback(render_button_items, headers, message_tracker)
+            pre_render_task = None
+            if render_button_items:
+
+                async def pre_render():
+                    try:
+                        return await _render_preview_items(session, render_button_items, headers)
+                    except Exception:
+                        Logger.exception("Wiki WebRender preview preload failed: ")
+                        return None
+
+                try:
+                    pre_render_task = await _start_background_with_release(
+                        session, pre_render, name="wiki-render-preview-preload"
+                    )
+                except Exception:
+                    Logger.exception("Failed to start Wiki WebRender preview preload: ")
+            render_callback = _build_render_preview_callback(
+                list(render_button_items), headers, message_tracker, pre_render_task=pre_render_task
+            )
         if msg_list:
             quote = not session.session_info.support_markdown
             if all(
@@ -975,13 +1393,29 @@ async def _query_pages_impl(
                 ]
             ):
                 try:
-                    await session.finish(msg_list, callback=render_callback, callback_once=False, quote=quote)
+                    await session.finish(
+                        msg_list,
+                        callback=render_callback,
+                        callback_once=False,
+                        quote=quote,
+                        callback_timeout=TEMPLATE_PREVIEW_TTL if preview_ready else SessionTaskManager.CALLBACK_TTL,
+                    )
                 except SessionFinished as error:
                     if message_tracker and error.args:
                         await message_tracker.add(error.args[0])
+                    if preview_ready and render_callback:
+                        await render_callback.preload()
                     raise
             else:
-                await send_message(msg_list, callback=render_callback, callback_once=False, quote=quote)
+                await send_message(
+                    msg_list,
+                    callback=render_callback,
+                    callback_once=False,
+                    quote=quote,
+                    callback_timeout=TEMPLATE_PREVIEW_TTL if preview_ready else SessionTaskManager.CALLBACK_TTL,
+                )
+                if preview_ready and render_callback:
+                    await render_callback.preload()
 
         async def infobox():
             if render_infobox_list and session.session_info.support_image:
@@ -989,26 +1423,19 @@ async def _query_pages_impl(
                 for i in render_infobox_list:
                     for ii in i:
                         Logger.info(i[ii]["url"])
-                        if i[ii]["url"] not in generate_screenshot_v2_blocklist:
-                            get_infobox = await generate_screenshot_v2(
-                                ii,
-                                allow_special_page=i[ii]["is_allowed"],
-                                content_mode=i[ii]["content_mode"],
-                                locale=session.session_info.locale.locale,
-                            )
-                            if get_infobox:
-                                for img in get_infobox:
-                                    infobox_msg_list.append(Image(img))
-                        else:
-                            get_infobox = await generate_screenshot_v1(
-                                i[ii]["url"],
-                                ii,
-                                headers,
-                                allow_special_page=i[ii]["is_allowed"],
-                            )
-                            if get_infobox:
-                                for img in get_infobox:
-                                    infobox_msg_list.append(Image(img))
+                        get_infobox = await generate_screenshot(
+                            ii,
+                            wiki_info=i[ii]["wiki_info"],
+                            title=i[ii]["title"],
+                            headers=headers,
+                            allow_special_page=i[ii]["is_allowed"],
+                            content_mode=i[ii]["content_mode"],
+                            diff_data=i[ii].get("diff_data"),
+                            locale=session.session_info.locale.locale,
+                        )
+                        if get_infobox:
+                            for img in get_infobox:
+                                infobox_msg_list.append(Image(img))
                 if infobox_msg_list:
                     await send_message(infobox_msg_list, quote=False)
 
@@ -1018,99 +1445,72 @@ async def _query_pages_impl(
                 for i in render_section_list:
                     for ii in i:
                         if i[ii]["is_allowed"]:
-                            if i[ii]["url"] not in generate_screenshot_v2_blocklist:
-                                get_section = await generate_screenshot_v2(
-                                    ii, section=i[ii]["section"], locale=session.session_info.locale.locale
-                                )
-                                if get_section:
-                                    for img in get_section:
-                                        section_msg_list.append(Image(img))
-                                else:
-                                    section_msg_list.append(I18NContext("wiki.message.error.render_section"))
+                            get_section = await generate_screenshot(
+                                ii,
+                                wiki_info=i[ii]["wiki_info"],
+                                title=i[ii]["title"],
+                                headers=headers,
+                                section=i[ii]["section"],
+                                locale=session.session_info.locale.locale,
+                            )
+                            if get_section:
+                                for img in get_section:
+                                    section_msg_list.append(Image(img))
                             else:
-                                get_section = await generate_screenshot_v1(
-                                    i[ii]["url"], ii, headers, section=i[ii]["section"]
-                                )
-                                if get_section:
-                                    for img in get_section:
-                                        section_msg_list.append(Image(img))
-                                else:
-                                    section_msg_list.append(I18NContext("wiki.message.error.render_section"))
+                                section_msg_list.append(I18NContext("wiki.message.error.render_section"))
                 if section_msg_list:
                     await send_message(section_msg_list, quote=False)
 
         async def image_and_audio():
             if dl_list:
                 for f in dl_list:
-                    dl = await download(f)
-                    guess_type = filetype.guess(dl)
-                    if guess_type:
-                        if guess_type.extension in [
-                            "png",
-                            "gif",
-                            "jpg",
-                            "jpeg",
-                            "webp",
-                            "bmp",
-                            "ico",
-                        ]:
-                            if session.session_info.support_image:
-                                await send_message(Image(dl), quote=False)
-                        elif guess_type.extension in [
-                            "oga",
-                            "ogg",
-                            "flac",
-                            "mp3",
-                            "wav",
-                        ]:
-                            if session.session_info.support_audio:
-                                await send_message(Audio(dl), quote=False)
-                        elif guess_type.extension in [
-                            "mp4",
-                            "mkv",
-                            "avi",
-                            "mov",
-                            "flv",
-                            "webm",
-                        ]:
-                            if session.session_info.support_video:
-                                await send_message(Video(dl), quote=False)
-                    elif check_svg(dl):
-                        rd = await svg_render(dl)
-                        if session.session_info.support_image and rd:
-                            await send_message(rd, quote=False)
+                    preview = await file_preview(f, session.session_info)
+                    if preview:
+                        await send_message(preview, quote=False)
 
         async def wait_confirm():
             if wait_msg_list and session.session_info.support_wait:
-                possibly_choices = []
                 Logger.debug(wait_possible_list)
                 Logger.debug(wait_list)
+                button_rows: list[ButtonRows] = []
                 wi = 1
                 if len(wait_list) == 1:
-                    possibly_choices.append(
-                        {
-                            str(I18NContext("message.button.yes")): confirm_command[0],
-                            str(I18NContext("message.button.no")): "no",
-                        }
+                    button_rows.append(
+                        ButtonRows.assign(
+                            [
+                                Button(session.t("message.button.yes"), confirm_command[0]),
+                                Button(session.t("message.button.no"), "no"),
+                            ]
+                        )
                     )
                 elif len(wait_list) > 1:
-                    choices_ = {}
-                    for w in wait_list:
-                        choices_[w] = str(wi)
-                        wi += 1
-                    possibly_choices.append(choices_)
+                    button_rows.append(
+                        ButtonRows.assign(
+                            [
+                                Button(display_title, str(index))
+                                for index, redirect in enumerate(wait_list, start=wi)
+                                for display_title in redirect
+                            ]
+                        )
+                    )
+                    wi += len(wait_list)
                 if wait_possible_list:
                     # [{a: {b: [c,d,e]}}]
                     for w in wait_possible_list:
                         for ww in w:
                             for www in w[ww]:
-                                choice_rows = _build_not_found_choice_rows(w[ww][www], start_index=wi)
-                                possibly_choices.extend(choice_rows)
-                                wi += len(choice_rows)
+                                titles = w[ww][www][:MAX_RESEARCH_SUGGESTIONS]
+                                button_rows.extend(
+                                    ButtonRows.assign([Button(title, str(index))])
+                                    for index, title in enumerate(titles, start=wi)
+                                )
+                                wi += len(titles)
+                    if button_rows:
+                        button_rows[-1].buttons.append(Button(session.t("wiki.message.render.action.delete"), "close"))
 
-                confirm = await session.wait_next_message(
-                    wait_msg_list, delete=True, append_instruction=False, possibly_choices=possibly_choices
-                )
+                if button_rows and session.session_info.support_button:
+                    wait_msg_list.append(ButtonFrame(button_rows))
+                confirm = await session.wait_next_message(wait_msg_list, delete=True, append_instruction=False)
                 auto_index = False
                 index = 0
                 if confirm.as_display(text_only=True) in confirm_command:

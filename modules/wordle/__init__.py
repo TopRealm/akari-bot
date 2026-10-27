@@ -1,12 +1,12 @@
 from core.builtins.bot import Bot
 from core.builtins.message.internal import I18NContext, Image as BImage, Plain, Url
 from core.component import module
-from modules.wordle.config import WordleConfig
+from core.logger import Logger
 from core.utils.cooldown import CoolDown
 from core.utils.game import PlayState, GAME_EXPIRED
-from core.logger import Logger
 from core.utils.petal import gained_petal
 from .board import WordleBoard, WordleBoardImage
+from .config import WordleConfig
 
 text_mode = WordleConfig.wordle_disable_image
 
@@ -37,9 +37,7 @@ async def _(msg: Bot.MessageSession, hard: bool = False, trial: bool = False):
 
     board = WordleBoard.from_random_word()
     last_word = None
-    board_image = WordleBoardImage(
-        wordle_board=board, dark_theme=msg.session_info.target_union_info.target_data.get("wordle_dark_theme")
-    )
+    board_image = WordleBoardImage(wordle_board=board, dark_theme=msg.session_info.dark_mode)
 
     with play_state.running():
         play_state.update(answer=board.word)
@@ -119,14 +117,3 @@ async def _(msg: Bot.MessageSession):
             ]
         )
     await msg.finish(I18NContext("game.message.stop.none"))
-
-
-@wordle.command("theme {{I18N:wordle.help.theme}}", load=not text_mode)
-async def _(msg: Bot.MessageSession):
-    dark_theme = msg.session_info.target_union_info.target_data.get("wordle_dark_theme")
-
-    if dark_theme:
-        await msg.session_info.target_union_info.edit_target_data("wordle_dark_theme", False)
-        await msg.finish(I18NContext("wordle.message.theme.disable"))
-    await msg.session_info.target_union_info.edit_target_data("wordle_dark_theme", True)
-    await msg.finish(I18NContext("wordle.message.theme.enable"))

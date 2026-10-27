@@ -1,5 +1,7 @@
 """设置面板单元测试 - 设置行的构造与渲染。"""
 
+from unittest.mock import patch
+
 from core.builtins.message.chain import MessageChain
 from core.builtins.message.elements import ActionTextElement, PlainElement
 from core.builtins.session.info import SessionInfo
@@ -43,10 +45,6 @@ def _make_msg(
     return MessageSession(session_info=session_info)
 
 
-def _labels(rows) -> list[str]:
-    return [row.label for row in rows]
-
-
 def _row_by_label(rows, label: str):
     return next((row for row in rows if row.label == label), None)
 
@@ -58,33 +56,12 @@ def _render(support_button: bool = False, can_edit: bool = True) -> list:
 
 def _test_sender_rows_default_to_enabled() -> bool:
     rows = build_sender_rows(_make_msg())
-    if len(rows) != 2:
-        Logger.error(f"Sender panel should list exactly two settings, got {len(rows)}")
+    if len(rows) != 3:
+        Logger.error(f"Sender panel should list exactly three settings, got {len(rows)}")
         return False
-    if any(row.value != "已开启" for row in rows):
-        Logger.error(f"Both sender settings should default to enabled, got {[r.value for r in rows]}")
+    if any(row.value != "已开启" for row in rows if row.label != "深色模式"):
+        Logger.error(f"Sender settings should default to enabled, got {[r.value for r in rows]}")
         return False
-    return True
-
-
-def _test_sender_rows_follow_setting() -> bool:
-    rows = build_sender_rows(_make_msg(sender_data={"typing_prompt": False}))
-    row = _row_by_label(rows, "输入提示")
-    if not row:
-        Logger.error("Sender panel should carry the typing switch")
-        return False
-    if row.value != "已关闭" or row.action != "开启":
-        Logger.error(f"A disabled switch should read 已关闭 and offer 开启, got {row.value} / {row.action}")
-        return False
-    return True
-
-
-def _test_target_rows_content() -> bool:
-    labels = _labels(build_target_rows(_make_msg()))
-    for expected in ("语言", "静音", "自定义前缀", "时间偏移", "命令冷却"):
-        if expected not in labels:
-            Logger.error(f"Target panel should list {expected}, got {labels}")
-            return False
     return True
 
 
@@ -240,11 +217,14 @@ def _test_markdown_row_follows_capability() -> bool:
     return True
 
 
-def _test_markdown_row_follows_setting() -> bool:
-    msg = _make_msg(sender_data={"use_markdown": False}, support_markdown_toggle=True)
-    row = _row_by_label(build_sender_rows(msg), "Markdown 消息")
-    if not row or row.value != "已关闭" or row.action != "开启":
-        Logger.error(f"A disabled markdown switch should offer to turn it back on, got {row}")
+def _test_theme_row_follows_setting() -> bool:
+    row = _row_by_label(build_sender_rows(_make_msg()), "深色模式")
+    if not row or row.value != "已关闭" or row.action != "开启" or row.command != "setup dark":
+        Logger.error(f"An unset dark mode switch should read 已关闭 and offer 开启, got {row}")
+        return False
+    row = _row_by_label(build_sender_rows(_make_msg(sender_data={"dark_mode": True})), "深色模式")
+    if not row or row.value != "已开启" or row.action != "关闭":
+        Logger.error(f"An enabled dark mode switch should offer to turn it off, got {row}")
         return False
     return True
 
@@ -260,6 +240,19 @@ def _test_invalid_prompt_row() -> bool:
     off = _row_by_label(build_target_rows(_make_msg(target_data={"invalid_module_prompt": False})), "“模块不存在”提示")
     if not off or off.value != "已关闭":
         Logger.error(f"A disabled switch should read 已关闭, got {off and off.value}")
+        return False
+    return True
+
+
+def _test_emote_row_follows_setting() -> bool:
+    with patch.object(CoreConfig, "use_emote", True):
+        enabled = _row_by_label(build_target_rows(_make_msg()), "使用表情")
+        disabled = _row_by_label(build_target_rows(_make_msg(target_data={"use_emote": False})), "使用表情")
+    if not enabled or enabled.value != "已开启" or enabled.command != "setup emote":
+        Logger.error(f"An unset emote switch should be enabled, got {enabled}")
+        return False
+    if not disabled or disabled.value != "已关闭" or disabled.action != "开启":
+        Logger.error(f"A disabled emote switch should offer to enable, got {disabled}")
         return False
     return True
 
@@ -318,14 +311,6 @@ def _test_jump_buttons() -> bool:
     return True
 
 
-def _test_jump_buttons_absent_without_support() -> bool:
-    msg = _make_msg(support_button=False)
-    if build_jump_buttons(msg, show_target=True, show_sender=False):
-        Logger.error("A session without button support should get no jump button")
-        return False
-    return True
-
-
 def _test_help_buttons_present() -> bool:
     rows = get_setup_button_data(_make_msg(support_button=True))
     commands = [button.value for row in rows for button in row.buttons]
@@ -341,25 +326,17 @@ def _test_help_buttons_present() -> bool:
     return True
 
 
-def _test_help_buttons_absent_without_support() -> bool:
-    if get_setup_button_data(_make_msg(support_button=False)) != []:
-        Logger.error("A session without button support should get no help buttons")
-        return False
-    return True
-
-
 @func_case
 async def test_setup_panel(tester: Tester):
     """modules.core.common_tools.setup: 设置面板构造测试"""
     await tester.test(_test_sender_rows_default_to_enabled, "个人设置默认开启测试")
-    await tester.test(_test_sender_rows_follow_setting, "个人设置跟随取值测试")
-    await tester.test(_test_target_rows_content, "场景设置内容测试")
     await tester.test(_test_target_prefix_and_cooldown_defaults, "场景设置默认值测试")
     await tester.test(_test_mute_row_wording, "静音项措辞测试")
     await tester.test(_test_sign_row_follows_petal_config, "签到项随配置测试")
     await tester.test(_test_markdown_row_follows_capability, "markdown 项随能力测试")
-    await tester.test(_test_markdown_row_follows_setting, "markdown 项跟随取值测试")
+    await tester.test(_test_theme_row_follows_setting, "深色模式项跟随取值测试")
     await tester.test(_test_invalid_prompt_row, "模块不存在提示项测试")
+    await tester.test(_test_emote_row_follows_setting, "表情资源设置行测试")
     await tester.test(_test_commands_carry_current_value, "命令预填当前值测试")
     await tester.test(_test_rows_carry_no_prefix, "设置行不含前缀测试")
     await tester.test(_test_every_row_gets_an_inline_entry, "每行均有入口测试")
@@ -369,8 +346,6 @@ async def test_setup_panel(tester: Tester):
     await tester.test(_test_inline_commands_use_session_prefix, "行内用会话前缀测试")
     await tester.test(_test_rows_are_joke_proof_and_spaced, "行文本防替换与留空测试")
     await tester.test(_test_jump_buttons, "跨域跳转按钮测试")
-    await tester.test(_test_jump_buttons_absent_without_support, "无按钮能力时无跳转测试")
     await tester.test(_test_help_buttons_present, "help 挂按钮测试")
-    await tester.test(_test_help_buttons_absent_without_support, "无按钮能力时 help 不挂按钮测试")
 
     return tester

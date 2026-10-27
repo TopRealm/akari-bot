@@ -37,6 +37,11 @@ HIGH_PRIORITY_QUEUE_RESERVE = 16
 last_send_typing_time: OrderedDict[str, float] = OrderedDict()
 
 
+def _bot_ids(session_info: SessionInfo) -> set[str]:
+    bot_id = session_info.bot_id or Temp.data.get("qq_account")
+    return {str(bot_id)} if bot_id else set()
+
+
 def _typing_prompt_on_cooldown(sender_id: str, now: float | None = None) -> bool:
     now = time.monotonic() if now is None else now
     last_sent = last_send_typing_time.get(sender_id)
@@ -154,23 +159,31 @@ class OneBotContextManager(ContextManager):
         last_send_typing_time.clear()
 
     @classmethod
-    async def check_native_permission(cls, session_info: SessionInfo) -> bool:
+    async def check_native_permission(cls, session_info: SessionInfo, user_id: str | None = None) -> bool:
 
         @retry(stop=stop_after_attempt(3), wait=wait_fixed(3), reraise=True)
         async def _check():
-            if session_info.target_from == target_private_prefix:
+            if user_id is None and session_info.target_from == target_private_prefix:
                 return True
             if session_info.target_from == target_group_prefix:
+                member_id = str(user_id).split("|")[-1] if user_id else session_info.get_common_sender_id()
                 get_member_info = await aiocqhttp_bot.call_action(
                     "get_group_member_info",
                     group_id=int(session_info.get_common_target_id()),
-                    user_id=int(session_info.get_common_sender_id()),
+                    user_id=int(member_id),
                 )
                 if get_member_info.get("role") in ["owner", "admin"]:
                     return True
             return False
 
-        return await _check()
+        try:
+            return await _check()
+        except Exception:
+            # 被查询的成员可能已退群，平台查不到成员记录时会直接报错，按无权限处理。
+            if user_id is None:
+                raise
+            Logger.exception(f"Failed to check native permission for {user_id} in {session_info.target_id}: ")
+            return False
 
     @classmethod
     async def check_bot_state(cls, session_info: SessionInfo) -> BotState:
@@ -260,10 +273,16 @@ class OneBotContextManager(ContextManager):
                 convert_msg_segments = MessageSegment.reply(int(session_info.message_id))
 
             count = 0
+            bot_ids = _bot_ids(session_info)
             for x in message.as_sendable(session_info):
                 if isinstance(x, PlainElement):
                     if x.allow_parse:
-                        x.text = render_at_code(x.text, client_name, lambda at: f"[CQ:at,qq={at.id}]")
+                        x.text = render_at_code(
+                            x.text,
+                            client_name,
+                            lambda at: "" if str(at.id) in bot_ids else f"[CQ:at,qq={at.id}]",
+                        )
+                    rendered = False
                     if x.allow_parse:
                         parts = re.split(r"(\[CQ:[^\]]+\])", x.text)
                         parts = [part for part in parts if part]
@@ -300,12 +319,15 @@ class OneBotContextManager(ContextManager):
                                     ("\n" if count != 0 else "") + part
                                 )
                                 previous_was_cq = False
-                    else:
+                        rendered = bool(parts)
+                    elif x.text:
                         convert_msg_segments = convert_msg_segments + MessageSegment.text(
                             ("\n" if count != 0 else "") + x.text
                         )
-                    Logger.info(f"[Bot] -> [{session_info.target_id}]: {x.text}")
-                    count += 1
+                        rendered = True
+                    if rendered:
+                        Logger.info(f"[Bot] -> [{session_info.target_id}]: {x.text}")
+                        count += 1
                 elif isinstance(x, ImageElement):
                     image_b64 = await resolve_media_base64(x)
                     if image_b64 is None:
@@ -329,6 +351,8 @@ class OneBotContextManager(ContextManager):
                         Logger.info(f"[Bot] -> [{session_info.target_id}]: Video: {str(x)}")
                     count += 1
                 elif isinstance(x, MentionElement):
+                    if x.client == client_name and str(x.id) in bot_ids:
+                        continue
                     if x.client == client_name and session_info.target_from == target_group_prefix:
                         convert_msg_segments = convert_msg_segments + MessageSegment.at(x.id)
                         Logger.info(f"[Bot] -> [{session_info.target_id}]: Mention: {x.client}|{str(x.id)}")

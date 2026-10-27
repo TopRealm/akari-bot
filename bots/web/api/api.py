@@ -1,7 +1,7 @@
-import asyncio
 import mimetypes
 import os
 import platform
+import time
 from datetime import datetime, timedelta, UTC
 
 import psutil
@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request, Query
 from fastapi.responses import FileResponse, Response
 from tortoise.expressions import Q
 
-from bots.web.client import app, client_cleanup, limiter, enable_https, get_client_ip
+from bots.web.client import app, limiter, enable_https, get_client_ip
 from bots.web.config import WebConfig
 from core.builtins.utils import command_prefix
 from core.config.base import BaseConfig, CoreConfig
@@ -30,10 +30,12 @@ from .auth import verify_jwt
 from bots.web.context import resolve_media_url
 
 started_time = datetime.now()
-_restart_task: asyncio.Task | None = None
 
 
 default_locale = BaseConfig.default_locale
+
+PLATFORM_PREFIX_CACHE_TTL = 60
+_platform_prefix_cache: tuple[float, dict[str, list[str]]] | None = None
 
 
 async def filter_by_bound_id(bind_model, prefix: str | None, id: str | None) -> Q | None:
@@ -57,6 +59,27 @@ async def map_bound_ids(bind_model, union_ids: list[str]) -> dict[str, list[str]
     for row in await bind_model.filter(union_id__in=union_ids).values(id_field, "union_id"):
         mapping.setdefault(row["union_id"], []).append(row[id_field])
     return mapping
+
+
+async def collect_bind_prefixes(bind_model) -> list[str]:
+    """汇总绑定表中出现过的平台前缀，即平台 ID 首个 ``|`` 之前的部分。"""
+    id_field = bind_model._meta.pk_attr
+    ids = await bind_model.all().values_list(id_field, flat=True)
+    return sorted({i.split("|", 1)[0] for i in ids if "|" in i}, key=str.casefold)
+
+
+async def load_platform_prefixes() -> dict[str, list[str]]:
+    """读取会话页可用的平台前缀，并做短时缓存以避免频繁扫描整张绑定表。"""
+    global _platform_prefix_cache
+    now = time.monotonic()
+    if _platform_prefix_cache is not None and now - _platform_prefix_cache[0] < PLATFORM_PREFIX_CACHE_TTL:
+        return _platform_prefix_cache[1]
+    prefixes = {
+        "target_prefixes": await collect_bind_prefixes(TargetUnionBind),
+        "sender_prefixes": await collect_bind_prefixes(SenderUnionBind),
+    }
+    _platform_prefix_cache = (now, prefixes)
+    return prefixes
 
 
 def pick_display_id(union_id: str, bound_ids: list[str], prefix: str | None = None) -> str:
@@ -245,7 +268,6 @@ async def get_analytics(request: Request, days: int = Query(1)):
 async def get_analytics_modules(
     request: Request,
     days: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=200),
 ):
     """按模块汇总调用次数，供统计页的「模块调用数量」图表使用。"""
     verify_jwt(request)
@@ -277,7 +299,7 @@ async def get_analytics_modules(
             "count": count,
             "change_rate": change_rate,
             "total_modules": len(modules),
-            "modules": modules[:limit],
+            "modules": modules,
         }
 
     except Exception:
@@ -394,6 +416,20 @@ async def delete_config_file(request: Request, cfg_filename: str):
             Logger.warning(f'[WebUI] {ip} tried to delete a missing config file: "{cfg_filename}"')
         return {"changed": changed, "restart_required": True, "cfg_files": _list_cfg_files()}
 
+    except HTTPException as e:
+        raise e
+    except Exception:
+        Logger.exception()
+        raise HTTPException(status_code=400, detail="Bad request")
+
+
+@app.get("/api/platform_prefixes")
+@limiter.limit("30/minute")
+async def get_platform_prefixes(request: Request):
+    """返回场景与用户绑定表中出现过的平台前缀，供会话页筛选器使用。"""
+    try:
+        verify_jwt(request)
+        return await load_platform_prefixes()
     except HTTPException as e:
         raise e
     except Exception:
@@ -827,50 +863,3 @@ async def unload_module(request: Request, module_name: str):
     except Exception:
         Logger.exception()
         raise HTTPException(status_code=400, detail="Bad request")
-
-
-async def restart():
-    await asyncio.sleep(1)
-    try:
-        await client_cleanup()
-    except BaseException:
-        # 重启请求已经被接受，清理失败不能把进程留在半关闭状态；记录后仍交给守护进程重启。
-        Logger.exception("Failed to clean up Web client before restart: ")
-    os._exit(233)
-
-
-def _restart_done(task: asyncio.Task) -> None:
-    global _restart_task
-    if _restart_task is task:
-        _restart_task = None
-    if task.cancelled():
-        return
-    error = task.exception()
-    if error is not None:
-        Logger.error(f"Web restart task failed: {error!r}")
-
-
-def schedule_restart() -> asyncio.Task:
-    """Schedule at most one retained Web restart task."""
-    global _restart_task
-    if _restart_task is not None and not _restart_task.done():
-        return _restart_task
-
-    awaitable = restart()
-    try:
-        _restart_task = asyncio.create_task(awaitable, name="web-restart")
-    except BaseException:
-        awaitable.close()
-        raise
-    _restart_task.add_done_callback(_restart_done)
-    return _restart_task
-
-
-@app.post("/api/restart")
-@limiter.limit("3/minute")
-async def restart_bot(request: Request):
-    ip = get_client_ip(request)
-    verify_jwt(request)
-    Logger.info(f"[WebUI] {ip} restarted bot.")
-    schedule_restart()
-    return Response(status_code=202)

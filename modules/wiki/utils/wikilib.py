@@ -21,8 +21,14 @@ from core.utils.url_audit import evaluate_url_policy
 from core.utils.web_render import web_render, SourceOptions
 from modules.wiki.database.models import WikiSiteInfo
 from modules.wiki.utils.bot import BotAccount
-from modules.wiki.utils.disambiguation import DisambiguationBlock, is_disambiguation_page, parse_disambiguation_html
+from modules.wiki.utils.disambiguation import (
+    DISAMBIGUATION_TEMPLATES,
+    DisambiguationBlock,
+    is_disambiguation_page,
+    parse_disambiguation_html,
+)
 from modules.wiki.utils.summarize import extract_summary, truncate_summary
+from .diff import DiffError, fetch_diff, parse_diff_target
 from .mapping import *
 
 default_locale = BaseConfig.default_locale
@@ -52,6 +58,12 @@ def _merge_research_suggestions(search_results, limit: int = MAX_RESEARCH_SUGGES
 
 class InvalidWikiError(Exception):
     pass
+
+
+class WikiAPIError(InvalidWikiError):
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(str(I18NContext("wiki.message.api.error", code=code)))
 
 
 class BlockedWikiError(InvalidWikiError):
@@ -97,6 +109,7 @@ class WikiInfo:
     logo_url: str = ""
     lang: str = None
     wikiid: str = None
+    default_skin: str = ""
 
 
 @define
@@ -138,6 +151,8 @@ class PageInfo:
     forum_data: dict = field(factory=dict)
     # MediaWiki parse API pre-check result used by the deferred WebRender button.
     renderable: bool = False
+    diff_data: dict | None = None
+    revision_id: int | None = None
 
 
 class WikiLib:
@@ -145,6 +160,8 @@ class WikiLib:
         self.url = url
         self.wiki_info = WikiInfo()
         self.locale = Locale(locale)
+        self._parse_cache: dict[tuple[str, int | None], dict] = {}
+        self.search_link = None
 
         if not headers:
             headers = {}
@@ -162,7 +179,6 @@ class WikiLib:
 
     async def get_json_from_api(self, api, _no_login=False, **kwargs) -> dict:
         cookies = None
-        Logger.debug(BotAccount.cookies)
         if api in BotAccount.cookies and not _no_login:
             cookies = BotAccount.cookies[api]
         if api in redirect_list:
@@ -179,7 +195,7 @@ class WikiLib:
 
         try:
             if not request_by_webrender:
-                return await get_url(
+                response = await get_url(
                     api,
                     status_code=200,
                     headers=self.headers,
@@ -187,14 +203,24 @@ class WikiLib:
                     request_private_ip=False,
                     cookies=cookies,
                 )
-            req = await web_render.source(SourceOptions(url=api, raw_text=True))
-            return orjson.loads(req)
+            else:
+                req = await web_render.source(SourceOptions(url=api, raw_text=True))
+                response = orjson.loads(req)
 
         except Exception as e:
             # Exception handling for moegirl.org.cn
             if api.find("moegirl.org.cn") != -1:
                 raise InvalidWikiError(str(I18NContext("wiki.message.utils.wikilib.get_failed.moegirl")))
             raise NoReportException(str(e))
+
+        if not isinstance(response, dict):
+            raise InvalidWikiError(str(I18NContext("wiki.message.api.invalid_response")))
+        if error := response.get("error"):
+            code = error.get("code", "unknown") if isinstance(error, dict) else "unknown"
+            raise WikiAPIError(str(code))
+        if response.get("warnings"):
+            Logger.warning(f"Wiki API warnings from {self.wiki_info.api or self.url}: {response['warnings']}")
+        return response
 
     async def rearrange_siteinfo(self, info: dict | str | bytes, wiki_api_link) -> WikiInfo:
         if isinstance(info, (str, bytes)):
@@ -240,12 +266,18 @@ class WikiLib:
         for interwiki in interwiki_map:
             interwiki_dict[interwiki["prefix"]] = interwiki["url"]
         policy = evaluate_url_policy(wiki_api_link)
+        default_skin = ""
+        for skin in info["query"].get("skins", []):
+            if isinstance(skin, dict) and skin.get("default"):
+                default_skin = skin.get("code", "")
+                break
         return WikiInfo(
             articlepath=real_url + info["query"]["general"]["articlepath"],
             extensions=ext_list,
             name=info["query"]["general"]["sitename"],
             lang=info["query"]["general"].get("lang"),
             wikiid=info["query"]["general"].get("wikiid"),
+            default_skin=default_skin,
             realurl=real_url,
             api=wiki_api_link,
             namespaces=namespaces,
@@ -347,7 +379,7 @@ class WikiLib:
                 wiki_api_link,
                 action="query",
                 meta="siteinfo",
-                siprop="general|namespaces|namespacealiases|interwikimap|extensions",
+                siprop="general|namespaces|namespacealiases|interwikimap|extensions|skins",
             )
             info = await self.rearrange_siteinfo(get_json, wiki_api_link)
         except Exception as e:
@@ -496,8 +528,9 @@ class WikiLib:
         revision = revisions[0]
         slots = revision.get("slots")
         if slots:
-            return slots.get("main", {}).get("*", "")
-        return revision.get("*", "")
+            main = slots.get("main", {})
+            return main.get("*", main.get("content", ""))
+        return revision.get("*", revision.get("content", ""))
 
     async def search_page(self, search_text, namespace="*", limit=10, srwhat="text"):
         await self.fixup_wiki_info()
@@ -505,7 +538,8 @@ class WikiLib:
         if len(title_split) > 1 and title_split[0] in self.wiki_info.interwiki:
             search_text = ":".join(title_split[1:])
             q_site = WikiLib(self.wiki_info.interwiki[title_split[0]], self.headers)
-            result = await q_site.search_page(search_text, namespace, limit)
+            result = await q_site.search_page(search_text, namespace, limit, srwhat)
+            self.search_link = q_site.search_link
             result_ = []
             for r in result:
                 result_.append(title_split[0] + ":" + r)
@@ -518,6 +552,10 @@ class WikiLib:
             srwhat=srwhat,
             srlimit=limit,
             srenablerewrites=True,
+        )
+        self.search_link = Url(
+            self.wiki_info.script + "?" + urllib.parse.urlencode({"title": "Special:Search", "search": search_text}),
+            trusted=True if self.wiki_info.is_allowed else None,
         )
         pagenames = []
         for x in get_page["query"]["search"]:
@@ -553,21 +591,36 @@ class WikiLib:
             invalid_namespace = title_split[0]
         return get_titles[:limit], invalid_namespace
 
-    async def get_page_body_class(self, page_name):
+    async def _get_parsed_page(self, page_name: str, props: list[str], *, oldid: int | None = None) -> dict:
+        key = (page_name, oldid)
+        cached = self._parse_cache.setdefault(key, {})
+        missing = [prop for prop in props if prop not in cached]
+        if missing:
+            target = {"oldid": oldid} if oldid is not None else {"page": page_name}
+            response = await self.get_json(action="parse", prop="|".join(missing), **target)
+            parsed = response.get("parse")
+            if not isinstance(parsed, dict):
+                raise InvalidWikiError(str(I18NContext("wiki.message.api.invalid_response")))
+            cached.update(parsed)
+        return cached
+
+    async def get_page_body_class(self, page_name, *, include_text=False):
         await self.fixup_wiki_info()
-        get_parse = await self.get_json(action="parse", page=page_name, prop="headhtml")
-        parse_head_html = BeautifulSoup(get_parse["parse"]["headhtml"]["*"], "html.parser")
-        return parse_head_html.body["class"]
+        parsed = await self._get_parsed_page(page_name, ["text", "headhtml"] if include_text else ["headhtml"])
+        head = parsed.get("headhtml", "")
+        if isinstance(head, dict):
+            head = head.get("*", "")
+        parse_head_html = BeautifulSoup(head, "html.parser")
+        return parse_head_html.body.get("class", []) if parse_head_html.body else []
 
     async def check_page_renderable(self, page_name: str, *, content_mode: bool = False) -> bool:
         """Check the rendered page HTML before exposing a WebRender button."""
         try:
-            parsed = await self.get_json(action="parse", page=page_name, prop="text|headhtml")
-            parse_data = parsed.get("parse", {})
+            parse_data = await self._get_parsed_page(page_name, ["text", "headhtml"])
             html = "\n".join(
-                value.get("*")
+                value.get("*") if isinstance(value, dict) else value
                 for value in (parse_data.get("text"), parse_data.get("headhtml"))
-                if isinstance(value, dict) and isinstance(value.get("*"), str)
+                if isinstance(value, str) or (isinstance(value, dict) and isinstance(value.get("*"), str))
             )
             if not html:
                 return False
@@ -580,10 +633,9 @@ class WikiLib:
             return False
 
     async def get_forums_data(self, page_name):
-        parse = BeautifulSoup(
-            (await self.get_json(action="parse", page=page_name, prop="text"))["parse"]["text"]["*"],
-            "html.parser",
-        )
+        parsed = await self._get_parsed_page(page_name, ["text"])
+        text = parsed["text"]
+        parse = BeautifulSoup(text.get("*", "") if isinstance(text, dict) else text, "html.parser")
         parse_table = parse.find_all("table", class_="wikitable")[0]
         parsed_data = {}
         label_ = 0
@@ -613,6 +665,107 @@ class WikiLib:
 
         return parsed_data
 
+    async def _parse_diff_info(self, title: str, session=None) -> PageInfo | None:
+        try:
+            target = parse_diff_target(title, self.wiki_info)
+            if target is None:
+                return None
+            async with asyncio.timeout(15):
+                data = await fetch_diff(self, target)
+        except BlockedWikiError:
+            raise
+        except Exception as exc:
+            key = str(exc) if isinstance(exc, DiffError) else "wiki.message.diff.unavailable"
+            if not isinstance(exc, DiffError):
+                Logger.exception("Failed to query Wiki comparison: ")
+            return PageInfo(info=self.wiki_info, title=title, status=False, desc=str(I18NContext(key)))
+        page_title = data.get("totitle") or data.get("fromtitle") or title
+        if not self.wiki_info.is_allowed and self.should_check_content(session):
+            content = BeautifulSoup(data["body"], "html.parser").get_text()
+            checked = await check(
+                [page_title, content, data.get("fromcomment", ""), data.get("tocomment", "")], session=session
+            )
+            if any(not item["status"] for item in checked):
+                return PageInfo(info=self.wiki_info, title="", status=False)
+        args = {"oldid": data["fromrevid"], "diff": data["torevid"]}
+        if target.get("uselang"):
+            args["variant"] = target["uselang"]
+        link = self.wiki_info.script + "?" + urllib.parse.urlencode(args)
+        summary = str(
+            I18NContext("wiki.message.diff.summary", title=page_title, old=data["fromrevid"], new=data["torevid"])
+        )
+        if not data["body"].strip():
+            summary += "\n" + str(I18NContext("wiki.message.diff.empty"))
+        return PageInfo(
+            info=self.wiki_info,
+            title=page_title,
+            link=link,
+            desc=summary,
+            renderable=True,
+            diff_data=data,
+        )
+
+    async def _parse_revision_info(self, title: str, session, check_render: bool) -> PageInfo | None:
+        parts = urllib.parse.urlsplit(title)
+        query = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
+        values = query.get("oldid")
+        if values is None or values == ["0"]:
+            return None
+        if len(values) != 1 or not re.fullmatch(r"[0-9]+", values[0]) or int(values[0]) <= 0:
+            raise InvalidWikiError(str(I18NContext("wiki.message.revision.invalid")))
+        oldid = int(values[0])
+        response = await self.get_json(
+            action="query", prop="revisions", revids=oldid, rvprop="ids|content", rvslots="main"
+        )
+        pages = response.get("query", {}).get("pages", {})
+        if isinstance(pages, dict):
+            pages = pages.values()
+        page_raw = next((page for page in pages if page.get("revisions")), None)
+        if page_raw is None or page_raw["revisions"][0].get("revid") != oldid:
+            raise InvalidWikiError(str(I18NContext("wiki.message.revision.unavailable")))
+        page_title = page_raw["title"]
+        section = urllib.parse.unquote(parts.fragment).replace(" ", "_") or None
+        args = {"oldid": oldid}
+        for key in ("variant", "uselang"):
+            if key in query and len(query[key]) == 1:
+                args[key] = query[key][0]
+        suffix = "?" + urllib.parse.urlencode(args)
+        if section:
+            suffix += "#" + urllib.parse.quote(section, safe="/:=")
+        page = PageInfo(
+            info=self.wiki_info,
+            title=page_title,
+            id=page_raw.get("pageid", -1),
+            link=self.wiki_info.script + suffix,
+            args=suffix,
+            revision_id=oldid,
+            selected_section=section,
+            desc=self.parse_text(extract_summary(self._get_revision_content(page_raw), section)),
+        )
+        if section or check_render:
+            props = ["sections", "text"] if section else ["text", "headhtml"]
+            try:
+                parsed = await self._get_parsed_page(page_title, props, oldid=oldid)
+                text = parsed.get("text", "")
+                text = text.get("*", "") if isinstance(text, dict) else text
+                if section:
+                    page.sections = [item["anchor"] for item in parsed.get("sections", [])]
+                    page.is_manual_anchor = _has_manual_anchor(text, section)
+                    page.invalid_section = section not in page.sections and not page.is_manual_anchor
+                    page.renderable = not page.invalid_section
+                    if page.is_manual_anchor:
+                        page.desc = ""
+                else:
+                    soup = BeautifulSoup(text, "html.parser")
+                    page.renderable = any(soup.select(selector) for selector in infobox_elements)
+            except InvalidWikiError:
+                page.desc = "" if section else page.desc
+        if not self.wiki_info.is_allowed and self.should_check_content(session):
+            checked = await check([page_title, page.desc or ""], session=session)
+            if any(not item["status"] for item in checked):
+                return PageInfo(info=self.wiki_info, title="", status=False)
+        return page
+
     async def parse_page_info(
         self,
         title: str | None = None,
@@ -621,6 +774,7 @@ class WikiLib:
         lang=None,
         _doc=False,
         _tried=0,
+        _explicit=0,
         _prefix="",
         _iw=False,
         _search=False,
@@ -634,6 +788,7 @@ class WikiLib:
         :param lang: 所需的对应语言版本。
         :param _doc: 是否为文档模式，仅用作内部递归调用判断。
         :param _tried: 尝试iw跳转的次数，仅用作内部递归调用判断。
+        :param _explicit: 其中由标题显式请求的iw跳转次数，仅用作内部递归调用判断。
         :param _prefix: iw前缀，仅用作内部递归调用判断。
         :param _iw: 是否为iw模式，仅用作内部递归调用判断。
         :param _search: 是否为搜索模式，仅用作内部递归调用判断。
@@ -660,11 +815,33 @@ class WikiLib:
                 info=self.wiki_info,
                 templates=[],
             )
+        if title and (diff_info := await self._parse_diff_info(title, session)) is not None:
+            return diff_info
+        revision_query = bool(
+            title and "oldid" in urllib.parse.parse_qs(urllib.parse.urlsplit(title).query, keep_blank_values=True)
+        )
+        title_prefix = title.split("?", 1)[0].split("#", 1)[0].split(":", 1)[0] if title else ""
+        interwiki_title = bool(
+            title
+            and not title.startswith(("http://", "https://"))
+            and ":" in title.split("?", 1)[0].split("#", 1)[0]
+            and title_prefix not in self.wiki_info.namespaces
+            and title_prefix.lower() not in self.wiki_info.namespacealiases
+        )
+        if title and not interwiki_title:
+            if (revision_info := await self._parse_revision_info(title, session, check_render)) is not None:
+                revision_info.interwiki_prefix = _prefix
+                return revision_info
         ban = False
 
-        # if redirected too many times, raise AbuseWarning
-        if _tried > 5 and enable_tos:
+        if _explicit > 5 and enable_tos:
             raise AbuseWarning("{I18N:tos.message.reason.too_many_redirects}")
+        if _tried > 5:
+            return PageInfo(
+                title=title,
+                desc=str(I18NContext("wiki.message.too_many_redirects")),
+                info=self.wiki_info,
+            )
         selected_section = None
         query_props = ["info", "imageinfo", "langlinks", "templates"]
 
@@ -673,7 +850,7 @@ class WikiLib:
             query_props.remove("imageinfo")
 
         if title:  # parse title, generate args
-            if inline:
+            if inline and not revision_query:
                 split_name = re.split(r"(#)", title)
             else:
                 split_name = re.split(r"([#?])", title)
@@ -788,6 +965,10 @@ class WikiLib:
             )
 
         # get page info from api
+        query_string["tltemplates"] = "|".join(sorted(DISAMBIGUATION_TEMPLATES | {"Template:Documentation"}))
+        query_string["tllimit"] = "max"
+        if lang:
+            query_string["lllang"] = lang
         get_page = await self.get_json(**query_string)
 
         # parse the result
@@ -800,26 +981,31 @@ class WikiLib:
                 desc=str(I18NContext("wiki.message.utils.wikilib.error.empty")),
                 info=self.wiki_info,
             )
+        if revision_query and interwiki_title and query.get("pages"):
+            if (revision_info := await self._parse_revision_info(title, session, check_render)) is not None:
+                revision_info.interwiki_prefix = _prefix
+                return revision_info
 
         # handle redirects, normalized titles, converted titles
-        normalized_: list[dict[str, str]] = query.get("normalized")
-        if normalized_:
-            for n in normalized_:
-                if n["from"] == title:
-                    page_info.before_title = n["from"]
-                    page_info.title = n["to"]
-        converted_: list[dict[str, str]] = query.get("converted")
-        if converted_:
-            for c in converted_:
-                if c["from"] == title:
-                    page_info.before_title = c["from"]
-                    page_info.title = c["to"]
-        redirects_: list[dict[str, str]] = query.get("redirects")
-        if redirects_:
-            for r in redirects_:
-                if r["from"] == title:
-                    page_info.before_title = r["from"]
-                    page_info.title = r["to"]
+        explicit_section = bool(selected_section) or page_info.invalid_section
+        followed_redirect = False
+        for mapping in ("normalized", "converted", "redirects"):
+            for item in query.get(mapping, []):
+                if item["from"] == page_info.title:
+                    page_info.before_title = title
+                    page_info.title = item["to"]
+                    if mapping == "redirects":
+                        followed_redirect = True
+                    if item.get("tofragment") and not explicit_section:
+                        selected_section = item["tofragment"].replace(" ", "_")
+                        page_info.selected_section = selected_section
+                        page_info.args = (
+                            (page_info.args or "").split("#", 1)[0]
+                            + "#"
+                            + urllib.parse.quote(selected_section, safe="/:=")
+                        )
+                        # 引言 extracts 不能作为重定向目标章节的摘要。
+                        use_extracts = False
 
         # get page data
         pages: dict[str, dict] = query.get("pages")
@@ -957,7 +1143,9 @@ class WikiLib:
 
                     # handling special talk pages and forums
                     try:
-                        page_info.body_class = await self.get_page_body_class(page_info.title)
+                        page_info.body_class = await self.get_page_body_class(
+                            page_info.title, include_text=check_render
+                        )
                         if "ns-talk" in page_info.body_class:
                             page_info.is_talk_page = True
                         stp = special_talk_page_class.get(page_info.info.api, [])
@@ -987,12 +1175,7 @@ class WikiLib:
 
                     # handling special talk page
                     if selected_section or page_info.invalid_section or page_info.is_talk_page:
-                        parse_section_string = {
-                            "action": "parse",
-                            "page": page_info.title,
-                            "prop": "sections",
-                        }
-                        parse_section = await self.get_json(**parse_section_string)
+                        parse_section = {"parse": await self._get_parsed_page(page_info.title, ["sections"])}
                         section_list = []
                         if "parse" in parse_section:
                             sections = parse_section["parse"]["sections"]
@@ -1000,15 +1183,14 @@ class WikiLib:
                                 section_list.append(s["anchor"])
                             page_info.sections = section_list
                         if selected_section:
-                            if urllib.parse.unquote(selected_section) not in section_list:
+                            if (
+                                selected_section not in section_list
+                                and urllib.parse.unquote(selected_section) not in section_list
+                            ):
                                 page_info.invalid_section = True
                                 try:
-                                    parsed_page = await self.get_json(
-                                        action="parse",
-                                        page=page_info.title,
-                                        prop="text",
-                                    )
-                                    parsed_text = parsed_page.get("parse", {}).get("text", "")
+                                    parsed_page = await self._get_parsed_page(page_info.title, ["text"])
+                                    parsed_text = parsed_page.get("text", "")
                                     if isinstance(parsed_text, dict):
                                         parsed_text = parsed_text.get("*", "")
                                     if parsed_text and _has_manual_anchor(parsed_text, selected_section):
@@ -1039,17 +1221,23 @@ class WikiLib:
                             for x in page_raw.get("langlinks", []):
                                 langlinks_[x["lang"]] = x["url"]
                             if lang in langlinks_:
-                                query_wiki = WikiLib(
-                                    url=self.wiki_info.interwiki[lang],
-                                    headers=self.headers,
-                                )
+                                query_wiki = WikiLib(url=langlinks_[lang], headers=self.headers)
                                 await query_wiki.fixup_wiki_info()
                                 query_wiki_info = query_wiki.wiki_info
-                                q_articlepath = query_wiki_info.articlepath.replace("$1", "(.*)")
-                                get_title = re.sub(r"" + q_articlepath, "\\1", langlinks_[lang])
-                                query_langlinks = await query_wiki.parse_page_info(urllib.parse.unquote(get_title))
-                            if "WikibaseClient" in self.wiki_info.extensions and not query_langlinks:
-                                title = (await self.parse_page_info(title)).title
+                                get_title = self._title_from_article_url(langlinks_[lang], query_wiki_info.articlepath)
+                                if not get_title:
+                                    get_title = next(x.get("*", "") for x in page_raw["langlinks"] if x["lang"] == lang)
+                                query_langlinks = await query_wiki.parse_page_info(
+                                    urllib.parse.unquote(get_title) + urllib.parse.unquote(page_info.args or ""),
+                                    session=session,
+                                    check_render=check_render,
+                                )
+                            if (
+                                "WikibaseClient" in self.wiki_info.extensions
+                                and lang in self.wiki_info.interwiki
+                                and not query_langlinks
+                            ):
+                                title = page_info.title
                                 qc_string = {
                                     "action": "query",
                                     "meta": "wikibase",
@@ -1075,8 +1263,16 @@ class WikiLib:
                                     qr_result = qr["entities"]
                                     for x in qr_result:
                                         if "missing" not in qr_result[x]:
-                                            target_site_page_title = qr_result[x]["sitelinks"][target_siteid]["title"]
-                                            q_target = await query_target_site.parse_page_info(target_site_page_title)
+                                            target_site_page_title = (
+                                                qr_result[x].get("sitelinks", {}).get(target_siteid, {}).get("title")
+                                            )
+                                            if not target_site_page_title:
+                                                continue
+                                            q_target = await query_target_site.parse_page_info(
+                                                target_site_page_title + urllib.parse.unquote(page_info.args or ""),
+                                                session=session,
+                                                check_render=check_render,
+                                            )
                                             if q_target.status:
                                                 query_langlinks = q_target
                                                 break
@@ -1095,7 +1291,9 @@ class WikiLib:
                                     self.wiki_info.interwiki[lang],
                                 )
                                 query_langlinks_ = await query_wiki.parse_page_info(
-                                    get_title_schema.replace("$1", title)
+                                    get_title_schema.replace("$1", title) + urllib.parse.unquote(page_info.args or ""),
+                                    session=session,
+                                    check_render=check_render,
                                 )
                                 if query_langlinks_.status:
                                     query_langlinks = query_langlinks_
@@ -1145,7 +1343,7 @@ class WikiLib:
                                     )
                             if page_info.is_disambiguation and not selected_section:
                                 try:
-                                    parsed_page = await self.get_json(action="parse", page=title, prop="text")
+                                    parsed_page = {"parse": await self._get_parsed_page(title, ["text"])}
                                     page_info.disambiguation_blocks = parse_disambiguation_html(
                                         parsed_page["parse"]["text"]["*"],
                                         self.wiki_info.realurl or self.wiki_info.api,
@@ -1183,6 +1381,7 @@ class WikiLib:
                                 )
                         else:
                             # handling langlinks query result, skip normal processing
+                            page_info.info = query_langlinks.info
                             page_info.title = query_langlinks.title
                             page_info.before_title = query_langlinks.title
                             page_info.link = query_langlinks.link
@@ -1192,6 +1391,9 @@ class WikiLib:
                             page_info.templates = query_langlinks.templates
                             page_info.is_disambiguation = query_langlinks.is_disambiguation
                             page_info.disambiguation_blocks = query_langlinks.disambiguation_blocks
+                            page_info.has_template_doc = query_langlinks.has_template_doc
+                            page_info.is_forum_topic = query_langlinks.is_forum_topic
+                            page_info.renderable = query_langlinks.renderable
         interwiki_: list[dict[str, str]] = query.get("interwiki")
         if interwiki_:
             # handling interwiki pages
@@ -1221,8 +1423,16 @@ class WikiLib:
                     else:
                         _prefix += i["iw"] + ":"
                     # try to query interwiki page
+                    # 章节与查询参数随标题交给目标 wiki，由其按自身章节表校验并判定渲染目标
                     iw_query = await target_wiki.parse_page_info(
-                        iw_title, lang=lang, _tried=_tried + 1, _prefix=_prefix, _iw=_iw
+                        iw_title + urllib.parse.unquote(page_info.args or ""),
+                        lang=lang,
+                        _tried=_tried + 1,
+                        _explicit=_explicit + (0 if followed_redirect else 1),
+                        _prefix=_prefix,
+                        _iw=_iw,
+                        session=session,
+                        check_render=check_render,
                     )
                     before_page_info = page_info
                     page_info = iw_query
@@ -1236,7 +1446,8 @@ class WikiLib:
                             if before_page_info.args or page_info.id == -1 or not page_info.id:  # preserve args if any
                                 page_info.before_title += urllib.parse.unquote(before_page_info.args)
                                 t += urllib.parse.unquote(before_page_info.args)
-                                if page_info.link:
+                                # 参数已由目标 wiki 解析并拼入链接，此处不再重复拼接
+                                if page_info.link and not page_info.args:
                                     page_info.link += before_page_info.args
                             else:
                                 # else rebuild link by curid

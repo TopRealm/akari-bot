@@ -1,0 +1,174 @@
+<!doctype html>
+<html{% for key, value in html_attrs.items() %} {{ key }}="{{ value }}"{% endfor %}>
+<head>
+    <meta charset="utf-8">
+    <base href="{{ base_url }}">
+    {{ head|safe }}
+    <style>
+        :root { color-scheme: light; }
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            background: #eef2f6;
+            color: #202a36;
+            font-family: "Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+            font-size: 16px;
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+        }
+        body { position: relative; padding: 24px; box-sizing: border-box; }
+        body > #mw-content-text {
+            position: relative;
+            isolation: isolate;
+            box-sizing: border-box;
+            display: flow-root;
+            max-width: 960px;
+            min-height: 120px;
+            margin: 0 auto;
+            padding: 28px 32px;
+            overflow-wrap: anywhere;
+            background: #fff;
+            border: 1px solid #dce3eb;
+            border-radius: 8px;
+            box-shadow: 0 10px 28px rgba(31, 52, 75, .10);
+        }
+        body > #akari-preview-watermark {
+            position: absolute;
+            inset: 0;
+            width: var(--akari-watermark-width, auto);
+            height: var(--akari-watermark-height, auto);
+            z-index: 2147483647;
+            pointer-events: none;
+            overflow: hidden;
+            container-type: size;
+        }
+        #akari-preview-watermark > .akari-watermark-pattern {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            /* 旋转平面的尺寸取页面在两条旋转坐标轴上的投影，保证四角均被覆盖。 */
+            width: calc(86.60254cqw + 50cqh + 2px);
+            height: calc(50cqw + 86.60254cqh + 2px);
+            transform: translate(-50%, -50%) rotate(-30deg);
+            transform-origin: center;
+            opacity: .18;
+        }
+        #akari-preview-watermark .akari-watermark-text {
+            fill: #1f344b;
+            stroke: #fff;
+            stroke-width: 1px;
+            paint-order: stroke;
+            font: 600 12px "Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+            opacity: 0.3;
+        }
+        #akari-preview-watermark .akari-watermark-partial { display: none; }
+        #akari-preview-watermark[data-preview-partial="true"] .akari-watermark-normal { display: none; }
+        #akari-preview-watermark[data-preview-partial="true"] .akari-watermark-partial { display: inline; }
+        body > #mw-content-text:has(> #akari-template-output) {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 238px;
+            align-items: start;
+            gap: 22px;
+        }
+        #akari-template-output { min-width: 0; }
+        #akari-preview-css-panel {
+            position: relative;
+            z-index: 20;
+            box-sizing: border-box;
+            min-width: 0;
+            padding: 15px;
+            color: #344454 !important;
+            background: #f6f8fa !important;
+            border: 1px solid #d3dee9 !important;
+            border-radius: 6px !important;
+            box-shadow: none !important;
+            font: 13px/1.45 "Noto Sans CJK SC", "Noto Sans SC", sans-serif !important;
+        }
+        #akari-preview-css-panel .akari-css-title {
+            display: block;
+            margin-bottom: 10px;
+            color: #203a55 !important;
+            font-size: 15px !important;
+        }
+        #akari-preview-css-panel .akari-css-row {
+            display: grid;
+            grid-template-columns: 78px minmax(0, 1fr);
+            gap: 6px;
+            padding: 6px 0;
+            border-top: 1px solid rgba(117, 141, 164, .22);
+        }
+        #akari-preview-css-panel .akari-css-row[hidden] { display: none !important; }
+        #akari-preview-css-panel .akari-css-name { color: #6a7d8e !important; }
+        #akari-preview-css-panel .akari-css-value {
+            min-width: 0;
+            overflow-wrap: anywhere;
+            color: #24384b !important;
+        }
+        #akari-preview-css-panel .akari-css-badge {
+            justify-self: start;
+            padding: 2px 7px;
+            border: 1px solid #c9d9e8;
+            border-radius: 4px;
+            background: #e8f0f7;
+            color: #295579 !important;
+            font-size: 12px;
+        }
+        #akari-preview-css-panel .akari-css-swatch {
+            display: inline-block;
+            width: 13px;
+            height: 13px;
+            margin-right: 5px;
+            vertical-align: -2px;
+            border: 1px solid rgba(0,0,0,.18);
+            border-radius: 3px;
+        }
+        body > #mw-content-text img { max-width: 100%; height: auto; }
+        body > #mw-content-text table { max-width: 100%; border-collapse: collapse; }
+        body > #mw-content-text th, body > #mw-content-text td { vertical-align: top; }
+        body > #mw-content-text pre {
+            max-width: 100%;
+            overflow: auto;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: #f4f6f8;
+        }
+        body > #mw-content-text a { color: #2468a8; }
+    </style>
+</head>
+<body{% for key, value in body_attrs.items() %} {{ key }}="{{ value }}"{% endfor %}>
+    <div id="mw-content-text" class="mw-body-content">
+        {% if single_template %}
+        <div id="akari-template-output">{{ body|safe }}</div>
+{% include "template_preview_panel.html" %}
+        {% else %}
+        {{ body|safe }}
+        {% endif %}
+    </div>
+{% include "template_preview_watermark.html" %}
+    <script data-akari-preview-script="watermark">
+{% include "template_preview_watermark.js" %}
+    </script>
+    <script>
+        window.akariPreviewReady = false;
+        (function initialize(attempt) {
+            if (!window.mw || typeof mw.loader.using !== 'function') {
+                if (attempt < 100) setTimeout(function() { initialize(attempt + 1); }, 50);
+                return;
+            }
+            mw.config.set({{ config|tojson }});
+            mw.loader.using({{ modules|tojson }}).then(function() {
+                mw.hook('wikipage.content').fire(jQuery('#mw-content-text'));
+                window.akariPreviewReady = true;
+            }, function() {
+                window.akariPreviewPartial = true;
+                window.akariPreviewReady = true;
+            });
+        })(0);
+    </script>
+    {% if single_template %}
+    <script data-akari-preview-script="css-panel">
+{% include "template_preview_css.js" %}
+    </script>
+    {% endif %}
+</body>
+</html>

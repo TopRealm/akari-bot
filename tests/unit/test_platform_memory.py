@@ -10,7 +10,6 @@ from unittest.mock import patch
 import bots.onebot.context as onebot_context
 import bots.qqbot.context as qqbot_context
 from bots.discord.context import DiscordContextManager
-from bots.discord.slash_context import DiscordSlashContextManager
 from bots.web.config import WebConfig
 from bots.web.context import WebContextManager
 from core.builtins.temp import Temp
@@ -267,36 +266,6 @@ class _FakeTypingContext:
         return False
 
 
-async def _test_discord_slash_typing_end_cannot_miss_registration() -> bool:
-    session = SimpleNamespace(session_id="discord-typing-race")
-    deferred = []
-
-    async def defer():
-        deferred.append(True)
-
-    ctx = SimpleNamespace(
-        channel=SimpleNamespace(typing=lambda: _FakeTypingContext()),
-        defer=defer,
-    )
-    DiscordSlashContextManager.context[session.session_id] = ctx
-    try:
-        await DiscordSlashContextManager.start_typing(session)
-        await DiscordSlashContextManager.end_typing(session)
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        return (
-            session.session_id not in DiscordSlashContextManager.typing_flags
-            and session.session_id not in DiscordSlashContextManager.typing_tasks
-            and not deferred
-        )
-    finally:
-        DiscordSlashContextManager.context.pop(session.session_id, None)
-        DiscordSlashContextManager.typing_flags.pop(session.session_id, None)
-        task = DiscordSlashContextManager.typing_tasks.pop(session.session_id, None)
-        if task:
-            task.cancel()
-
-
 async def _test_web_disconnect_keeps_newer_websocket() -> bool:
     with patch.object(WebConfig, "enable", False, create=True):
         web_bot = importlib.import_module("bots.web.bot")
@@ -397,6 +366,5 @@ async def test_platform_memory(tester: Tester):
     await tester.test(_test_web_typing_end_cannot_miss_registration, "Web typing 注册竞态")
     await tester.test(_test_web_disconnect_keeps_newer_websocket, "Web 旧连接断开不清除新连接")
     await tester.test(_test_discord_typing_end_cannot_miss_registration, "Discord typing 注册竞态")
-    await tester.test(_test_discord_slash_typing_end_cannot_miss_registration, "Discord Slash typing 注册竞态")
     await tester.test(_test_telegram_imports_stay_in_platform_process, "Telegram 重依赖保持平台进程隔离")
     return tester

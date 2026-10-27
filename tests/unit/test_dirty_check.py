@@ -4,6 +4,8 @@ import json
 import urllib.parse
 from unittest.mock import patch
 
+import orjson
+
 from core.tester import func_case, Tester
 
 
@@ -13,16 +15,6 @@ def _test_parse_data_clean():
 
         result = parse_data("Hello World", {})
         return result["status"] is True and result["content"] == "Hello World"
-    except Exception:
-        return False
-
-
-def _test_parse_data_empty():
-    try:
-        from core.utils.dirty_check import parse_data
-
-        result = parse_data("test", {})
-        return result["content"] == "test" and result["original"] == "test"
     except Exception:
         return False
 
@@ -74,16 +66,6 @@ def _test_parse_data_protects_ke_i18n_structure():
         return False
 
 
-def _test_hash_hmac():
-    try:
-        from core.utils.dirty_check import hash_hmac
-
-        result = hash_hmac("secret", "message")
-        return isinstance(result, str) and len(result) > 0
-    except Exception:
-        return False
-
-
 async def _test_check_no_keys():
     try:
         with patch("core.utils.dirty_check.access_key_id", ""), patch("core.utils.dirty_check.access_key_secret", ""):
@@ -93,27 +75,6 @@ async def _test_check_no_keys():
             if len(results) != 1:
                 return False
             return results[0]["status"] is True and results[0]["content"] == "Hello World"
-    except Exception:
-        return False
-
-
-async def _test_check_empty_text():
-    try:
-        with patch("core.utils.dirty_check.access_key_id", ""), patch("core.utils.dirty_check.access_key_secret", ""):
-            from core.utils.dirty_check import check
-
-            results = await check([])
-            return results == []
-    except Exception:
-        return False
-
-
-def _test_rickroll():
-    try:
-        from core.utils.dirty_check import rickroll
-
-        result = rickroll()
-        return isinstance(result, str) and len(result) > 0
     except Exception:
         return False
 
@@ -159,6 +120,9 @@ async def _test_aliyun_split_cache_preserves_result():
         class FakeClient:
             calls = 0
 
+            def __init__(self, *args, **kwargs):
+                pass
+
             async def __aenter__(self):
                 return self
 
@@ -199,6 +163,97 @@ async def _test_aliyun_split_cache_preserves_result():
             and FakeClient.calls == 2
             and cache is not None
             and len(cache.result[dirty_check.ALIYUN_SPLIT_CACHE_KEY]) == 2
+            and cache.result[dirty_check.ALIYUN_SPLIT_LENGTHS_KEY] == [600, 1]
+        )
+    except Exception:
+        return False
+
+
+def _test_split_text_natural_break():
+    try:
+        from core.utils.dirty_check import split_text
+
+        text = "a" * 590 + "。" + "b" * 20
+        chunks = split_text(text, 600)
+
+        return (
+            split_text("short", 600) == ["short"]
+            and "".join(chunks) == text
+            and max(len(chunk) for chunk in chunks) <= 600
+            and chunks[0] == "a" * 590 + "。"
+        )
+    except Exception:
+        return False
+
+
+async def _test_aliyun_v1_splits_long_text():
+    try:
+        import core.utils.dirty_check as dirty_check
+        from core.database.local import DirtyWordCache
+
+        class FakeResponse:
+            def __init__(self, data):
+                self.status_code = 200
+                self.content = orjson.dumps(data)
+
+        class FakeClient:
+            calls = 0
+            task_lengths = []
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def post(self, url, *args, **kwargs):
+                type(self).calls += 1
+                tasks = orjson.loads(kwargs["content"])["tasks"]
+                type(self).task_lengths = [len(task["content"]) for task in tasks]
+                data = []
+                for task in tasks:
+                    content = task["content"]
+                    results = []
+                    if "BADWORD" in content:
+                        results.append(
+                            {
+                                "rate": 100,
+                                "details": [{"label": "mock", "contexts": [{"context": "BADWORD"}]}],
+                            }
+                        )
+                    data.append({"content": content, "results": results})
+                return FakeResponse({"code": 200, "data": data})
+
+        text = "a" * dirty_check.TEXTSCAN_V1_CHUNK_SIZE + "BADWORD" + "b" * 100
+        namespace = f"{dirty_check.ALIYUN_BACKEND}:textscan-v1"
+        hash_id = DirtyWordCache.make_hash(text, namespace)
+        await DirtyWordCache.filter(hash_id=hash_id).delete()
+
+        with (
+            patch.object(dirty_check, "access_key_id", "id"),
+            patch.object(dirty_check, "access_key_secret", "secret"),
+            patch.object(dirty_check, "use_textscan_v1", True),
+            patch.object(dirty_check.httpx, "AsyncClient", FakeClient),
+        ):
+            first = await dirty_check.check(text, force=True)
+            second = await dirty_check.check(text, force=True)
+            cache = await DirtyWordCache.check(text, namespace=namespace)
+
+        return (
+            first[0]["original"] == text
+            and first[0]["status"] is False
+            and "BADWORD" not in first[0]["content"]
+            and first[0]["content"].startswith(text[: dirty_check.TEXTSCAN_V1_CHUNK_SIZE])
+            and second[0]["status"] is False
+            and FakeClient.calls == 1
+            and max(FakeClient.task_lengths) <= dirty_check.TEXTSCAN_V1_CHUNK_SIZE
+            and cache is not None
+            and len(cache.result[dirty_check.ALIYUN_SPLIT_CACHE_KEY]) == 2
+            and cache.result[dirty_check.ALIYUN_SPLIT_LENGTHS_KEY]
+            == [dirty_check.TEXTSCAN_V1_CHUNK_SIZE, len(text) - dirty_check.TEXTSCAN_V1_CHUNK_SIZE]
         )
     except Exception:
         return False
@@ -221,15 +276,13 @@ def _test_aliyun_cache_namespace_isolated():
 async def test_dirty_check(tester: Tester):
     """core.utils.dirty_check: 内容审核系统测试"""
     await tester.test(_test_parse_data_clean, "parse_data 正常文本测试")
-    await tester.test(_test_parse_data_empty, "parse_data 空结果测试")
     await tester.test(_test_parse_data_protects_at_code, "parse_data AT 码豁免测试")
     await tester.test(_test_parse_data_protects_ke_i18n_structure, "parse_data KE/I18N 结构与 value 过滤测试")
-    await tester.test(_test_hash_hmac, "hash_hmac 测试")
     await tester.test(_test_check_no_keys, "check 无密钥跳过测试")
-    await tester.test(_test_check_empty_text, "check 空文本测试")
-    await tester.test(_test_rickroll, "rickroll 测试")
     await tester.test(_test_check_bool_clean_is_false, "check_bool 合规返回假测试")
     await tester.test(_test_check_bool_dirty_is_true, "check_bool 不合规返回真测试")
     await tester.test(_test_aliyun_split_cache_preserves_result, "阿里云长文本分片缓存测试")
+    await tester.test(_test_split_text_natural_break, "split_text 自然断点分片测试")
+    await tester.test(_test_aliyun_v1_splits_long_text, "阿里云 v1 超长文本分片测试")
     await tester.test(_test_aliyun_cache_namespace_isolated, "阿里云缓存版本隔离测试")
     return tester

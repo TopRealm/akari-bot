@@ -8,6 +8,7 @@
 - [消息入口](#84-botpy)
 - [ContextManager 实现](#85-contextpy)
 - [启用适配器](#86-启用适配器)
+- [出站网络设置](#87-出站网络设置)
 
 开始适配器改动前，同时读取主技能直接链接的 `architecture.md` 和 `messaging-and-parser.md`；若涉及配置、JobQueue 或 loader，再读取 `infrastructure.md`。不要把其他 reference 当作唯一入口，路由以主 `SKILL.md` 为准。
 
@@ -43,6 +44,21 @@ target_prefix_list = [target_group_prefix, target_private_prefix]
 ```
 
 `sender_prefix_list` 与 `target_prefix_list` 是**必需**的：`core/client/init.py` 登记客户端时要用它们来判断某个 ID 属于哪个平台。中间那几个具体前缀的命名各平台并不统一（onebot / milky 用 `target_group_prefix` + `target_private_prefix`，discord 用 `target_channel_prefix` / `target_dm_channel_prefix` / `target_guild_prefix`，web 只有一个 `target_prefix`），按自己平台的场景类型取名即可，只要都收进 `target_prefix_list`。
+
+**术语词条**：会话称呼（群聊 / 频道 / 私聊）由 i18n 组件的 `{TERM:name}` 占位符解析，候选链由 `target_from` 与 `is_private` 推出（`core/builtins/session/terms.py`）。适配器**不需要**建术语文件，新增平台时只在 `core/locales/terms/zh_cn.json` 追加词条：
+
+```json
+{
+    "target.myplatform": "频道",
+    "target.myplatform.group": "群聊"
+}
+```
+
+- 术语词条集中在 core 的语言目录 `terms/` 子目录，键省略 `term.` 前缀，加载时自动补全；文件名是语言标签（其他语言由 Weblate 生成，不要手写）。集中托管是因为术语是词表而非平台逻辑，且单一归属才能避免共用平台身份（milky 与 onebot 都是 `QQ`）时同名键被判为冲突并整体丢弃。
+- 键名规则：`term.<术语名>.<candidate>`。candidate 是 `target_from` 各段的小写形式以 `.` 连接（`MyPlatform|Group` → `target.myplatform.group`）；只声明平台级默认值（`target.myplatform`）即可覆盖该平台的其余场景。
+- 顶层语言文件里不要再写 `term.*` 键：残留的同名副本会被术语目录覆盖，并由构建期审计报出。
+- `is_private=True` 的会话会命中共享的 `term.target.private`，一般无需平台单独声明。
+- 新增词条后执行一次 `~setup locale reload` 即可生效；构建期 `audit_terms()` 会检查引用与基础键是否齐备。
 
 ### 8.3 features.py
 
@@ -112,8 +128,9 @@ class MyPlatformContextManager(ContextManager):
     features = platform_features
 
     # 17 个抽象方法一个都不能少，不支持的能力写 pass 并在 Features 实例里置 False
+    # check_native_permission 传 user_id 时查询该成员；平台查不到（私聊、非成员、无此接口）返回 False
     @classmethod
-    async def check_native_permission(cls, session_info) -> bool: ...
+    async def check_native_permission(cls, session_info, user_id=None) -> bool: ...
 
     @classmethod
     async def check_bot_state(cls, session_info) -> BotState: ...
@@ -179,6 +196,12 @@ class MyPlatformContextManager(ContextManager):
 enable = true
 # 平台特定配置
 ```
+
+### 8.7 出站网络设置
+
+适配器的对外请求统一取 `core.config.network` 的 `proxy` 与 `ssl_verify`，不要直接读 `CoreSecretConfig.proxy`：配置未填写时后者是空字符串，而 SDK 普遍只把 `None` 视作直连。SDK 有 `proxy`/`ssl` 参数时直接传入，只暴露连接器的（aiogram、py-cord）在连接器上落地；SDK 不支持代理时保持原样，不要为此改写 SDK 内部实现。
+
+失败重发与出站限速同样优先交给 SDK：qq-botpy-sdk 会按平台 `err_code` 回退主动消息、轮换 `msg_seq` 并按指数退避重发，同时默认按接口频率整流。适配器只保留 SDK 覆盖不到的部分（如发送目标的优先级排序、逐元素发送时的部分成功处理），不要自行复制错误码表、退避序列或固定冷却间隔。SDK 侧这类开关多为默认开启，接入前先确认是默认行为还是需要显式传参（例如未认证机器人须声明主动消息配额档位）。
 
 ---
 

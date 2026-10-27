@@ -54,6 +54,15 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(I18NContext("core.message.setup.sign.disable"))
 
 
+@setup.command("emote {{I18N:core.help.setup.emote}}", required_admin=True, load=CoreConfig.use_emote)
+async def _(msg: Bot.MessageSession):
+    enabled = msg.session_info.emote_enabled
+    await msg.session_info.target_union_info.edit_target_data("use_emote", not enabled)
+    await msg.finish(
+        I18NContext("core.message.setup.emote.enable" if not enabled else "core.message.setup.emote.disable")
+    )
+
+
 @setup.command("timeoffset <offset> {{I18N:core.help.setup.timeoffset}}", required_admin=True)
 async def _(msg: Bot.MessageSession, offset: str):
     try:
@@ -99,6 +108,15 @@ async def _(msg: Bot.MessageSession):
     else:
         await msg.session_info.sender_union_info.edit_sender_data("use_markdown", False)
         await msg.finish(I18NContext("core.message.setup.markdown.disable"))
+
+
+@setup.command("dark {{I18N:core.help.setup.dark}}")
+async def _(msg: Bot.MessageSession):
+    if msg.session_info.dark_mode:
+        await msg.session_info.sender_union_info.edit_sender_data("dark_mode", False)
+        await msg.finish(I18NContext("core.message.setup.dark.disable"))
+    await msg.session_info.sender_union_info.edit_sender_data("dark_mode", True)
+    await msg.finish(I18NContext("core.message.setup.dark.enable"))
 
 
 @define
@@ -165,6 +183,16 @@ def build_target_rows(msg: Bot.MessageSession) -> list[SettingRow]:
             )
         )
 
+    if CoreConfig.use_emote:
+        rows.append(
+            _toggle_row(
+                locale,
+                "core.message.setup.list.item.emote",
+                msg.session_info.emote_enabled,
+                "setup emote",
+            )
+        )
+
     rows += [
         SettingRow(
             label=locale.t("core.message.setup.list.item.timeoffset"),
@@ -219,6 +247,14 @@ def build_sender_rows(msg: Bot.MessageSession) -> list[SettingRow]:
                 "setup markdown",
             ),
         )
+    rows.append(
+        _toggle_row(
+            locale,
+            "core.message.setup.list.item.theme",
+            msg.session_info.dark_mode,
+            "setup dark",
+        ),
+    )
     return rows
 
 

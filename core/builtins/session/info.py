@@ -13,6 +13,7 @@ from core.alive import Alive
 from core.builtins.message.chain import MessageChain
 from core.builtins.session.event_types import EventName
 from core.builtins.session.features import Features
+from core.builtins.session.terms import build_term_candidates
 from core.builtins.utils import command_prefix
 from core.config.base import BaseConfig, CoreConfig
 from core.database.models import TargetUnionInfo, SenderUnionInfo
@@ -240,7 +241,7 @@ class SessionInfo:
             client_name = Alive.determine_client(target_from)
         timestamp = datetime.now().timestamp()
         session_id = str(uuid.uuid4())
-        locale = Locale(target_union_info.locale)
+        locale = Locale(target_union_info.locale, term_candidates=build_term_candidates(target_from, is_private))
         bot_name = locale.t("bot_name")
         _tz_offset = target_union_info.target_data.get("timezone_offset", CoreConfig.timezone_offset)
         platform_prefixes = list(prefixes) if prefixes is not None else []
@@ -350,7 +351,9 @@ class SessionInfo:
         self.banned_users = target_union_info.banned_users
         self.custom_admins = target_union_info.custom_admins
         self.muted = target_union_info.muted
-        self.locale = Locale(target_union_info.locale)
+        self.locale = Locale(
+            target_union_info.locale, term_candidates=build_term_candidates(self.target_from, self.is_private)
+        )
         self.bot_name = self.locale.t("bot_name")
         self._tz_offset = target_union_info.target_data.get("timezone_offset", CoreConfig.timezone_offset)
         self.timezone_offset = parse_time_string(self._tz_offset)
@@ -403,6 +406,22 @@ class SessionInfo:
         :return: 是否发出提示；场景未设置过时默认发出。
         """
         return self.target_union_info.target_data.get("invalid_module_prompt", True)
+
+    @property
+    def emote_enabled(self) -> bool:
+        """本会话是否使用表情资源。"""
+        target_data = (self.target_union_info.target_data or {}) if self.target_union_info else {}
+        return CoreConfig.use_emote and target_data.get("use_emote", True)
+
+    @property
+    def dark_mode(self) -> bool:
+        """本会话是否使用深色模式渲染图片。
+
+        :return: 是否使用深色模式；用户未设置过或会话无用户信息时为浅色。
+        """
+        if not self.sender_union_info:
+            return False
+        return self.sender_union_info.sender_data.get("dark_mode", False)
 
 
 @define

@@ -143,7 +143,7 @@ default_locale = BaseConfig.default_locale
 
 之所以要这道闸门：`multiprocessing` 以 spawn / forkserver 启动子进程时会把主模块以 `__mp_main__` 重新导入一遍，每个子进程都会再跑一次 `bot.py` 顶层的模板导入；`core/config/update.py` 的版本迁移又是导入期执行的。不隔离的话同一批配置项会被多个进程反复补写。
 
-因此**新增配置项后必须重启机器人**，否则子进程读到该键时会抛 `ConfigOperationError`——这是刻意的，用来把「模板漏声明」当场暴露出来，而不是静默退化成默认值。
+因此**新增配置项后必须重启机器人**，否则子进程读到该键时会抛 `ConfigOperationError`——这是刻意的，用来把“模板漏声明”当场暴露出来，而不是静默退化成默认值。
 
 需要在运行期写配置的只有交互式编辑命令与启动期的共享身份、密钥自举两类，一律走授权接口：
 
@@ -269,7 +269,7 @@ config/
 
 两个数据层模型都继承抽象基类 `UnionInfo`，两个映射层模型都继承 `UnionBind`；
 共用的解析、展开逻辑写在基类上，子类只声明自己的字段与 `union_scope` / `bind_model`。
-**映射层只回答「这个平台 ID 属于哪个 union」，不承载任何状态**——状态若下放到单个 ID，
+**映射层只回答“这个平台 ID 属于哪个 union”，不承载任何状态**——状态若下放到单个 ID，
 换用组内另一个 ID 即可绕过。
 
 - `StoredData` - 通用键值存储
@@ -284,15 +284,15 @@ config/
 **union 解析的唯一入口是 `UnionInfo.resolve_union(平台 ID, create=True)`**：它查映射表拿到 union，
 取出数据行，并把映射行挂到实例的 `.bind` 上。`get_by_target_id()` / `get_by_sender_id()`
 是它的会话友好包装（多接受 `MessageSession`），模块表继承 `DBModel` 拿到的同名方法则是
-「先解析 union，再按 union 取本表的行」。
+“先解析 union，再按 union 取本表的行”。
 
 两个必须记住的约定：
 
-- **封禁只有 `UnionInfo.blocked` 一个字段，不存在「某个 ID 单独被封」这回事。** union 下的全部平台 ID
+- **封禁只有 `UnionInfo.blocked` 一个字段，不存在“某个 ID 单独被封”这回事。** union 下的全部平台 ID
   共享同一行，所以封禁天然对组内所有 ID 生效，映射表上不需要、也不该再放一份标记。
   封了之后也洗不白：能改变 ID 所属 union 的路径只有 `merge_union`（`blocked` 取并集，只会把封禁
   传染给对方）、`unbind_id`（新组继承 `self.blocked`，且映射行是**改挂**不是删建，任何时刻都不会
-  出现「没有映射行」的中间态）和 `bind_id`（已有映射行的 ID 直接拒绝迁组）。`resolve_union()` 只为
+  出现“没有映射行”的中间态）和 `bind_id`（已有映射行的 ID 直接拒绝迁组）。`resolve_union()` 只为
   从未见过的 ID 建新组，有映射行的永远解析回原组。
 - **模块表若以 `union_id` 为键，必须声明 `union_scope`**（`UNION_SCOPE_SENDER` / `UNION_SCOPE_TARGET`）。
   未声明的表会被 `iter_union_models()` 跳过并告警，即不参与 union 合并与映射补建——
@@ -473,9 +473,14 @@ Bot = exports["Bot"]              # 或 exports.get("Bot") 拿可选值
 ok, count = await ModulesManager.reload_module("module_name")
 # 1. search_related_module() 找出同一 .py 里定义的全部模块
 # 2. remove_modules() + 删除它们的 ModuleStatus 记录
-# 3. reload_py_module()：先递归 reload 所有子模块，再 importlib.reload() 自身
+# 3. reload_py_module()：从 sys.modules 摘除整个包后重新导入，得到全新命名空间
 # 4. bulk_create 重建 ModuleStatus，refresh() 重建别名表，reload_db() 重挂模块数据库
 ```
 
 `reload_py_module()` 失败时返回 `-999`（不是抛异常），所以调用方要判 `ok`。
+
+reload 与 unload 都在 JobQueue 的非独占维护窗口内执行：窗口先停止领取新的队列任务并排空在途
+handler，再进入 Scheduler 维护窗口。排空受限时抛 `QueueDrainTimeout`（`TimeoutError` 子类），
+`reload_module()` / `unload_module()` 捕获后按失败返回，模块注册表与数据库状态保持原样。
+正在等待维护锁的 handler 不计入排空范围：它们持有模块调用栈但处于暂停，只在本窗口结束后继续。
 

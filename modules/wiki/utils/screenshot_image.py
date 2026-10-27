@@ -1,17 +1,221 @@
+import asyncio
 import re
 import uuid
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from PIL import Image as PILImage
 from akari_bot_webrender.functions.options import SectionScreenshotOptions, LegacyScreenshotOptions
 from bs4 import BeautifulSoup, Comment
 
 from core.constants.path import cache_path
+from core.i18n import Locale
 from core.logger import Logger
 from core.utils.http import get_url
 from core.utils.image import cb64imglst
 from core.utils.web_render import web_render, ElementScreenshotOptions
-from .mapping import infobox_elements
+from .diff import DiffError, parse_diff_target, fetch_diff, diff_document
+from .mapping import generate_screenshot_v2_blocklist, infobox_elements
+from .wikilib import WikiInfo, WikiLib
+
+_PAGE_RENDER_TIMEOUT = 15
+
+
+def _styled_document(parsed: dict, page_link: str) -> str | None:
+    def value(key):
+        result = parsed.get(key)
+        return result.get("*") if isinstance(result, dict) else result
+
+    head, text = value("headhtml"), value("text")
+    if not isinstance(head, str) or not isinstance(text, str) or not text.strip():
+        return None
+    soup = BeautifulSoup(head + "</body></html>", "html.parser")
+    if not soup.html or not soup.head or not soup.body or not soup.select('link[rel~="stylesheet"][href]'):
+        return None
+    soup.body.clear()
+    content = soup.new_tag("div", id="mw-content-text", attrs={"class": "mw-body-content"})
+    content.append(BeautifulSoup(text, "html.parser"))
+    soup.body.append(content)
+    for tag in soup.find_all(["script", "iframe", "object", "embed", "base"]):
+        tag.decompose()
+    for tag in soup.find_all(True):
+        for attr in list(tag.attrs):
+            if attr.lower().startswith("on"):
+                del tag[attr]
+        if tag.name == "meta" and tag.get("http-equiv", "").lower() == "refresh":
+            tag.decompose()
+    for noscript in soup.find_all("noscript"):
+        for style in noscript.find_all(["style", "link"]):
+            soup.head.append(style.extract())
+    base = soup.new_tag("base", href=urlunsplit(urlsplit(page_link)._replace(fragment="")))
+    soup.head.insert(0, base)
+    for image in soup.find_all("img"):
+        image.attrs.pop("loading", None)
+        if image.get("data-src"):
+            image["src"] = urljoin(page_link, image["data-src"])
+        if image.get("data-srcset"):
+            image["srcset"] = image["data-srcset"]
+    return str(soup)
+
+
+def _parse_target(page_link: str, wiki_info: WikiInfo, title: str | None) -> dict | None:
+    query = parse_qs(urlsplit(page_link).query, keep_blank_values=True)
+    if set(query) - {"title", "curid", "oldid"}:
+        return None
+    if "oldid" in query:
+        values = query["oldid"]
+        if len(values) == 1 and values[0].isdecimal() and int(values[0]) > 0:
+            return {"oldid": int(values[0])}
+        return None
+    title = title or WikiLib._title_from_article_url(page_link, wiki_info.articlepath) or query.get("title", [None])[0]
+    if title:
+        namespace = title.split(":", 1)[0]
+        if ":" in title and (namespace.lower() == "special" or wiki_info.namespaces.get(namespace) == -1):
+            return None
+        return {"page": title}
+    pageid = query.get("curid", [""])[0]
+    if pageid.isdecimal():
+        return {"pageid": int(pageid)}
+    return None
+
+
+async def generate_screenshot(
+    page_link: str,
+    wiki_info: WikiInfo,
+    title: str | None = None,
+    headers: dict | None = None,
+    section: str | None = None,
+    allow_special_page=False,
+    content_mode=False,
+    locale: str = "zh_cn",
+    diff_data: dict | None = None,
+) -> list[PILImage.Image] | bool:
+    try:
+        diff_target = parse_diff_target(page_link, wiki_info)
+    except DiffError:
+        return False
+    if diff_target is not None:
+        if not allow_special_page:
+            return False
+        try:
+            if diff_data is None:
+                wiki = WikiLib(wiki_info.api, headers=headers, locale=locale)
+                wiki.wiki_info = wiki_info
+                async with asyncio.timeout(15):
+                    diff_data = await fetch_diff(wiki, diff_target)
+            images = await web_render.element_screenshot(
+                ElementScreenshotOptions(
+                    content=diff_document(diff_data, wiki_info.name, Locale(locale)),
+                    element=".wiki-diff",
+                    width=1200,
+                    counttime=False,
+                    locale=locale,
+                    stealth=False,
+                )
+            )
+            return cb64imglst(images) if images else False
+        except Exception:
+            Logger.exception("Failed to render Wiki comparison from API: ")
+            return False
+
+    async def render_page():
+        if wiki_info.realurl in generate_screenshot_v2_blocklist:
+            return await generate_screenshot_v1(
+                wiki_info.realurl, page_link, headers, section=section, allow_special_page=allow_special_page
+            )
+        return await generate_screenshot_v2(
+            page_link,
+            section=section,
+            allow_special_page=allow_special_page,
+            content_mode=content_mode,
+            locale=locale,
+        )
+
+    # Start the fallback early so a primary-render timeout does not add another full request latency.
+    styled_task = asyncio.create_task(
+        _generate_styled_api_screenshot(
+            page_link,
+            wiki_info,
+            title=title,
+            headers=headers,
+            section=section,
+            allow_special_page=allow_special_page,
+            content_mode=content_mode,
+            locale=locale,
+        )
+    )
+    target = _parse_target(page_link, wiki_info, title)
+    if not wiki_info.api or not target:
+        styled_task.cancel()
+        await asyncio.gather(styled_task, return_exceptions=True)
+        return await asyncio.wait_for(
+            render_page(),
+            timeout=_PAGE_RENDER_TIMEOUT,
+        )
+    try:
+        try:
+            page_images = await asyncio.wait_for(
+                render_page(),
+                timeout=_PAGE_RENDER_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            Logger.warning("Wiki page rendering exceeded 15 seconds; using styled API HTML fallback.")
+            page_images = False
+        except Exception:
+            Logger.exception("Failed to render Wiki page; using styled API HTML fallback: ")
+            page_images = False
+        if page_images:
+            styled_task.cancel()
+            await asyncio.gather(styled_task, return_exceptions=True)
+            return page_images
+        return await styled_task
+    except asyncio.CancelledError:
+        styled_task.cancel()
+        await asyncio.gather(styled_task, return_exceptions=True)
+        raise
+
+
+async def _generate_styled_api_screenshot(
+    page_link: str,
+    wiki_info: WikiInfo,
+    *,
+    title: str | None,
+    headers: dict | None,
+    section: str | None,
+    allow_special_page: bool,
+    content_mode: bool,
+    locale: str,
+) -> list[PILImage.Image] | bool:
+    target = _parse_target(page_link, wiki_info, title)
+    if not wiki_info.api or not target:
+        return False
+    try:
+        wiki = WikiLib(wiki_info.api, headers=headers, locale=locale)
+        wiki.wiki_info = wiki_info
+        async with asyncio.timeout(_PAGE_RENDER_TIMEOUT):
+            parse_args = {"action": "parse", "prop": "text|headhtml", "formatversion": 2, **target}
+            if "oldid" not in target:
+                parse_args["redirects"] = 1
+            if wiki_info.default_skin:
+                parse_args["useskin"] = wiki_info.default_skin
+            response = await wiki.get_json(**parse_args)
+        content = None
+        if not response.get("error"):
+            content = _styled_document(response.get("parse", {}), page_link)
+        if not content:
+            return False
+        return await generate_screenshot_v2(
+            page_link,
+            section=section,
+            allow_special_page=allow_special_page,
+            content_mode=content_mode,
+            locale=locale,
+            content=content,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        Logger.exception("Failed to render styled Wiki API HTML fallback: ")
+        return False
 
 
 async def generate_screenshot_v2(
@@ -21,10 +225,13 @@ async def generate_screenshot_v2(
     content_mode=False,
     element=None,
     locale: str = "zh_cn",
+    content: str | None = None,
 ) -> list[PILImage.Image] | bool:
     elements_ = infobox_elements.copy()
     if element and isinstance(element, list):
         elements_ += element
+    # content 仅用于本地装配的 API HTML，属于渲染回退，需在图片上标注。
+    custom_watermark_info = " " + Locale(locale).t("wiki.message.render.fallback") if content else ""
     if not section:
         if allow_special_page and content_mode:
             elements_.insert(0, ".mw-body-content")
@@ -32,7 +239,14 @@ async def generate_screenshot_v2(
             elements_.insert(0, ".diff")
         Logger.info("[WebRender] Generating element screenshot...")
         imgs = await web_render.element_screenshot(
-            ElementScreenshotOptions(url=page_link, element=elements_, locale=locale, stealth=False)
+            ElementScreenshotOptions(
+                url=None if content else page_link,
+                content=content,
+                element=elements_,
+                locale=locale,
+                stealth=False,
+                custom_watermark_info=custom_watermark_info,
+            )
         )
         if not imgs:
             Logger.error("[WebRender] Generation Failed.")
@@ -40,7 +254,14 @@ async def generate_screenshot_v2(
     else:
         Logger.info("[WebRender] Generating section screenshot...")
         imgs = await web_render.section_screenshot(
-            SectionScreenshotOptions(url=page_link, section=section, locale=locale, stealth=False)
+            SectionScreenshotOptions(
+                url=None if content else page_link,
+                content=content,
+                section=section,
+                locale=locale,
+                stealth=False,
+                custom_watermark_info=custom_watermark_info,
+            )
         )
         if not imgs:
             Logger.error("[WebRender] Generation Failed.")

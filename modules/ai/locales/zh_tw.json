@@ -1,15 +1,15 @@
 {
-    "ai.help": "與大語言模型聊天。",
+    "ai.help": "與大語言模型聊天。（需要消耗花瓣）",
     "ai.help.desc": "有問題為什麽不問小可呢？",
     "ai.help.llm.instruct": "設定大語言模型的自訂指令。",
     "ai.help.llm.list": "檢視已支援的大語言模型清單。",
     "ai.help.llm.list.option.price": "是否顯示詳細價格資訊。",
     "ai.help.llm.price": "查看大語言模型的花瓣價格。",
-    "ai.help.llm.set": "設定場景內預設大語言模型。",
+    "ai.help.llm.set": "設定{TERM:target}內預設大語言模型。",
     "ai.help.option.llm": "指定使用的大語言模型。",
     "ai.help.option.no_tools": "是否禁止大語言模型呼叫工具。",
-    "ai.message.context.hint": "提示：10 分鐘內使用「${cmd}」可繼續對話。",
-    "ai.message.context.hint.quote": "提示：10 分鐘內引用回覆此訊息或使用「${cmd}」可繼續對話。",
+    "ai.message.context.hint": "提示：${expiry} 分鐘內使用「${cmd}」可繼續對話。",
+    "ai.message.context.hint.reply": "提示：${expiry} 分鐘內引用回覆此訊息或使用「${cmd}」可繼續對話。",
     "ai.message.context.id": "對話輪次 ID：${turn_id}",
     "ai.message.context.invalid": "對話輪次不存在或已過期。",
     "ai.message.llm.instruct.clear.success": "已移除自訂指令。",
@@ -34,5 +34,11 @@
     "config.comments.module_ai.llm_temperature": "大語言模型的溫度取樣，範圍 0 到 2 之間。不建議與 top_p 同時修改。",
     "config.comments.module_ai.llm_timeout": "大語言模型的逾時時間。",
     "config.comments.module_ai.llm_top_p": "大語言模型的核取樣，範圍 0 到 1 之間。不建議與 temperature 同時修改。",
-    "ai.help.option.ctx": "指定要延續的對話輪次 ID。"
+    "ai.help.option.ctx": "指定要延續的對話輪次 ID。",
+    "ai.help.llm.persona": "設定是否啟用人格化，效果因模型而異。",
+    "ai.message.llm.persona.enable": "已啟用人格化。",
+    "ai.message.llm.persona.disable": "已停用人格化。",
+    "config.comments.module_ai.ai_cost_to_petal": "花瓣與呼叫費用的比率。",
+    "config.comments.module_ai.llm_reasoning_effort": "大語言模型的思考強度，若為 none 則不啟用思維鏈。",
+    "config.comments.module_ai.llm_top_logprobs": "大語言模型傳回的候選 Token 對數機率數量，範圍 0 到 20 之間，負數則不傳入。"
 }

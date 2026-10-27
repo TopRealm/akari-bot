@@ -1,20 +1,35 @@
 from pathlib import Path
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
+from string import Template
 
 import yaml
 
 from core.constants.path import module_data_path
+from .config import AiConfig
 
 ai_module_path = Path(__file__).parent
 ai_data_path = module_data_path(ai_module_path)
 
+
+class _InstructionsTemplate(Template):
+    # 指令文本含 LaTeX 的 $$，标准 Template 会把它折叠成 $；该模式只识别 ${name}，其余 $ 原样保留。
+    pattern = r"\$\{(?P<braced>[_a-z][_a-z0-9]*)\}|(?P<named>(?!))|(?P<escaped>(?!))|(?P<invalid>(?!))"
+
+
 instructions_path = ai_data_path / "instructions.txt"
 if instructions_path.exists():
     with open(instructions_path, "r", encoding="utf-8") as f:
-        INSTRUCTIONS = f.read()
+        INSTRUCTIONS = _InstructionsTemplate(f.read())
 else:
-    INSTRUCTIONS = ""
+    INSTRUCTIONS = _InstructionsTemplate("")
+
+persona_path = ai_data_path / "persona.txt"
+if persona_path.exists():
+    with open(persona_path, "r", encoding="utf-8") as f:
+        PERSONA = f.read()
+else:
+    PERSONA = ""
 
 llm_api_list_path = next(
     (
@@ -144,5 +159,87 @@ def get_llm_billing(llm: dict, context_tokens: int = 0, now: datetime | None = N
     return prices
 
 
+def get_llm_generation(llm: dict) -> dict:
+    """返回模型自定义的生成参数。
+
+    采样参数显式设为 null 时会被保留，供端点在调用时省略对应请求字段；
+    未配置的键不会出现，由端点在调用时回落到模块默认值。
+
+    :param llm: 模型配置。
+    :return: temperature、top_p、top_logprobs、reasoning_effort 中已配置项的字典。
+    """
+    generation = {key: llm[key] for key in ("temperature", "top_p", "top_logprobs") if key in llm}
+    reasoning_effort = llm.get("reasoning_effort")
+    if reasoning_effort is not None:
+        generation["reasoning_effort"] = reasoning_effort
+    return generation
+
+
 llm_list = [llm["name"].lower() for llm in llm_api_list if not llm.get("superuser", False)]
 llm_su_list = [llm["name"].lower() for llm in llm_api_list if llm.get("superuser", False)]
+
+# 配置的默认模型可能已从 llm_api_list 中移除，只有仍可用时才作为默认值。
+default_llm = AiConfig.ai_default_llm if AiConfig.ai_default_llm in llm_list else None
+
+
+image_api_path = next(
+    (
+        ai_data_path / f"image_api{dot_yaml}"
+        for dot_yaml in (".yaml", ".yml")
+        if (ai_data_path / f"image_api{dot_yaml}").exists()
+    ),
+    None,
+)
+if image_api_path:
+    with open(image_api_path, "r", encoding="utf-8") as f:
+        loaded_image_api = yaml.safe_load(f) or {}
+    image_api = loaded_image_api.get("image_api", {}) if isinstance(loaded_image_api, dict) else {}
+else:
+    image_api = {}
+
+if isinstance(image_api, dict):
+    image_api = {
+        "model_name": str(image_api.get("model_name") or "").strip(),
+        "base_url": str(image_api.get("base_url") or "").strip(),
+        "api_key": str(image_api.get("api_key") or "").strip(),
+        "costs": image_api.get("costs", 0),
+    }
+    if not image_api["model_name"]:
+        image_api = {}
+else:
+    image_api = {}
+
+
+def _parse_image_cost(value) -> Decimal | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        cost = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return cost if cost.is_finite() and cost >= 0 else None
+
+
+def get_image_cost(size: str | None = None, quality: str | None = None) -> Decimal:
+    costs = image_api.get("costs", 0)
+    if not isinstance(costs, dict):
+        return _parse_image_cost(costs) or Decimal("0")
+
+    keys = []
+    if size and quality:
+        keys.append(f"{size}:{quality}")
+    if quality:
+        keys.append(quality)
+    if size:
+        keys.append(size)
+    keys.extend(("default", "auto"))
+
+    for key in keys:
+        cost = _parse_image_cost(costs.get(key))
+        if cost is not None:
+            return cost
+    for value in costs.values():
+        cost = _parse_image_cost(value)
+        if cost is not None:
+            return cost
+    return Decimal("0")

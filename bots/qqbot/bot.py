@@ -1,5 +1,8 @@
 import re
+import time
+from collections import OrderedDict
 from collections.abc import Mapping
+from functools import wraps
 
 import botpy
 from botpy.interaction import Interaction
@@ -19,6 +22,7 @@ from core.builtins.session.info import EventInfo, SessionInfo
 from core.builtins.utils import command_prefix
 from core.client.init import client_cleanup, client_init
 from core.config.base import CoreConfig
+from core.config.network import proxy, ssl_verify
 from core.constants.default import confirm_command_default
 from core.logger import Logger
 from core.utils.button_runtime import BUTTON_TOKEN_PREFIX, ButtonConsumeStatus, consume_button
@@ -34,10 +38,58 @@ qqbot_secret = QQBotSecretConfig.qq_bot_secret
 ignored_sender = CoreConfig.ignored_sender
 
 initialized = False
+INBOUND_MESSAGE_CACHE_TTL = 300
+INBOUND_MESSAGE_CACHE_MAX_SIZE = 4096
+_inbound_message_cache: OrderedDict[tuple[str, ...], float] = OrderedDict()
 _ignored_msg_startswith = [
     re.compile(r"^\[.*?聊天记录]\n.*"),
     re.compile(r"^\[卡片消息].*"),
 ]  # 暂不解析这些消息，没有实际用途
+
+
+def _inbound_message_key(message) -> tuple[str, ...] | None:
+    message_id = getattr(message, "id", None)
+    if not message_id:
+        return None
+    if group_id := getattr(message, "group_openid", None):
+        return "group", str(group_id), str(message_id)
+    if isinstance(message, DirectMessage):
+        return "dm", str(message.guild_id), str(message_id)
+    if channel_id := getattr(message, "channel_id", None):
+        return "channel", str(getattr(message, "guild_id", "")), str(channel_id), str(message_id)
+    if guild_id := getattr(message, "guild_id", None):
+        return "dm", str(guild_id), str(message_id)
+    if user_id := getattr(getattr(message, "author", None), "user_openid", None):
+        return "c2c", str(user_id), str(message_id)
+    return None
+
+
+def _deduplicate_message(handler):
+    @wraps(handler)
+    async def wrapped(message):
+        key = _inbound_message_key(message)
+        if key is None:
+            return await handler(message)
+        now = time.monotonic()
+        while _inbound_message_cache:
+            if now - next(iter(_inbound_message_cache.values())) < INBOUND_MESSAGE_CACHE_TTL:
+                break
+            _inbound_message_cache.popitem(last=False)
+        if key in _inbound_message_cache:
+            Logger.info(f"Skipped duplicate QQBot message: callback={handler.__name__} identity={key}")
+            return
+        # 去重须在首个 await 前认领，且普通消息与提及回调共用同一消息身份。
+        _inbound_message_cache[key] = now
+        while len(_inbound_message_cache) > INBOUND_MESSAGE_CACHE_MAX_SIZE:
+            _inbound_message_cache.popitem(last=False)
+        try:
+            return await handler(message)
+        except BaseException:
+            if _inbound_message_cache.get(key) == now:
+                _inbound_message_cache.pop(key, None)
+            raise
+
+    return wrapped
 
 
 def _message_application_ids(message) -> tuple[str | None, str | None]:
@@ -86,6 +138,24 @@ def _convert_message_content(message: BaseMessage | Message | DirectMessage) -> 
         if content_type.startswith("video"):
             msg_chain.append(Video(attachment.url))
     return msg_chain
+
+
+def _self_mention_ids(include_guild: bool = False) -> set[str]:
+    ids = {str(qqbot_openid)} if qqbot_openid else set()
+    if include_guild:
+        if QQBotConfig.qq_bot_uid:
+            ids.add(str(QQBotConfig.qq_bot_uid))
+        robot = getattr(QQBotContextManager.client, "_robot", None)
+        if robot is not None:
+            ids.add(str(robot.id))
+    return ids
+
+
+def _strip_self_mentions(content: str, ids: set[str]) -> str:
+    if not content or not ids:
+        return content
+    pattern = r"<@!?(?:" + "|".join(re.escape(identifier) for identifier in ids) + r")>"
+    return re.sub(pattern, "", content)
 
 
 class MyClient(botpy.Client):
@@ -154,6 +224,7 @@ class MyClient(botpy.Client):
         QQBotFetchedContextManager.start_task_processor()
 
     @staticmethod
+    @_deduplicate_message
     async def on_at_message_create(message: Message):
         target_id = f"{target_guild_prefix}|{message.guild_id}|{message.channel_id}"
         sender_id = f"{sender_tiny_prefix}|{message.author.id}"
@@ -162,6 +233,7 @@ class MyClient(botpy.Client):
 
         reply_id = _record_message_ids(message)
 
+        message.content = _strip_self_mentions(message.content, _self_mention_ids(include_guild=True))
         pure_content = re.sub(r"<@(.*?)>", "", message.content).strip()
         if not pure_content:
             message.content = f"{command_prefix[0]}help"
@@ -189,6 +261,7 @@ class MyClient(botpy.Client):
         await Bot.process_message(session, message, guild_features)
 
     @staticmethod
+    @_deduplicate_message
     async def on_message_create(message: Message):
         target_id = f"{target_guild_prefix}|{message.guild_id}|{message.channel_id}"
         sender_id = f"{sender_tiny_prefix}|{message.author.id}"
@@ -197,6 +270,7 @@ class MyClient(botpy.Client):
 
         reply_id = _record_message_ids(message)
 
+        message.content = _strip_self_mentions(message.content, _self_mention_ids(include_guild=True))
         pure_content = re.sub(r"<@(.*?)>", "", message.content).strip()
         if not pure_content:
             message.content = f"{command_prefix[0]}help"
@@ -230,6 +304,7 @@ class MyClient(botpy.Client):
         await Bot.process_message(session, message, guild_features)
 
     @staticmethod
+    @_deduplicate_message
     async def on_message_group_create(message: GroupMessage):
         Logger.debug(message)
         target_id = f"{target_group_prefix}|{message.group_openid}"
@@ -248,6 +323,9 @@ class MyClient(botpy.Client):
                     message.content = m.group(2).strip()
                     if not message.content:
                         message.content = f"{command_prefix[0]}help"
+        message.content = _strip_self_mentions(message.content, _self_mention_ids())
+        if match_atme and not message.content.strip():
+            message.content = f"{command_prefix[0]}help"
         message.content = re.sub(r"<@(.*?)>", rf"{sender_prefix}|\1", message.content)
 
         msg_chain = _convert_message_content(message)
@@ -277,6 +355,7 @@ class MyClient(botpy.Client):
         await Bot.process_message(session, message, resolve_features(session))
 
     @staticmethod
+    @_deduplicate_message
     async def on_group_at_message_create(message: GroupMessage):
 
         target_id = f"{target_group_prefix}|{message.group_openid}"
@@ -286,6 +365,7 @@ class MyClient(botpy.Client):
 
         reply_id = _record_message_ids(message)
 
+        message.content = _strip_self_mentions(message.content, _self_mention_ids())
         message.content = re.sub(r"^<@(.*?)>", "", message.content).strip()
         if not message.content:
             message.content = f"{command_prefix[0]}help"
@@ -318,6 +398,7 @@ class MyClient(botpy.Client):
         await Bot.process_message(session, message, resolve_features(session, group_disable_read_all_message_features))
 
     @staticmethod
+    @_deduplicate_message
     async def on_direct_message_create(message: DirectMessage):
 
         target_id = f"{target_direct_prefix}|{message.guild_id}"
@@ -350,6 +431,7 @@ class MyClient(botpy.Client):
         await Bot.process_message(session, message, guild_features)
 
     @staticmethod
+    @_deduplicate_message
     async def on_c2c_message_create(message: C2CMessage):
         target_id = f"{target_c2c_prefix}|{message.author.user_openid}"
         sender_id = f"{sender_prefix}|{message.author.user_openid}"
@@ -459,6 +541,8 @@ def _build_client() -> MyClient:
             "webhook_port": int(QQBotConfig.qq_webhook_port),
             "webhook_path": str(QQBotConfig.qq_webhook_path),
         }
+    if QQBotConfig.qq_api_url:
+        transport_options["base_url"] = QQBotConfig.qq_api_url
 
     menu, panels = build_navigation()
     return MyClient(
@@ -468,6 +552,9 @@ def _build_client() -> MyClient:
         menu=menu,
         panels=panels,
         config_sync_strict=QQBotConfig.qq_navigation_sync_strict,
+        proxy=proxy,
+        ssl=ssl_verify,
+        rate_limit={"certification": "certified" if QQBotConfig.qq_bot_certified else "unverified"},
         **transport_options,
     )
 

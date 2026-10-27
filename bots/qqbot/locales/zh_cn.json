@@ -1,6 +1,7 @@
 {
     "config.comments.bot_qqbot_secret.qq_bot_secret": "QQ 机器人（官方）的 AppSecret。",
     "config.comments.bot_qqbot.qq_bot_appid": "QQ 机器人（官方）的 AppID。",
+    "config.comments.bot_qqbot.qq_bot_certified": "QQ 机器人（官方）是否已通过企业或个人认证，未认证时主动消息配额更低。",
     "config.comments.bot_qqbot.qq_bot_enable_send_url": "使用 QQ 机器人（官方）时，是否开启发送 URL。",
     "config.comments.bot_qqbot.qq_bot_openid": "QQ 机器人（官方）的 OpenID。",
     "config.comments.bot_qqbot.qq_bot_qqnum": "QQ 机器人（官方）的 QQ 号。",
@@ -13,5 +14,6 @@
     "config.comments.bot_qqbot.qq_use_webhook": "使用 QQ 机器人（官方）时，是否使用 Webhook 接收事件，关闭则连接 Gateway。",
     "config.comments.bot_qqbot.qq_webhook_host": "Webhook 监听地址。",
     "config.comments.bot_qqbot.qq_webhook_path": "Webhook 回调路径，需与开放平台配置的回调地址一致。",
-    "config.comments.bot_qqbot.qq_webhook_port": "Webhook 监听端口。"
+    "config.comments.bot_qqbot.qq_webhook_port": "Webhook 监听端口。",
+    "config.comments.bot_qqbot.qq_api_url": "自定义 QQ 机器人（官方）API 地址。"
 }

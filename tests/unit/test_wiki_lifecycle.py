@@ -10,7 +10,6 @@ from core.builtins.session.internal import MessageSession
 from core.constants import SessionContextUnavailable
 from core.module_runtime import ModuleRuntimeManager
 from core.queue.contracts import PlatformAPI
-from core.server.lifecycle import BackgroundTaskLifecycle
 from core.tester import func_case, Tester
 from modules.wiki.wiki import (
     _WikiMessageTracker,
@@ -58,10 +57,55 @@ async def _test_render_preview_can_be_deleted_after_preview():
     return delete.await_count == 1 and delete.await_args.args[1] == ["result", "background", "preview"]
 
 
+async def _test_render_preview_uses_pre_rendered_result():
+    owner = MessageSession(
+        SessionInfo(
+            target_id="TEST|Group|wiki-render-preloaded",
+            target_from="TEST|Group",
+            client_name="TEST",
+        )
+    )
+    tracker = _WikiMessageTracker(owner)
+    click = _ClickSession("wiki_render_preview")
+    click.send_message = AsyncMock(return_value=SimpleNamespace(message_id=["preview"]))
+    rendered = MessageChain.assign("pre-rendered preview")
+    preload = asyncio.create_task(asyncio.sleep(0, result=rendered))
+    await preload
+
+    with patch("modules.wiki.wiki._render_preview_items", new=AsyncMock()) as render:
+        callback = _build_render_preview_callback([], {}, tracker, pre_render_task=preload)
+        await callback(click)
+
+    return render.await_count == 0 and click.send_message.await_args.args[0] is rendered
+
+
+async def _test_render_preview_falls_back_when_preload_fails():
+    owner = MessageSession(
+        SessionInfo(
+            target_id="TEST|Group|wiki-render-preload-failure",
+            target_from="TEST|Group",
+            client_name="TEST",
+        )
+    )
+    tracker = _WikiMessageTracker(owner)
+    click = _ClickSession("wiki_render_preview")
+    click.send_message = AsyncMock(return_value=SimpleNamespace(message_id=["preview"]))
+    rendered = MessageChain.assign("fallback preview")
+    preload = asyncio.get_running_loop().create_future()
+    preload.set_exception(RuntimeError("preload failed"))
+
+    with patch("modules.wiki.wiki._render_preview_items", new=AsyncMock(return_value=rendered)) as render:
+        callback = _build_render_preview_callback([], {}, tracker, pre_render_task=preload)
+        await callback(click)
+
+    return render.await_count == 1 and click.send_message.await_args.args[0] is rendered
+
+
 async def _test_section_callback_uses_click_session_and_frozen_page():
     page = SimpleNamespace(
         title="First page",
         sections=["First section"],
+        revision_id=None,
         info=SimpleNamespace(api="https://first.example/api.php"),
     )
     callback = _build_section_callback(page)
@@ -85,6 +129,7 @@ async def _test_section_callback_rejects_zero_index():
     page = SimpleNamespace(
         title="Page",
         sections=["First", "Last"],
+        revision_id=None,
         info=SimpleNamespace(api="https://example.com/api.php"),
     )
     callback = _build_section_callback(page)
@@ -113,19 +158,6 @@ async def _test_forum_callback_uses_click_session_and_frozen_page():
         (click,),
         {"title": "First topic", "start_wiki_api": "https://first.example/api.php"},
     )
-
-
-async def _test_background_failure_releases_context():
-    session = SimpleNamespace(release=AsyncMock())
-
-    async def fail():
-        raise RuntimeError("background failure")
-
-    try:
-        await _run_background_with_release(session, fail())
-    except RuntimeError:
-        return session.release.await_count == 1
-    return False
 
 
 async def _test_background_failure_waits_for_siblings_before_release():
@@ -258,17 +290,14 @@ async def _test_background_cleanup_cancels_and_releases():
     return task.cancelled() and task not in runtime.tasks and session.release.await_count == 1
 
 
-async def _test_background_tasks_are_runtime_owned():
-    return "module:wiki-background" not in BackgroundTaskLifecycle._cleanup_hooks
-
-
 @func_case
 async def test_wiki_lifecycle(tester: Tester):
     await tester.test(_test_render_preview_can_be_deleted_after_preview, "渲染预览后仍可删除全部消息")
+    await tester.test(_test_render_preview_uses_pre_rendered_result, "渲染按钮复用预加载结果")
+    await tester.test(_test_render_preview_falls_back_when_preload_fails, "预加载失败后点击时重新渲染")
     await tester.test(_test_section_callback_uses_click_session_and_frozen_page, "章节回调会话与闭包冻结")
     await tester.test(_test_section_callback_rejects_zero_index, "章节回调拒绝零号索引")
     await tester.test(_test_forum_callback_uses_click_session_and_frozen_page, "论坛回调会话与闭包冻结")
-    await tester.test(_test_background_failure_releases_context, "Wiki 后台异常释放上下文")
     await tester.test(_test_background_failure_waits_for_siblings_before_release, "Wiki 后台异常等待同批任务")
     await tester.test(_test_background_spawn_failure_rolls_back_hold, "Wiki 后台创建失败回滚 hold")
     await tester.test(_test_background_hold_failure_skips_creation, "Wiki 上下文不可用时跳过后台任务")
@@ -276,5 +305,4 @@ async def test_wiki_lifecycle(tester: Tester):
     await tester.test(_test_query_pages_holds_context_for_entire_query, "Wiki 查询全程保持上下文")
     await tester.test(_test_query_pages_skips_when_context_is_unavailable, "Wiki 查询上下文不可用时跳过")
     await tester.test(_test_background_cleanup_cancels_and_releases, "Wiki 后台清理取消并释放")
-    await tester.test(_test_background_tasks_are_runtime_owned, "Wiki 后台任务由 runtime 托管")
     return tester

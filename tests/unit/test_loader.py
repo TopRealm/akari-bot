@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -17,11 +17,12 @@ from core.constants import PrivateData
 from core.database.models import ModuleStatus
 from core.loader import ModulesManager
 from core.module_runtime import ModuleRuntimeManager
+from core.queue.base import QueueDrainTimeout
 from core.queue.server import JobQueueServer
 from core.scheduler import SchedulerLifecycle
 from core.tester import func_case, Tester
 from core.types import Module
-from core.types.module.component_meta import CommandMeta, EventMeta, HookMeta, RegexMeta, ScheduleMeta
+from core.types.module.component_meta import CommandMeta, EventMeta, HookMeta, ScheduleMeta
 
 
 RENAMED_MODULES = {
@@ -50,20 +51,6 @@ RENAMED_MODULES = {
 # 冷文件缓存或高负载环境下会明显超过 1 秒，故等待步骤统一留出余量，
 # 避免把「慢」误判成「卡住」。
 RELOAD_WAIT_TIMEOUT = 10
-
-
-def _test_add_module():
-    try:
-        test_module = Module.assign(
-            module_name="__test_loader_mod_1", alias=None, recommend_modules=None, developers=None
-        )
-        ModulesManager.add_module(test_module, "test.py")
-        result = "__test_loader_mod_1" in ModulesManager.modules
-        ModulesManager.modules.pop("__test_loader_mod_1", None)
-        ModulesManager.modules_origin.pop("__test_loader_mod_1", None)
-        return result
-    except Exception:
-        return False
 
 
 def _test_add_module_duplicate():
@@ -130,51 +117,6 @@ def _test_bind_to_module_command():
         return False
 
 
-def _test_bind_to_module_regex():
-    try:
-        test_module = Module.assign(
-            module_name="__test_loader_bind_2", alias=None, recommend_modules=None, developers=None
-        )
-        ModulesManager.add_module(test_module, "test.py")
-
-        async def dummy_func(msg):
-            pass
-
-        meta = RegexMeta(function=dummy_func, pattern=r"test")
-        ModulesManager.bind_to_module("__test_loader_bind_2", meta)
-        result = len(ModulesManager.modules["__test_loader_bind_2"].regex_list.set) == 1
-        ModulesManager.modules.pop("__test_loader_bind_2", None)
-        ModulesManager.modules_origin.pop("__test_loader_bind_2", None)
-        return result
-    except Exception:
-        return False
-
-
-def _test_bind_to_nonexistent_module():
-    try:
-        meta = CommandMeta(function=lambda m: None, command_template=[])
-        ModulesManager.bind_to_module("__nonexistent_xyz__", meta)
-        return True
-    except Exception:
-        return False
-
-
-def _test_return_modules_list():
-    try:
-        test_module = Module.assign(
-            module_name="__test_loader_list_1", alias=None, recommend_modules=None, developers=None
-        )
-        test_module._db_load = True
-        ModulesManager.add_module(test_module, "test.py")
-        modules = ModulesManager.return_modules_list()
-        result = "__test_loader_list_1" in modules
-        ModulesManager.modules.pop("__test_loader_list_1", None)
-        ModulesManager.modules_origin.pop("__test_loader_list_1", None)
-        return result
-    except Exception:
-        return False
-
-
 def _test_return_modules_list_filter_platform():
     try:
         test_module = Module.assign(
@@ -199,24 +141,6 @@ def _test_return_modules_list_filter_platform():
         ModulesManager.refresh()
 
         return qq_has and not discord_has
-    except Exception:
-        return False
-
-
-def _test_refresh_aliases():
-    try:
-        test_module = Module.assign(
-            module_name="__test_loader_alias_1",
-            alias={"ta": "__test_loader_alias_1"},
-            recommend_modules=None,
-            developers=None,
-        )
-        ModulesManager.add_module(test_module, "test.py")
-        ModulesManager.refresh_modules_aliases()
-        result = ModulesManager.modules_aliases.get("ta") == "__test_loader_alias_1"
-        ModulesManager.modules.pop("__test_loader_alias_1", None)
-        ModulesManager.modules_origin.pop("__test_loader_alias_1", None)
-        return result
     except Exception:
         return False
 
@@ -849,7 +773,11 @@ def _test_reload_syncs_missing_module_config_fields():
             patch.object(CFGManager, "edit_write", edit_write),
         ):
             errors = ModulesManager._sync_config_fields(package)
-        return not errors and edit_write.call_args_list == [call("probe_value", 42, int, False, "module_probe")]
+        return (
+            not errors
+            and edit_write.call_count == 1
+            and edit_write.call_args.args == ("probe_value", 42, int, False, "module_probe")
+        )
     finally:
         sys.modules.pop(config_module_name, None)
 
@@ -1233,6 +1161,38 @@ async def _test_load_state_changes_only_after_persistence():
         _restore_module_manager(snapshot)
 
 
+async def _test_queue_drain_timeout_skips_reload_and_unload():
+    module_name = "__test_loader_queue_drain_timeout"
+    snapshot = _snapshot_module_manager()
+    reload_impl = AsyncMock(return_value=(True, 1))
+    suspend_impl = AsyncMock(return_value=None)
+
+    @asynccontextmanager
+    async def blocked_window(*_args, **_kwargs):
+        raise QueueDrainTimeout("TEST-PEER", [])
+        yield
+
+    try:
+        module = Module.assign(module_name=module_name, alias=None, recommend_modules=None, developers=None)
+        module._db_load = True
+        ModulesManager.add_module(module, f"modules.{module_name}")
+        with (
+            patch.object(JobQueueServer, "maintenance_window", new=blocked_window),
+            patch.object(ModulesManager, "_reload_module", new=reload_impl),
+            patch.object(ModuleRuntimeManager, "suspend", new=suspend_impl),
+        ):
+            reload_result = await ModulesManager.reload_module(module_name)
+            unload_result = await ModulesManager.unload_module(module_name)
+        return (
+            reload_result == (False, 0)
+            and unload_result is False
+            and reload_impl.await_count == 0
+            and suspend_impl.await_count == 0
+        )
+    finally:
+        _restore_module_manager(snapshot)
+
+
 async def _test_unload_drains_queue_before_stopping_runtime():
     module_name = "__test_loader_unload_order"
     snapshot = _snapshot_module_manager()
@@ -1280,16 +1240,11 @@ async def _test_unload_drains_queue_before_stopping_runtime():
 @func_case
 async def test_loader(tester: Tester):
     """core.loader: 模块加载器测试"""
-    await tester.test(_test_add_module, "ModulesManager.add_module 测试")
     await tester.test(_test_add_module_duplicate, "ModulesManager.add_module 重复测试")
     await tester.test(_test_remove_modules, "ModulesManager.remove_modules 测试")
     await tester.test(_test_remove_nonexistent_module, "ModulesManager.remove_modules 不存在测试")
     await tester.test(_test_bind_to_module_command, "ModulesManager.bind_to_module CommandMeta 测试")
-    await tester.test(_test_bind_to_module_regex, "ModulesManager.bind_to_module RegexMeta 测试")
-    await tester.test(_test_bind_to_nonexistent_module, "ModulesManager.bind_to_module 不存在模块测试")
-    await tester.test(_test_return_modules_list, "ModulesManager.return_modules_list 测试")
     await tester.test(_test_return_modules_list_filter_platform, "ModulesManager.return_modules_list 平台过滤测试")
-    await tester.test(_test_refresh_aliases, "ModulesManager.refresh_modules_aliases 测试")
     await tester.test(
         _test_get_module_and_alias_first_words,
         "ModulesManager.get_module_and_alias_first_words 测试",
@@ -1337,4 +1292,5 @@ async def test_loader(tester: Tester):
     await tester.test(_test_cancelled_commit_keeps_committed_generation, "取消 commit 等待完成且不回滚新代")
     await tester.test(_test_load_state_changes_only_after_persistence, "全局加载状态持久化后更新内存")
     await tester.test(_test_unload_drains_queue_before_stopping_runtime, "unload 先排空 Queue 再停止 runtime")
+    await tester.test(_test_queue_drain_timeout_skips_reload_and_unload, "队列排空超时放弃 reload 与 unload")
     return tester

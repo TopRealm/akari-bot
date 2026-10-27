@@ -181,7 +181,7 @@ async def _(msg: Bot.MessageSession, bid: str, get_detail=False):
 | 找不到对应值 | 用函数默认值；没默认值就传 `None` |
 | 注解为 `Param("<名字>", 类型)` | 显式指定要取哪个 key（参数名和模板名不一致时用） |
 
-> ⚠️ **`MessageSession` 参数必须注解成 `Bot.MessageSession`**。框架是按 `param_obj.annotation == bot.MessageSession` 判定的，直接 `from core.builtins.session.internal import MessageSession` 再拿它当注解**不生效**——日志里会打 `has no Bot.MessageSession parameter, did you forgot to add it?`，运行时行为也会错乱。源码里的原话就是「Remember: MessageSession IS NOT Bot.MessageSession」。
+> ⚠️ **`MessageSession` 参数必须注解成 `Bot.MessageSession`**。框架是按 `param_obj.annotation == bot.MessageSession` 判定的，直接 `from core.builtins.session.internal import MessageSession` 再拿它当注解**不生效**——日志里会打 `has no Bot.MessageSession parameter, did you forgot to add it?`，运行时行为也会错乱。源码里的原话就是“Remember: MessageSession IS NOT Bot.MessageSession”。
 >
 > 另：注入只在 `parsed_msg` 非空时发生。裸 `@my_mod.command()`（无模板）的函数只能有一个参数。
 
@@ -243,7 +243,7 @@ async def _(msg):
         await msg.finish(I18NContext("my_module.error.permission"))
 ```
 
-`check_permission()` 覆盖群组管理员 / 自定义管理员 / 超级用户三类；`check_native_permission()` 才是问平台要原生权限。`msg.finish()` 会抛 `SessionFinished`，所以后面不需要 `return`。
+`check_permission()` 覆盖群组管理员 / 自定义管理员 / 超级用户三类；`check_native_permission()` 才是问平台要原生权限，传入平台 ID 可查询指定成员（默认发话者）。`msg.finish()` 会抛 `SessionFinished`，所以后面不需要 `return`。
 
 ### 7.6 模块配置
 
@@ -386,6 +386,7 @@ result = await Bot.Hook.trigger("wiki.autosearch", session_info, args={"title": 
 - 命令模板中的描述使用 `{{I18N:key}}` 语法
 - 模块 `desc` 参数使用 `{I18N:key}` 语法（单花括号）
 - 参数化消息使用 `string.Template` 格式的 `${param}` 占位符
+- 指代“当前会话”时使用术语占位符 `{TERM:target}`，不要写死“场景”
 
 #### 语言文件格式
 
@@ -432,6 +433,24 @@ await msg.finish(I18NContext("my_module.message.greeting", name="World"))
 async def _(msg: Bot.MessageSession):
     await msg.finish(I18NContext("my_module.message.hello"))
 ```
+
+#### 术语占位符 `{TERM:name}`
+
+会话本身（QQ 群聊、Discord 频道、私聊等）在不同平台有不同称呼。文案需要指代当前会话时写 `{TERM:target}`，由 i18n 组件按会话的平台与上下文解析，不要写死“场景”：
+
+```json
+{
+    "my_module.message.blocked": "本{TERM:target}已被停用。",
+    "my_module.message.summary": "{TERM:target,count=${count}} 共有 ${count} 条动态。"
+}
+```
+
+- 解析结果按平台而异：QQ 群显示“群聊”、Discord 频道显示“频道”、私聊显示“私聊”；未声明术语的平台回落到基础术语“场景”。
+- 占位符可带参数（`{TERM:target,count=3}`），参数只插值进术语自身的文本，不参与变体选择；缺参数时术语里的 `${param}` 原样保留。
+- 术语缺失时占位符原样保留在输出里，便于排障；构建期 `audit_terms()` 会把“引用了未声明的术语”并入 `errors`。
+- 术语词条集中在 `core/locales/terms/zh_cn.json`，键**省略 `term.` 前缀**：写 `"target": "场景"`、`"target.private": "私聊"`、`"target.discord": "频道"`，加载时自动补成 `term.target` 等。平台称呼差异也写在这一个文件里，不按适配器拆分——术语是词表而非平台逻辑，单一归属才能避免共用平台身份（milky 与 onebot 都是 `QQ`）时同名键被判为冲突并整体丢弃。
+- 顶层语言文件里不要再写 `term.*` 键：残留的同名副本会被术语目录覆盖，并由构建期审计报出。
+- 模块通常不需要新增术语；确有需要时在 `core/locales/terms/zh_cn.json` 追加词条即可。
 
 #### 错误示例（禁止）
 
@@ -546,7 +565,7 @@ play_state.disable()  # 结束
 
 | 方法 | 签名要点 | 返回 |
 |------|----------|------|
-| `wait_confirm` | `(message_chain=None, quote=True, delete=True, timeout=120, append_instruction=True, no_confirm_action=True)` | `bool` |
+| `wait_confirm` | `(message_chain=None, quote=True, delete=True, timeout=120, append_instruction=True, no_confirm_action=True, consume_any_message=False, confirm_token=None)` | `bool` |
 | `wait_next_message` | `(message_chain=None, quote=True, delete=False, timeout=120, append_instruction=True, possibly_choices=None)` | `MessageSession` |
 | `wait_reply` | `(message_chain, quote=True, delete=False, timeout=120, all_=False, append_instruction=True)` | `MessageSession` |
 | `wait_anyone` | `(message_chain=None, quote=False, delete=False, timeout=120)` | `MessageSession` |
@@ -557,6 +576,13 @@ if await msg.wait_confirm(I18NContext("my_module.message.confirm")):
     await msg.finish(I18NContext("my_module.message.confirmed"))
 else:
     await msg.finish(I18NContext("my_module.message.cancelled"))
+
+# 严格确认（高风险操作用：用户必须完全回复口令）
+if await msg.wait_confirm(
+    I18NContext("my_module.message.danger"),
+    confirm_token=I18NContext("my_module.message.danger.token"),
+):
+    await msg.finish(I18NContext("my_module.message.done"))
 
 # 等待下一条消息
 next_msg = await msg.wait_next_message(I18NContext("my_module.message.ask"))
@@ -575,6 +601,7 @@ answer = await msg.wait_anyone(timeout=30)
 > 其他共同行为：
 > - 进入等待前会 `ExecutionLockList.remove(self)` + `end_typing()`，所以等待期间用户可以触发别的命令
 > - `wait_confirm` 在配置 `no_confirm` 为真时**直接返回 `no_confirm_action`**（默认 `True`），不发消息也不等待——写破坏性操作时要意识到确认可能被全局跳过
+> - `confirm_token` 要求用户**完全回复口令**才通过：字符串按原文比对，`I18NContext` 按会话语言解析占位符后比对，首尾空白均忽略。严格确认不发按钮、不挂反应提示，也不受 `no_confirm` 影响
 > - `append_instruction=True` 会自动追加平台相关的操作提示（反应 / 回复 / 文本），一般别关
 > - `message_chain` 不填就只等不发；`wait_reply` 例外，它是必填的
 

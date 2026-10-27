@@ -28,7 +28,7 @@ CAPTCHA_EMOTE_ANSWER_OFFSET = 101
 CAPTCHA_EMOTE_DIR = assets_path / "emotes" / "captcha_held"
 CAPTCHA_EMOTES = tuple(sorted(path.stem for path in CAPTCHA_EMOTE_DIR.glob("*.gif")))
 CAPTCHA_BUTTON_ROWS = 5
-CAPTCHA_BUTTONS_PER_ROW = 4
+CAPTCHA_BUTTONS_PER_ROW = 3
 CAPTCHA_CHOICE_COUNT = CAPTCHA_BUTTON_ROWS * CAPTCHA_BUTTONS_PER_ROW
 
 captcha = module(
@@ -159,11 +159,13 @@ async def member_joined(event: EventInfo):
         if existing and existing.status in {"pending", "failed", "verified"}:
             return
 
-        if CoreConfig.use_emote and len(CAPTCHA_EMOTES) >= CAPTCHA_CHOICE_COUNT:
+        target_data = (event.target_union_info.target_data or {}) if event.target_union_info else {}
+        use_emote = CoreConfig.use_emote and target_data.get("use_emote", True)
+        if use_emote and len(CAPTCHA_EMOTES) >= CAPTCHA_CHOICE_COUNT:
             answer = CAPTCHA_EMOTE_ANSWER_OFFSET + SecureRandom.randint(0, len(CAPTCHA_EMOTES) - 1)
             choices = make_emote_choices(answer)
         else:
-            if CoreConfig.use_emote:
+            if use_emote:
                 Logger.warning(
                     f"Captcha emote mode requires at least {CAPTCHA_CHOICE_COUNT} GIF resources in {CAPTCHA_EMOTE_DIR}."
                 )

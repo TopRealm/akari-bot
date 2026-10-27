@@ -1,25 +1,138 @@
+from decimal import Decimal, ROUND_UP
+
 from core.builtins.bot import Bot
 from core.builtins.message.internal import ActionText, I18NContext, ImageElement, Plain
 from core.builtins.message.chain import MessageChain
 from core.component import module
-from modules.ai.config import AiConfig
 from core.utils.cooldown import CoolDown
 from core.utils.dirty_check import check_bool, rickroll
 from core.logger import Logger
 from core.constants import WaitCancelException
-from .petal import precount_petal, count_token_petal
-from .setting import get_llm_billing, llm_api_list, llm_list, llm_su_list
-from .context import CONTEXT_EXPIRY, create_context, get_context
-
-default_llm = AiConfig.ai_default_llm
-default_llm = default_llm if default_llm in llm_list else None
+from .petal import precount_petal, count_token_petal, cost_to_petal
+from .setting import default_llm, get_llm_billing, get_llm_generation, llm_api_list, llm_list, llm_su_list, persona_path
+from .context import CONTEXT_EXPIRY, create_context, get_context, get_context_llm
+from .hook import ask_ai
 
 ai = module("ai", developers=["DoroWolf", "Dianliang233"], desc="{I18N:ai.help.desc}", doc=True)
+
+
+@ai.hook("ask", timeout=0)
+async def _(ctx: Bot.ModuleHookContext):
+    return await ask_ai(ctx)
 
 
 def _get_message_images(msg: Bot.MessageSession) -> list[ImageElement]:
     messages = msg.session_info.messages
     return [element for element in messages.values if isinstance(element, ImageElement)] if messages else []
+
+
+async def _chat_loop(
+    msg: Bot.MessageSession,
+    current_msg: Bot.MessageSession,
+    current_prompt: str,
+    llm_info: dict,
+    use_tools: bool,
+    history: list[dict] | None,
+    context_key: str,
+) -> None:
+    while True:
+        images = _get_message_images(current_msg)
+        if not current_prompt and not images:
+            current_msg = await current_msg.wait_reply(
+                message_chain=I18NContext("ai.message.no_prompt"), timeout=CONTEXT_EXPIRY
+            )
+            current_prompt = current_msg.as_display(text_only=True).strip()
+            continue
+
+        current_is_superuser = current_msg.check_super_user()
+
+        billing = get_llm_billing(llm_info)
+        if not current_is_superuser and not precount_petal(
+            current_msg.session_info,
+            billing["input_price"],
+            billing["output_price"],
+            billing["cache_read_price"],
+            billing["cache_write_price"],
+            call_price=billing["call_price"],
+        ):
+            await current_msg.finish(I18NContext("petal.message.cost.not_enough"))
+
+        if await check_bool(current_prompt, current_msg):
+            await current_msg.finish(rickroll())
+
+        qc = CoolDown("call_ai", current_msg, 10)
+        c = qc.check()
+        if c != 0 and not current_is_superuser:
+            await current_msg.finish(I18NContext("message.cooldown", time=int(c)))
+
+        # OpenAI、Matplotlib、网页提取等依赖体积较大，仅在实际调用 AI 时加载。
+        from .llm import ask_llm
+
+        prompt_elements = [Plain(current_prompt)] if current_prompt else []
+        prompt_chain = MessageChain.assign([*prompt_elements, *images])
+        chain, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, history, image_cost = await ask_llm(
+            current_msg,
+            prompt_chain,
+            llm_info["model_name"],
+            llm_info["api_url"],
+            llm_info["api_key"],
+            endpoint=llm_info.get("endpoint", "openai"),
+            use_tools=use_tools,
+            history=history,
+            generation=get_llm_generation(llm_info),
+        )
+
+        # 每轮建立新的快照，保留旧 ID 以支持从任意一轮分叉。
+        turn_id = create_context(history, context_key, llm_info["name"].lower())
+
+        Logger.info(
+            f"{input_tokens + cache_read_tokens + cache_write_tokens + output_tokens} token used while calling LLM."
+        )
+        Logger.info(
+            f"Input (miss cache): {input_tokens} | Output: {output_tokens} | "
+            f"Cache read: {cache_read_tokens} | Cache write: {cache_write_tokens}"
+        )
+        billing = get_llm_billing(llm_info, input_tokens)
+        petal = await count_token_petal(
+            current_msg.session_info,
+            billing["input_price"],
+            billing["output_price"],
+            billing["cache_read_price"],
+            billing["cache_write_price"],
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            billing["call_price"],
+            extra_cost=image_cost,
+        )
+
+        chain.append(Plain("\n---\n"))
+        cmd = ActionText(f"{msg.session_info.prefixes[0]}ai --ctx {turn_id}")
+        ctx_expiry = CONTEXT_EXPIRY // 60
+        if msg.session_info.support_quote:
+            chain.append(I18NContext("ai.message.context.hint.reply", expiry=ctx_expiry, cmd=cmd))
+        else:
+            chain.append(I18NContext("ai.message.context.hint", expiry=ctx_expiry, cmd=cmd))
+        chain.append(I18NContext("ai.message.context.id", turn_id=turn_id))
+        if petal != 0:
+            chain.append(I18NContext("petal.message.cost", amount=petal))
+
+        if not current_is_superuser:
+            qc.reset()
+
+        if not msg.session_info.support_quote:
+            await current_msg.finish(chain)
+
+        try:
+            reply = await current_msg.wait_reply(chain, all_=True, timeout=CONTEXT_EXPIRY, append_instruction=False)
+        except WaitCancelException:
+            await msg.finish()
+
+        current_prompt = reply.as_display(text_only=True).strip()
+        current_msg = reply
+        if not current_prompt and not _get_message_images(reply):
+            await msg.finish()
 
 
 @ai.command(
@@ -59,7 +172,13 @@ async def _(
     available_llms = llm_list + (llm_su_list if is_superuser else [])
 
     if not selected_llm:
-        selected_llm = target_default_llm if target_default_llm else default_llm
+        # 续接上下文时沿用其原本使用的模型；该模型当前不可用时回落到默认模型。
+        context_llm = get_context_llm(turn_id, context_key) if turn_id else None
+        context_llm = context_llm.lower() if context_llm else None
+        if context_llm in available_llms:
+            selected_llm = context_llm
+        else:
+            selected_llm = target_default_llm if target_default_llm else default_llm
 
     llm_info = None
     if selected_llm in available_llms:
@@ -68,102 +187,25 @@ async def _(
     if not llm_info:
         await msg.finish(I18NContext("ai.message.llm.invalid"))
 
-    current_msg = msg
-    current_prompt = prompt or ""
-
-    while True:
-        images = _get_message_images(current_msg)
-        if not current_prompt and not images:
-            current_msg = await current_msg.wait_next_message(message_chain=I18NContext("ai.message.no_prompt"))
-            current_prompt = current_msg.as_display(text_only=True).strip()
-            continue
-
-        current_is_superuser = current_msg.check_super_user()
-
-        billing = get_llm_billing(llm_info)
-        if not current_is_superuser and not precount_petal(
-            current_msg,
-            billing["input_price"],
-            billing["output_price"],
-            billing["cache_read_price"],
-            billing["cache_write_price"],
-            call_price=billing["call_price"],
-        ):
-            await current_msg.finish(I18NContext("petal.message.cost.not_enough"))
-
-        if await check_bool(current_prompt, current_msg):
-            await current_msg.finish(rickroll())
-
-        qc = CoolDown("call_ai", current_msg, 60)
-        c = qc.check()
-        if c != 0 and not current_is_superuser:
-            await current_msg.finish(I18NContext("message.cooldown", time=int(c)))
-
-        # OpenAI、Matplotlib、网页提取等依赖体积较大，仅在实际调用 AI 时加载。
-        from .llm import ask_llm
-
-        prompt_elements = [Plain(current_prompt)] if current_prompt else []
-        prompt_chain = MessageChain.assign([*prompt_elements, *images])
-        chain, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, history = await ask_llm(
-            current_msg,
-            prompt_chain,
-            llm_info["model_name"],
-            llm_info["api_url"],
-            llm_info["api_key"],
-            endpoint=llm_info.get("endpoint", "openai"),
+    # 多轮对话会跨越多次平台消息处理，保持根会话上下文直到整段对话结束。
+    await msg.hold()
+    try:
+        await _chat_loop(
+            msg=msg,
+            current_msg=msg,
+            current_prompt=prompt or "",
+            llm_info=llm_info,
             use_tools=use_tools,
             history=history,
+            context_key=context_key,
         )
+    finally:
+        await msg.release()
 
-        # 每轮建立新的快照，保留旧 ID 以支持从任意一轮分叉。
-        turn_id = create_context(history, context_key)
 
-        Logger.info(
-            f"{input_tokens + cache_read_tokens + cache_write_tokens + output_tokens} token used while calling LLM."
-        )
-        Logger.info(
-            f"Input (miss cache): {input_tokens} | Output: {output_tokens} | "
-            f"Cache read: {cache_read_tokens} | Cache write: {cache_write_tokens}"
-        )
-        billing = get_llm_billing(llm_info, input_tokens)
-        petal = await count_token_petal(
-            current_msg,
-            billing["input_price"],
-            billing["output_price"],
-            billing["cache_read_price"],
-            billing["cache_write_price"],
-            input_tokens,
-            output_tokens,
-            cache_read_tokens,
-            cache_write_tokens,
-            billing["call_price"],
-        )
-
-        chain.append(Plain("\n---\n"))
-        cmd = ActionText(f"{msg.session_info.prefixes[0]}ai --ctx {turn_id}")
-        if msg.session_info.support_quote:
-            chain.append(I18NContext("ai.message.context.hint.quote", cmd=cmd))
-        else:
-            chain.append(I18NContext("ai.message.context.hint", cmd=cmd))
-        chain.append(I18NContext("ai.message.context.id", turn_id=turn_id))
-        if petal != 0:
-            chain.append(I18NContext("petal.message.cost", amount=petal))
-
-        if not current_is_superuser:
-            qc.reset()
-
-        if not msg.session_info.support_quote:
-            await current_msg.finish(chain)
-
-        try:
-            reply = await current_msg.wait_reply(chain, all_=True, timeout=CONTEXT_EXPIRY, append_instruction=False)
-        except WaitCancelException:
-            await msg.finish()
-
-        current_prompt = reply.as_display(text_only=True).strip()
-        current_msg = reply
-        if not current_prompt and not _get_message_images(reply):
-            await msg.finish()
+def _scale_price(price) -> str:
+    petal_price = (Decimal(str(price)) * cost_to_petal).quantize(Decimal("0.00001"), rounding=ROUND_UP)
+    return format(petal_price, "f").rstrip("0").rstrip(".")
 
 
 def _build_llm_billing_items(llm_info: dict) -> list:
@@ -175,8 +217,8 @@ def _build_llm_billing_items(llm_info: dict) -> list:
         items.append(
             I18NContext(
                 "ai.message.llm.list.billing.token",
-                input_price=billing["input_price"],
-                output_price=billing["output_price"],
+                input_price=_scale_price(billing["input_price"]),
+                output_price=_scale_price(billing["output_price"]),
             )
         )
     if billing_type != "per_call" and any(
@@ -185,13 +227,18 @@ def _build_llm_billing_items(llm_info: dict) -> list:
         items.append(
             I18NContext(
                 "ai.message.llm.list.billing.token.cache",
-                cache_write_price=billing["cache_write_price"],
-                cache_read_price=billing["cache_read_price"],
+                cache_write_price=_scale_price(billing["cache_write_price"]),
+                cache_read_price=_scale_price(billing["cache_read_price"]),
             )
         )
 
     if billing["call_price"] > 0:
-        items.append(I18NContext("ai.message.llm.list.billing.call", call_price=billing["call_price"]))
+        items.append(
+            I18NContext(
+                "ai.message.llm.list.billing.call",
+                call_price=_scale_price(billing["call_price"]),
+            )
+        )
 
     tiers = billing_config.get("tiers")
     time_rules = billing_config.get("time_rules")
@@ -225,17 +272,26 @@ def _build_llm_billing_items(llm_info: dict) -> list:
                     ),
                     I18NContext(
                         "ai.message.llm.list.billing.token",
-                        input_price=tier_billing["input_price"],
-                        output_price=tier_billing["output_price"],
+                        input_price=_scale_price(tier_billing["input_price"]),
+                        output_price=_scale_price(tier_billing["output_price"]),
                     ),
                     I18NContext(
                         "ai.message.llm.list.billing.token.cache",
-                        cache_write_price=tier_billing["cache_write_price"],
-                        cache_read_price=tier_billing["cache_read_price"],
+                        cache_write_price=_scale_price(tier_billing["cache_write_price"]),
+                        cache_read_price=_scale_price(tier_billing["cache_read_price"]),
                     ),
                 ]
             )
     return items
+
+
+@ai.command("llm persona {{I18N:ai.help.llm.persona}}", load=persona_path.exists())
+async def _(msg: Bot.MessageSession):
+    if msg.session_info.sender_union_info.sender_data.get("ai_enable_persona"):
+        await msg.session_info.sender_union_info.edit_sender_data("ai_enable_persona", False)
+        await msg.finish(I18NContext("ai.message.llm.persona.disable"))
+    await msg.session_info.sender_union_info.edit_sender_data("ai_enable_persona", True)
+    await msg.finish(I18NContext("ai.message.llm.persona.enable"))
 
 
 @ai.command("llm instruct [<instructions>] {{I18N:ai.help.llm.instruct}}")

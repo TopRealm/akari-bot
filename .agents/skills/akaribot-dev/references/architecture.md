@@ -278,7 +278,7 @@ Rendezvous Hash 选择实例；广播先快照目标，再生成逐实例投递�
        ↓
 Bot.post_message(module_name, message, session_list)
    - 从数据库查询启用了该模块的目标列表
-   - group_sessions_by_channel(): 按「场景组 + 消息通道」归拢，同一通道只推一次
+   - group_sessions_by_channel(): 按“场景组 + 消息通道”归拢，同一通道只推一次
    - 只发队首，session_info.next_hops = 该通道内其余会话的 target_id
        ↓
 PlatformAPI.post_message.submit(session_info, message, module_name)
@@ -292,8 +292,9 @@ JobQueueClient 的 platform.post_message handler → ContextManager.send_message
 ```
 
 跳表每次只会变短，不会成环。因此 `*FetchedContextManager` 的 `send_message` **必须返回真实的消息 ID**：
-onebot / qqbot 的主动消息要按冷却排队，队列里放的是 `(future, 任务参数)`，
-`send_message` 等 future，`process_tasks()` 发完再 `set_result` —— 冷却节奏不变，但调用方拿得到结果。
+主动消息按队列发送时，队列里放的是 `(future, 任务参数)`，`send_message` 等 future，`process_tasks()`
+发完再 `set_result`，调用方因此拿得到结果。onebot / milky 的队列负责冷却限速；qqbot 的队列只负责
+`in_post_whitelist` 优先级，发送节奏由 qq-botpy-sdk 的出站整流器控制。
 
 ### 私信发送流程
 

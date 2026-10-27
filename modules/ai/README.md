@@ -1,4 +1,4 @@
-在使用本模块前，请确保在 `modules/ai/data/` 目录下创建 `llm_api_list.yaml` 配置文件，否则模块将无法正常运行。
+在使用本模块前，请确保在 `modules/ai/data/` 目录下创建 `llm_api_list.yaml` 配置文件，否则模块将无法正常运行。如需启用图片生成与编辑，再创建 `image_api.yaml`。
 
 ---
 
@@ -76,6 +76,8 @@ llm_api_list:
   * `openai`（默认）：OpenAI Chat Completions API。
   * `openai-response`：OpenAI Responses API。
   * `anthropic`：Anthropic Messages API。
+  * `gemini`：Gemini GenerateContent API。
+  * `gemini-interaction`：Gemini Interactions API。
 
 ### 可选参数
 
@@ -88,6 +90,36 @@ llm_api_list:
 
   * `true`：仅限超级用户使用。
   * `false` 或 `null`：无须权限。
+
+### 生成参数
+
+以下参数用于覆盖模块配置中的同名默认值，未设置时沿用模块配置：
+
+* `temperature`：模型的温度采样。
+* `top_p`：模型的核采样。
+* `top_logprobs`：模型返回的候选 Token 对数概率数量，范围 0 到 20。
+* `reasoning_effort`：模型的思考强度，若为 `none` 则不启用思维链。
+
+`temperature`、`top_p` 与 `top_logprobs` 可显式设为 `null`，表示不向模型传入该参数，适用于不支持相应参数的模型。
+
+```yaml
+llm_api_list:
+  - api_key: sk-1145141919810
+    api_url: https://api.examplellm.com/v1
+    model_name: llm-v1
+    name: example-llm
+    temperature: 0.3
+    top_p: 0.9
+    top_logprobs: 5
+    reasoning_effort: high
+  - api_key: sk-1145141919810
+    api_url: https://api.examplellm.com/v1
+    model_name: llm-v2
+    name: example-llm-no-sampling
+    temperature: null
+    top_p: null
+    top_logprobs: null
+```
 
 ---
 
@@ -358,7 +390,30 @@ billing:
 
 ---
 
-Before using this module, please make sure to create the `llm_api_list.yaml` configuration file in the `modules/ai/data/` directory. Otherwise, the module will not function properly.
+## 图片生成与编辑
+
+`image_api.yaml` 与 `llm_api_list.yaml` 一样放在 `modules/ai/data/`中。当配置存在且 `model_name` 非空时，模型会获得 `generate_image` 与 `edit_image` 工具。
+
+```yaml
+image_api:
+  model_name: gpt-image-1
+  base_url: https://api.openai.com/v1
+  api_key: sk-xxxxxxxx
+  costs:
+    low: 4
+    medium: 8
+    high: 16
+    auto: 8
+    default: 8
+```
+
+* `base_url`、`api_key` 留空时沿用当前对话模型的地址与密钥。
+* `costs` 以调用费用为单位，可以是固定数值，也可以是按参数查找的对照表；查找顺序为 `尺寸:品质` → 品质 → 尺寸 → `default` → `auto` → 第一个数值。
+* 修改配置后需重启机器人或重载 `ai` 模块。
+
+---
+
+Before using this module, please make sure to create the `llm_api_list.yaml` configuration file in the `modules/ai/data/` directory. Otherwise, the module will not function properly. To enable image generation and editing, also create `image_api.yaml`.
 
 ---
 
@@ -437,6 +492,8 @@ llm_api_list:
   * `openai` (default): OpenAI Chat Completions API.
   * `openai-response`: OpenAI Responses API.
   * `anthropic`: Anthropic Messages API.
+  * `gemini`: Gemini GenerateContent API.
+  * `gemini-interaction`: Gemini Interactions API.
 
 ### Optional Parameters
 
@@ -449,6 +506,36 @@ llm_api_list:
 
   * `true`: Restricted to superusers only.
   * `false` or `null`: No special permission required.
+
+### Generation Parameters
+
+The following parameters override the module configuration defaults. When omitted, the module configuration is used:
+
+* `temperature`: The temperature sampling of the model.
+* `top_p`: The nucleus sampling of the model.
+* `top_logprobs`: The number of most likely tokens to return log probabilities for, ranging from 0 to 20.
+* `reasoning_effort`: The reasoning effort of the model. If set to `none`, the chain of thought is disabled.
+
+`temperature`, `top_p`, and `top_logprobs` can be set to `null` to omit the parameter from the request, for models that do not support it.
+
+```yaml
+llm_api_list:
+  - api_key: sk-1145141919810
+    api_url: https://api.examplellm.com/v1
+    model_name: llm-v1
+    name: example-llm
+    temperature: 0.3
+    top_p: 0.9
+    top_logprobs: 5
+    reasoning_effort: high
+  - api_key: sk-1145141919810
+    api_url: https://api.examplellm.com/v1
+    model_name: llm-v2
+    name: example-llm-no-sampling
+    temperature: null
+    top_p: null
+    top_logprobs: null
+```
 
 ---
 
@@ -715,3 +802,26 @@ billing:
 ```
 
 Please set the `price` values reasonably according to your own requirements and the service provider's pricing to control costs.
+
+---
+
+## Image Generation and Editing
+
+`image_api.yaml` lives in `modules/ai/data/`, like `llm_api_list.yaml`. When it exists and `model_name` is non-empty, the model receives the `generate_image` and `edit_image` tools.
+
+```yaml
+image_api:
+  model_name: gpt-image-1
+  base_url: https://api.openai.com/v1
+  api_key: sk-xxxxxxxx
+  costs:
+    low: 4
+    medium: 8
+    high: 16
+    auto: 8
+    default: 8
+```
+
+* If `base_url` or `api_key` is empty, the current chat model's URL or key is used.
+* `costs` are measured in call-cost units and may be a fixed number or a lookup table keyed by parameters. Lookup order: `size:quality`, `quality`, `size`, `default`, `auto`, then the first numeric value.
+* Restart the bot or reload the `ai` module after changing the file.

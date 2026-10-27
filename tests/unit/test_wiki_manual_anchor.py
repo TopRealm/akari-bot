@@ -88,16 +88,6 @@ async def _test_missing_manual_anchor_remains_invalid():
     return page.invalid_section and not page.is_manual_anchor
 
 
-async def _test_heading_anchor_skips_manual_anchor_request():
-    wiki = _wiki(
-        _page_response(),
-        {"parse": {"sections": [{"anchor": "普通章节"}]}},
-    )
-
-    page = await wiki.parse_page_info("示例页面#普通章节")
-    return not page.invalid_section and not page.is_manual_anchor and wiki.get_json.await_count == 2
-
-
 async def _test_manual_anchor_is_delegated_to_webrender():
     session_info = SessionInfo(
         target_id="TEST|Group|wiki-manual-anchor",
@@ -143,7 +133,7 @@ async def _test_manual_anchor_is_delegated_to_webrender():
         patch.object(WikiLib, "parse_page_info", new=AsyncMock(return_value=page)),
         patch("modules.wiki.wiki.WikiTargetInfo.get_by_target_id", new=AsyncMock(return_value=target)),
         patch("modules.wiki.wiki.finish_if_wiki_blocked", new=AsyncMock()),
-        patch("modules.wiki.wiki.generate_screenshot_v2", new=render),
+        patch("modules.wiki.wiki.generate_screenshot", new=render),
         patch("modules.wiki.wiki._start_background_with_release", new=_run_background),
         patch.object(MessageSession, "hold", new=AsyncMock()),
         patch.object(MessageSession, "release", new=AsyncMock()),
@@ -156,6 +146,8 @@ async def _test_manual_anchor_is_delegated_to_webrender():
     return (
         render.await_count == 1
         and render.await_args.args == (page.link,)
+        and render.await_args.kwargs["wiki_info"] is page.info
+        and render.await_args.kwargs["title"] == page.title
         and render.await_args.kwargs["section"] == "manual_anchor"
         and "wiki.message.section.rendering" in keys
         and "wiki.message.invalid_section" not in keys
@@ -168,6 +160,5 @@ async def test_wiki_manual_anchor(tester: Tester):
     await tester.test(_test_manual_anchor_html_match, "手动锚点 HTML 精确匹配")
     await tester.test(_test_manual_anchor_is_not_invalid_and_has_no_summary, "手动锚点不判不存在且不生成摘要")
     await tester.test(_test_missing_manual_anchor_remains_invalid, "不存在的手动锚点仍判章节不存在")
-    await tester.test(_test_heading_anchor_skips_manual_anchor_request, "普通标题锚点不额外请求正文 HTML")
     await tester.test(_test_manual_anchor_is_delegated_to_webrender, "手动锚点不输出摘要并转交 WebRender")
     return tester

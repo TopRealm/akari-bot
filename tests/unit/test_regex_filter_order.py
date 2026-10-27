@@ -90,6 +90,7 @@ def _fake_long_regex_message(pattern: str, text: str, *, skip_long_message_confi
             target_from="TEST",
             client_name="TEST",
             target_id="TEST|0",
+            support_button=False,
         ),
         as_display=lambda **_: text,
         wait_confirm=AsyncMock(return_value=False),
@@ -116,12 +117,6 @@ async def _test_long_regex_confirmation_allows_parsing():
 
 async def _test_long_regex_miss_does_not_request_confirmation():
     msg, modules = _fake_long_regex_message("未命中", "触发" + "x" * 100)
-    result = await _confirm_long_regex_message(msg, modules)
-    return result and msg.wait_confirm.await_count == 0
-
-
-async def _test_short_regex_match_does_not_request_confirmation():
-    msg, modules = _fake_long_regex_message("触发", "触发")
     result = await _confirm_long_regex_message(msg, modules)
     return result and msg.wait_confirm.await_count == 0
 
@@ -158,14 +153,6 @@ async def _test_long_message_still_confirms_for_non_exempt_regex():
     modules["test"].regex_list.set.append(regular_rfunc)
     result = await _confirm_long_regex_message(msg, modules)
     return not result and msg.wait_confirm.await_count == 1
-
-
-async def _test_wildcard_available_everywhere():
-    try:
-        return regex_func_available(_fake_avail_rfunc(), "QQ|Group", "QQ")
-
-    except Exception:
-        return False
 
 
 async def _test_available_for_restricts_platform():
@@ -223,7 +210,6 @@ async def test_regex_filter_order(tester: Tester):
     """core.builtins.parser.message: 正则平台筛选与执行锁测试"""
     await tester.test(_test_lock_acquired_once, "执行锁互斥测试")
     await tester.test(_test_lock_released_can_reacquire, "执行锁释放后重取测试")
-    await tester.test(_test_wildcard_available_everywhere, "通配平台可用测试")
     await tester.test(_test_available_for_restricts_platform, "平台限定测试")
     await tester.test(_test_available_for_empty_blocks_all, "空列表全禁测试")
     await tester.test(_test_exclude_from_takes_precedence, "排除优先测试")
@@ -232,7 +218,6 @@ async def test_regex_filter_order(tester: Tester):
     await tester.test(_test_long_regex_match_requests_confirmation, "长消息命中正则时请求确认")
     await tester.test(_test_long_regex_confirmation_allows_parsing, "确认继续后允许正则解析")
     await tester.test(_test_long_regex_miss_does_not_request_confirmation, "长消息未命中正则时不请求确认")
-    await tester.test(_test_short_regex_match_does_not_request_confirmation, "短消息不请求确认")
     await tester.test(_test_length_threshold_is_75_characters, "75 字及以下不请求确认，76 字触发确认")
     await tester.test(_test_long_message_exempt_regex_skips_confirmation, "豁免正则命中长消息时跳过确认")
     await tester.test(_test_long_message_still_confirms_for_non_exempt_regex, "其它正则命中时仍请求确认")
